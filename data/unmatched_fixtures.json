@@ -1,0 +1,3002 @@
+[
+  {
+    "date": "2020-08-02",
+    "csv_home": "Swansea",
+    "csv_away": "Derby",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Dijon",
+    "csv_away": "Nantes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Metz",
+    "csv_away": "Bordeaux",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Nice",
+    "csv_away": "Nimes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Rennes",
+    "csv_away": "Brest",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Reading",
+    "csv_away": "Hull",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Luton",
+    "csv_away": "Cardiff",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Barnsley",
+    "csv_away": "Sheffield Weds",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Wigan",
+    "csv_away": "Preston",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Amiens",
+    "csv_away": "Monaco",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Blackburn",
+    "csv_away": "Fulham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Brentford",
+    "csv_away": "Middlesbrough",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Fiorentina",
+    "csv_away": "Atalanta",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Huddersfield",
+    "csv_away": "QPR",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Verona",
+    "csv_away": "Juventus",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Nott'm Forest",
+    "csv_away": "Leeds",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Torino",
+    "csv_away": "Sampdoria",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Freiburg",
+    "csv_away": "Hoffenheim",
+    "div": "D1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Levante",
+    "csv_away": "Leganes",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Ath Madrid",
+    "csv_away": "Granada",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Brighton",
+    "csv_away": "Watford",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Hertha",
+    "csv_away": "Mainz",
+    "div": "D1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Everton",
+    "csv_away": "Crystal Palace",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Stoke",
+    "csv_away": "Charlton",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Leverkusen",
+    "csv_away": "Dortmund",
+    "div": "D1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Valladolid",
+    "csv_away": "Villarreal",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Marseille",
+    "csv_away": "Toulouse",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Schalke 04",
+    "csv_away": "Paderborn",
+    "div": "D1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Werder Bremen",
+    "csv_away": "Union Berlin",
+    "div": "D1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Wolfsburg",
+    "csv_away": "Fortuna Dusseldorf",
+    "div": "D1"
+  },
+  {
+    "date": "2020-08-02",
+    "csv_home": "Getafe",
+    "csv_away": "Valencia",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Man United",
+    "csv_away": "Man City",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Sampdoria",
+    "csv_away": "Verona",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Udinese",
+    "csv_away": "Fiorentina",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Juventus",
+    "csv_away": "Inter",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Chelsea",
+    "csv_away": "Everton",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Milan",
+    "csv_away": "Genoa",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Parma",
+    "csv_away": "Spal",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Rennes",
+    "csv_away": "Montpellier",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Mainz",
+    "csv_away": "Fortuna Dusseldorf",
+    "div": "D1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Bayern Munich",
+    "csv_away": "Augsburg",
+    "div": "D1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Derby",
+    "csv_away": "Blackburn",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Villarreal",
+    "csv_away": "Leganes",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Levante",
+    "csv_away": "Granada",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Valladolid",
+    "csv_away": "Ath Bilbao",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Betis",
+    "csv_away": "Real Madrid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "St Etienne",
+    "csv_away": "Bordeaux",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Osasuna",
+    "csv_away": "Espanol",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-03",
+    "csv_home": "Lille",
+    "csv_away": "Lyon",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "West Brom",
+    "csv_away": "Derby",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Betis",
+    "csv_away": "Osasuna",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Man City",
+    "csv_away": "Newcastle",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Bristol City",
+    "csv_away": "Hull",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Wigan",
+    "csv_away": "QPR",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Sheffield Weds",
+    "csv_away": "Preston",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Millwall",
+    "csv_away": "Middlesbrough",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Barcelona",
+    "csv_away": "Espanol",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Getafe",
+    "csv_away": "Villarreal",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Birmingham",
+    "csv_away": "Swansea",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Torino",
+    "csv_away": "Brescia",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Genoa",
+    "csv_away": "Napoli",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Bologna",
+    "csv_away": "Sassuolo",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Atalanta",
+    "csv_away": "Sampdoria",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Sheffield United",
+    "csv_away": "Wolves",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "West Ham",
+    "csv_away": "Burnley",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Brighton",
+    "csv_away": "Liverpool",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Fiorentina",
+    "csv_away": "Cagliari",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-07",
+    "csv_home": "Roma",
+    "csv_away": "Parma",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Wolfsburg",
+    "csv_away": "Hoffenheim",
+    "div": "D1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Leverkusen",
+    "csv_away": "M'gladbach",
+    "div": "D1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Lyon",
+    "csv_away": "St Etienne",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Leicester",
+    "csv_away": "Wolves",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Nice",
+    "csv_away": "Monaco",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "West Brom",
+    "csv_away": "Tottenham",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Metz",
+    "csv_away": "Dijon",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Nimes",
+    "csv_away": "Angers",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Valencia",
+    "csv_away": "Real Madrid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Valladolid",
+    "csv_away": "Ath Bilbao",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Levante",
+    "csv_away": "Alaves",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Sociedad",
+    "csv_away": "Granada",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Getafe",
+    "csv_away": "Villarreal",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Milan",
+    "csv_away": "Verona",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Torino",
+    "csv_away": "Crotone",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Genoa",
+    "csv_away": "Roma",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Bologna",
+    "csv_away": "Napoli",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Lazio",
+    "csv_away": "Juventus",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Arsenal",
+    "csv_away": "Aston Villa",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Man City",
+    "csv_away": "Liverpool",
+    "div": "E0"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Brest",
+    "csv_away": "Lille",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Lens",
+    "csv_away": "Reims",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Lorient",
+    "csv_away": "Nantes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-11",
+    "csv_home": "Atalanta",
+    "csv_away": "Inter",
+    "div": "I1"
+  },
+  {
+    "date": "2020-08-12",
+    "csv_home": "Millwall",
+    "csv_away": "QPR",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-12",
+    "csv_home": "Watford",
+    "csv_away": "Rotherham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-12",
+    "csv_home": "Swansea",
+    "csv_away": "Bournemouth",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-12",
+    "csv_home": "Coventry",
+    "csv_away": "Luton",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-12",
+    "csv_home": "Huddersfield",
+    "csv_away": "Sheffield Weds",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-12",
+    "csv_home": "Stoke",
+    "csv_away": "Cardiff",
+    "div": "E1"
+  },
+  {
+    "date": "2020-08-21",
+    "csv_home": "Bordeaux",
+    "csv_away": "Nantes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-22",
+    "csv_home": "Lille",
+    "csv_away": "Rennes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-22",
+    "csv_home": "Dijon",
+    "csv_away": "Angers",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-23",
+    "csv_home": "Nimes",
+    "csv_away": "Brest",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-23",
+    "csv_home": "Monaco",
+    "csv_away": "Reims",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-23",
+    "csv_home": "Lorient",
+    "csv_away": "Strasbourg",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-23",
+    "csv_home": "Nice",
+    "csv_away": "Lens",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-28",
+    "csv_home": "Lyon",
+    "csv_away": "Dijon",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-29",
+    "csv_home": "Strasbourg",
+    "csv_away": "Nice",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-29",
+    "csv_home": "Rennes",
+    "csv_away": "Montpellier",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-30",
+    "csv_home": "Reims",
+    "csv_away": "Lille",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-30",
+    "csv_home": "Brest",
+    "csv_away": "Marseille",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-30",
+    "csv_home": "St Etienne",
+    "csv_away": "Lorient",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-30",
+    "csv_home": "Nantes",
+    "csv_away": "Nimes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-30",
+    "csv_home": "Metz",
+    "csv_away": "Monaco",
+    "div": "F1"
+  },
+  {
+    "date": "2020-08-30",
+    "csv_home": "Angers",
+    "csv_away": "Bordeaux",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Espanol",
+    "csv_away": "Mallorca",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Sociedad",
+    "csv_away": "Ath Bilbao",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Millwall",
+    "csv_away": "West Brom",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Betis",
+    "csv_away": "Barcelona",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Osasuna",
+    "csv_away": "Real Madrid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Celta",
+    "csv_away": "Sevilla",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Spal",
+    "csv_away": "Sassuolo",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Montpellier",
+    "csv_away": "St Etienne",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Strasbourg",
+    "csv_away": "Reims",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Paris SG",
+    "csv_away": "Lyon",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Brescia",
+    "csv_away": "Udinese",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Genoa",
+    "csv_away": "Cagliari",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Napoli",
+    "csv_away": "Lecce",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Parma",
+    "csv_away": "Lazio",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Inter",
+    "csv_away": "Milan",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Sheffield United",
+    "csv_away": "Bournemouth",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-02",
+    "csv_home": "Bayern Munich",
+    "csv_away": "RB Leipzig",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-03",
+    "csv_home": "Leicester",
+    "csv_away": "Aston Villa",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-03",
+    "csv_home": "Sassuolo",
+    "csv_away": "Brescia",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-07",
+    "csv_home": "Eibar",
+    "csv_away": "Leganes",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-07",
+    "csv_home": "Aston Villa",
+    "csv_away": "Man United",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-07",
+    "csv_home": "Leeds",
+    "csv_away": "Stoke",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-07",
+    "csv_home": "Mallorca",
+    "csv_away": "Levante",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-07",
+    "csv_home": "Everton",
+    "csv_away": "Southampton",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-07",
+    "csv_home": "Spal",
+    "csv_away": "Udinese",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-07",
+    "csv_home": "Verona",
+    "csv_away": "Inter",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-07",
+    "csv_home": "Ath Bilbao",
+    "csv_away": "Sevilla",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-07",
+    "csv_home": "Bournemouth",
+    "csv_away": "Tottenham",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-12",
+    "csv_home": "Bristol City",
+    "csv_away": "Blackburn",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-12",
+    "csv_home": "Norwich",
+    "csv_away": "Nott'm Forest",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-12",
+    "csv_home": "Brentford",
+    "csv_away": "Derby",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-12",
+    "csv_home": "Reading",
+    "csv_away": "Birmingham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-12",
+    "csv_home": "Barnsley",
+    "csv_away": "Wycombe",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-12",
+    "csv_home": "Preston",
+    "csv_away": "Middlesbrough",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "Lille",
+    "csv_away": "Metz",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "Monaco",
+    "csv_away": "Nantes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "Angers",
+    "csv_away": "Reims",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "Alaves",
+    "csv_away": "Betis",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "Dijon",
+    "csv_away": "Brest",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "West Brom",
+    "csv_away": "Leicester",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "Nimes",
+    "csv_away": "Rennes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "Tottenham",
+    "csv_away": "Everton",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "Valladolid",
+    "csv_away": "Sociedad",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "Villarreal",
+    "csv_away": "Huesca",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "Valencia",
+    "csv_away": "Levante",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-13",
+    "csv_home": "Lorient",
+    "csv_away": "Lens",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-14",
+    "csv_home": "Brighton",
+    "csv_away": "Chelsea",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-14",
+    "csv_home": "Sheffield United",
+    "csv_away": "Wolves",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-15",
+    "csv_home": "Montpellier",
+    "csv_away": "Lyon",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-16",
+    "csv_home": "Paris SG",
+    "csv_away": "Metz",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-17",
+    "csv_home": "Marseille",
+    "csv_away": "St Etienne",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-18",
+    "csv_home": "Lyon",
+    "csv_away": "Nimes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-18",
+    "csv_home": "Bayern Munich",
+    "csv_away": "Schalke 04",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-18",
+    "csv_home": "Coventry",
+    "csv_away": "QPR",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Fiorentina",
+    "csv_away": "Torino",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Verona",
+    "csv_away": "Roma",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Middlesbrough",
+    "csv_away": "Bournemouth",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Luton",
+    "csv_away": "Derby",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Celta",
+    "csv_away": "Valencia",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Norwich",
+    "csv_away": "Preston",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Reading",
+    "csv_away": "Barnsley",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Rotherham",
+    "csv_away": "Millwall",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Sheffield Weds",
+    "csv_away": "Watford",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Swansea",
+    "csv_away": "Birmingham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Brentford",
+    "csv_away": "Huddersfield",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Getafe",
+    "csv_away": "Osasuna",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Stuttgart",
+    "csv_away": "Freiburg",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Blackburn",
+    "csv_away": "Wycombe",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "FC Koln",
+    "csv_away": "Hoffenheim",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Ein Frankfurt",
+    "csv_away": "Bielefeld",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Werder Bremen",
+    "csv_away": "Hertha",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Dortmund",
+    "csv_away": "M'gladbach",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Leeds",
+    "csv_away": "Fulham",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Villarreal",
+    "csv_away": "Eibar",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Arsenal",
+    "csv_away": "West Ham",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Man United",
+    "csv_away": "Crystal Palace",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Rennes",
+    "csv_away": "Monaco",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Union Berlin",
+    "csv_away": "Augsburg",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Nott'm Forest",
+    "csv_away": "Cardiff",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Lens",
+    "csv_away": "Bordeaux",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-19",
+    "csv_home": "Everton",
+    "csv_away": "West Brom",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Granada",
+    "csv_away": "Alaves",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Betis",
+    "csv_away": "Valladolid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Huesca",
+    "csv_away": "Cadiz",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Stoke",
+    "csv_away": "Bristol City",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Sociedad",
+    "csv_away": "Real Madrid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Wolfsburg",
+    "csv_away": "Leverkusen",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Montpellier",
+    "csv_away": "Angers",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Strasbourg",
+    "csv_away": "Dijon",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Metz",
+    "csv_away": "Reims",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Leicester",
+    "csv_away": "Burnley",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Chelsea",
+    "csv_away": "Liverpool",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Newcastle",
+    "csv_away": "Brighton",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Southampton",
+    "csv_away": "Tottenham",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Nantes",
+    "csv_away": "St Etienne",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "RB Leipzig",
+    "csv_away": "Mainz",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Nice",
+    "csv_away": "Paris SG",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Juventus",
+    "csv_away": "Sampdoria",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Sassuolo",
+    "csv_away": "Cagliari",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Genoa",
+    "csv_away": "Crotone",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Parma",
+    "csv_away": "Napoli",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Brest",
+    "csv_away": "Lorient",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-20",
+    "csv_home": "Marseille",
+    "csv_away": "Lille",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-21",
+    "csv_home": "Wolves",
+    "csv_away": "Man City",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-21",
+    "csv_home": "Milan",
+    "csv_away": "Bologna",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-21",
+    "csv_home": "Aston Villa",
+    "csv_away": "Sheffield United",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-25",
+    "csv_home": "Lille",
+    "csv_away": "Nantes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-25",
+    "csv_home": "Hertha",
+    "csv_away": "Ein Frankfurt",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-25",
+    "csv_home": "Huddersfield",
+    "csv_away": "Nott'm Forest",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Burnley",
+    "csv_away": "Southampton",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Schalke 04",
+    "csv_away": "Werder Bremen",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Brighton",
+    "csv_away": "Man United",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Elche",
+    "csv_away": "Sociedad",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Augsburg",
+    "csv_away": "Dortmund",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Bielefeld",
+    "csv_away": "FC Koln",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Leverkusen",
+    "csv_away": "RB Leipzig",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Crystal Palace",
+    "csv_away": "Everton",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "West Brom",
+    "csv_away": "Chelsea",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Valencia",
+    "csv_away": "Huesca",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "M'gladbach",
+    "csv_away": "Union Berlin",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Marseille",
+    "csv_away": "Metz",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Alaves",
+    "csv_away": "Getafe",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Betis",
+    "csv_away": "Real Madrid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "QPR",
+    "csv_away": "Middlesbrough",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Preston",
+    "csv_away": "Stoke",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "St Etienne",
+    "csv_away": "Rennes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Derby",
+    "csv_away": "Blackburn",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Cardiff",
+    "csv_away": "Reading",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Birmingham",
+    "csv_away": "Rotherham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Barnsley",
+    "csv_away": "Coventry",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Millwall",
+    "csv_away": "Brentford",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Watford",
+    "csv_away": "Luton",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Inter",
+    "csv_away": "Fiorentina",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Sampdoria",
+    "csv_away": "Benevento",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Cagliari",
+    "csv_away": "Lazio",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Torino",
+    "csv_away": "Atalanta",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Mainz",
+    "csv_away": "Stuttgart",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-26",
+    "csv_home": "Wycombe",
+    "csv_away": "Swansea",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Reims",
+    "csv_away": "Paris SG",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Lorient",
+    "csv_away": "Lyon",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Nimes",
+    "csv_away": "Lens",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Monaco",
+    "csv_away": "Strasbourg",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Freiburg",
+    "csv_away": "Wolfsburg",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Hoffenheim",
+    "csv_away": "Bayern Munich",
+    "div": "D1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Osasuna",
+    "csv_away": "Levante",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Eibar",
+    "csv_away": "Ath Bilbao",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Dijon",
+    "csv_away": "Montpellier",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Angers",
+    "csv_away": "Brest",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Bordeaux",
+    "csv_away": "Nice",
+    "div": "F1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Roma",
+    "csv_away": "Juventus",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Cadiz",
+    "csv_away": "Sevilla",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Verona",
+    "csv_away": "Udinese",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Napoli",
+    "csv_away": "Genoa",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Spezia",
+    "csv_away": "Sassuolo",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Bournemouth",
+    "csv_away": "Norwich",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Bristol City",
+    "csv_away": "Sheffield Weds",
+    "div": "E1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Ath Madrid",
+    "csv_away": "Granada",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Man City",
+    "csv_away": "Leicester",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Tottenham",
+    "csv_away": "Newcastle",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "West Ham",
+    "csv_away": "Wolves",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Crotone",
+    "csv_away": "Milan",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Barcelona",
+    "csv_away": "Villarreal",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Valladolid",
+    "csv_away": "Celta",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-27",
+    "csv_home": "Sheffield United",
+    "csv_away": "Leeds",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-28",
+    "csv_home": "Fulham",
+    "csv_away": "Aston Villa",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-28",
+    "csv_home": "Liverpool",
+    "csv_away": "Arsenal",
+    "div": "E0"
+  },
+  {
+    "date": "2020-09-28",
+    "csv_home": "Bologna",
+    "csv_away": "Parma",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-29",
+    "csv_home": "Getafe",
+    "csv_away": "Betis",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-29",
+    "csv_home": "Sociedad",
+    "csv_away": "Valencia",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-30",
+    "csv_home": "Real Madrid",
+    "csv_away": "Valladolid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-30",
+    "csv_home": "Eibar",
+    "csv_away": "Elche",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-30",
+    "csv_home": "Villarreal",
+    "csv_away": "Alaves",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-30",
+    "csv_home": "Udinese",
+    "csv_away": "Spezia",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-30",
+    "csv_home": "Benevento",
+    "csv_away": "Inter",
+    "div": "I1"
+  },
+  {
+    "date": "2020-09-30",
+    "csv_home": "Huesca",
+    "csv_away": "Ath Madrid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-09-30",
+    "csv_home": "Lazio",
+    "csv_away": "Atalanta",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-01",
+    "csv_home": "Rennes",
+    "csv_away": "Marseille",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-01",
+    "csv_home": "Sheffield United",
+    "csv_away": "West Ham",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-03",
+    "csv_home": "Eibar",
+    "csv_away": "Sociedad",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-07",
+    "csv_home": "Real Madrid",
+    "csv_away": "Alaves",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-07",
+    "csv_home": "Sociedad",
+    "csv_away": "Granada",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-07",
+    "csv_home": "Fulham",
+    "csv_away": "Cardiff",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-07",
+    "csv_home": "Huddersfield",
+    "csv_away": "Luton",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-09",
+    "csv_home": "Lens",
+    "csv_away": "Paris SG",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-16",
+    "csv_home": "Dijon",
+    "csv_away": "Rennes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-16",
+    "csv_home": "Nimes",
+    "csv_away": "Paris SG",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-16",
+    "csv_home": "Derby",
+    "csv_away": "Watford",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Hertha",
+    "csv_away": "Stuttgart",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Blackburn",
+    "csv_away": "Nott'm Forest",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Barnsley",
+    "csv_away": "Bristol City",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Sampdoria",
+    "csv_away": "Lazio",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Inter",
+    "csv_away": "Milan",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Bournemouth",
+    "csv_away": "QPR",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Crotone",
+    "csv_away": "Juventus",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Getafe",
+    "csv_away": "Barcelona",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Real Madrid",
+    "csv_away": "Cadiz",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Napoli",
+    "csv_away": "Atalanta",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Newcastle",
+    "csv_away": "Man United",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Brentford",
+    "csv_away": "Coventry",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Chelsea",
+    "csv_away": "Southampton",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Everton",
+    "csv_away": "Liverpool",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Luton",
+    "csv_away": "Stoke",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Middlesbrough",
+    "csv_away": "Reading",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Rotherham",
+    "csv_away": "Norwich",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Swansea",
+    "csv_away": "Huddersfield",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Wycombe",
+    "csv_away": "Millwall",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Augsburg",
+    "csv_away": "RB Leipzig",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Freiburg",
+    "csv_away": "Werder Bremen",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Hoffenheim",
+    "csv_away": "Dortmund",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Mainz",
+    "csv_away": "Leverkusen",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Bielefeld",
+    "csv_away": "Bayern Munich",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "M'gladbach",
+    "csv_away": "Wolfsburg",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Man City",
+    "csv_away": "Arsenal",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Reims",
+    "csv_away": "Lorient",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Birmingham",
+    "csv_away": "Sheffield Weds",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Marseille",
+    "csv_away": "Bordeaux",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Celta",
+    "csv_away": "Ath Madrid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-17",
+    "csv_home": "Granada",
+    "csv_away": "Sevilla",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Ath Bilbao",
+    "csv_away": "Levante",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Villarreal",
+    "csv_away": "Valencia",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Alaves",
+    "csv_away": "Elche",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Huesca",
+    "csv_away": "Valladolid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Betis",
+    "csv_away": "Sociedad",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Preston",
+    "csv_away": "Cardiff",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Sheffield United",
+    "csv_away": "Fulham",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Crystal Palace",
+    "csv_away": "Brighton",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Tottenham",
+    "csv_away": "West Ham",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Leicester",
+    "csv_away": "Aston Villa",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Bologna",
+    "csv_away": "Sassuolo",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Spezia",
+    "csv_away": "Fiorentina",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Torino",
+    "csv_away": "Cagliari",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Roma",
+    "csv_away": "Benevento",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Eibar",
+    "csv_away": "Osasuna",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "St Etienne",
+    "csv_away": "Nice",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Lille",
+    "csv_away": "Lens",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Nantes",
+    "csv_away": "Brest",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Strasbourg",
+    "csv_away": "Lyon",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Angers",
+    "csv_away": "Metz",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "FC Koln",
+    "csv_away": "Ein Frankfurt",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-18",
+    "csv_home": "Schalke 04",
+    "csv_away": "Union Berlin",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-19",
+    "csv_home": "West Brom",
+    "csv_away": "Burnley",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-19",
+    "csv_home": "Leeds",
+    "csv_away": "Wolves",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-20",
+    "csv_home": "Bristol City",
+    "csv_away": "Middlesbrough",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-20",
+    "csv_home": "Coventry",
+    "csv_away": "Swansea",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-20",
+    "csv_home": "Millwall",
+    "csv_away": "Luton",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-20",
+    "csv_home": "Norwich",
+    "csv_away": "Birmingham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-20",
+    "csv_home": "Nott'm Forest",
+    "csv_away": "Rotherham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-20",
+    "csv_home": "Reading",
+    "csv_away": "Wycombe",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-20",
+    "csv_home": "Huddersfield",
+    "csv_away": "Derby",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-21",
+    "csv_home": "QPR",
+    "csv_away": "Preston",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-21",
+    "csv_home": "Watford",
+    "csv_away": "Blackburn",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-21",
+    "csv_home": "Stoke",
+    "csv_away": "Barnsley",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-21",
+    "csv_home": "Sheffield Weds",
+    "csv_away": "Brentford",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-21",
+    "csv_home": "Cardiff",
+    "csv_away": "Bournemouth",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-23",
+    "csv_home": "Aston Villa",
+    "csv_away": "Leeds",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-23",
+    "csv_home": "Elche",
+    "csv_away": "Valencia",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-23",
+    "csv_home": "Rennes",
+    "csv_away": "Angers",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-23",
+    "csv_home": "Nott'm Forest",
+    "csv_away": "Derby",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-23",
+    "csv_home": "Stuttgart",
+    "csv_away": "FC Koln",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-23",
+    "csv_home": "Sassuolo",
+    "csv_away": "Torino",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Bayern Munich",
+    "csv_away": "Ein Frankfurt",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "RB Leipzig",
+    "csv_away": "Hertha",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Union Berlin",
+    "csv_away": "Freiburg",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Atalanta",
+    "csv_away": "Sampdoria",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Lorient",
+    "csv_away": "Marseille",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Liverpool",
+    "csv_away": "Sheffield United",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Man United",
+    "csv_away": "Chelsea",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Fulham",
+    "csv_away": "Crystal Palace",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "West Ham",
+    "csv_away": "Man City",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Genoa",
+    "csv_away": "Inter",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Dortmund",
+    "csv_away": "Schalke 04",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Lazio",
+    "csv_away": "Bologna",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Coventry",
+    "csv_away": "Blackburn",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Sheffield Weds",
+    "csv_away": "Luton",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Huddersfield",
+    "csv_away": "Preston",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Millwall",
+    "csv_away": "Barnsley",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Cardiff",
+    "csv_away": "Middlesbrough",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Norwich",
+    "csv_away": "Wycombe",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "QPR",
+    "csv_away": "Birmingham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Mainz",
+    "csv_away": "M'gladbach",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Osasuna",
+    "csv_away": "Ath Bilbao",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Sevilla",
+    "csv_away": "Eibar",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Ath Madrid",
+    "csv_away": "Betis",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Bristol City",
+    "csv_away": "Swansea",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Barcelona",
+    "csv_away": "Real Madrid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Stoke",
+    "csv_away": "Brentford",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Reading",
+    "csv_away": "Rotherham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Paris SG",
+    "csv_away": "Dijon",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-24",
+    "csv_home": "Watford",
+    "csv_away": "Bournemouth",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Werder Bremen",
+    "csv_away": "Hoffenheim",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Fiorentina",
+    "csv_away": "Udinese",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Parma",
+    "csv_away": "Spezia",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Benevento",
+    "csv_away": "Napoli",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Lyon",
+    "csv_away": "Monaco",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Bordeaux",
+    "csv_away": "Nimes",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Juventus",
+    "csv_away": "Verona",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Nice",
+    "csv_away": "Lille",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Montpellier",
+    "csv_away": "Reims",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Wolfsburg",
+    "csv_away": "Bielefeld",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Southampton",
+    "csv_away": "Everton",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Wolves",
+    "csv_away": "Newcastle",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Arsenal",
+    "csv_away": "Leicester",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Metz",
+    "csv_away": "St Etienne",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Brest",
+    "csv_away": "Strasbourg",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Cagliari",
+    "csv_away": "Crotone",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Sociedad",
+    "csv_away": "Huesca",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Valladolid",
+    "csv_away": "Alaves",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Cadiz",
+    "csv_away": "Villarreal",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-25",
+    "csv_home": "Getafe",
+    "csv_away": "Granada",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-26",
+    "csv_home": "Levante",
+    "csv_away": "Celta",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-26",
+    "csv_home": "Milan",
+    "csv_away": "Roma",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-26",
+    "csv_home": "Burnley",
+    "csv_away": "Tottenham",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-26",
+    "csv_home": "Brighton",
+    "csv_away": "West Brom",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-26",
+    "csv_home": "Leverkusen",
+    "csv_away": "Augsburg",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-27",
+    "csv_home": "Swansea",
+    "csv_away": "Stoke",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-27",
+    "csv_home": "Wycombe",
+    "csv_away": "Watford",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-27",
+    "csv_home": "Middlesbrough",
+    "csv_away": "Coventry",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-27",
+    "csv_home": "Brentford",
+    "csv_away": "Norwich",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-27",
+    "csv_home": "Blackburn",
+    "csv_away": "Reading",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-27",
+    "csv_home": "Barnsley",
+    "csv_away": "QPR",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-28",
+    "csv_home": "Preston",
+    "csv_away": "Millwall",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-28",
+    "csv_home": "Rotherham",
+    "csv_away": "Sheffield Weds",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-28",
+    "csv_home": "Luton",
+    "csv_away": "Nott'm Forest",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-28",
+    "csv_home": "Birmingham",
+    "csv_away": "Huddersfield",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-28",
+    "csv_home": "Bournemouth",
+    "csv_away": "Bristol City",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-28",
+    "csv_home": "Derby",
+    "csv_away": "Cardiff",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-30",
+    "csv_home": "Schalke 04",
+    "csv_away": "Stuttgart",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-30",
+    "csv_home": "Coventry",
+    "csv_away": "Reading",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-30",
+    "csv_home": "Wolves",
+    "csv_away": "Crystal Palace",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-30",
+    "csv_home": "Eibar",
+    "csv_away": "Cadiz",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Inter",
+    "csv_away": "Parma",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Crotone",
+    "csv_away": "Atalanta",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Bristol City",
+    "csv_away": "Norwich",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Barnsley",
+    "csv_away": "Watford",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "FC Koln",
+    "csv_away": "Bayern Munich",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Bielefeld",
+    "csv_away": "Dortmund",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Ein Frankfurt",
+    "csv_away": "Werder Bremen",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Wycombe",
+    "csv_away": "Sheffield Weds",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Swansea",
+    "csv_away": "Blackburn",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Stoke",
+    "csv_away": "Rotherham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "QPR",
+    "csv_away": "Cardiff",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Preston",
+    "csv_away": "Birmingham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Millwall",
+    "csv_away": "Huddersfield",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Bologna",
+    "csv_away": "Cagliari",
+    "div": "I1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Augsburg",
+    "csv_away": "Mainz",
+    "div": "D1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Bournemouth",
+    "csv_away": "Derby",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Middlesbrough",
+    "csv_away": "Nott'm Forest",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Luton",
+    "csv_away": "Brentford",
+    "div": "E1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Osasuna",
+    "csv_away": "Ath Madrid",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Sheffield United",
+    "csv_away": "Man City",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Rennes",
+    "csv_away": "Brest",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Real Madrid",
+    "csv_away": "Huesca",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Ath Bilbao",
+    "csv_away": "Sevilla",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Liverpool",
+    "csv_away": "West Ham",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Burnley",
+    "csv_away": "Chelsea",
+    "div": "E0"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Nantes",
+    "csv_away": "Paris SG",
+    "div": "F1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "Alaves",
+    "csv_away": "Barcelona",
+    "div": "SP1"
+  },
+  {
+    "date": "2020-10-31",
+    "csv_home": "M'gladbach",
+    "csv_away": "RB Leipzig",
+    "div": "D1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Crystal Palace",
+    "csv_away": "Arsenal",
+    "div": "E0"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Hull",
+    "csv_away": "Fulham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Inter",
+    "csv_away": "Atalanta",
+    "div": "I1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Lazio",
+    "csv_away": "Napoli",
+    "div": "I1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Cagliari",
+    "csv_away": "Milan",
+    "div": "I1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Chelsea",
+    "csv_away": "Burnley",
+    "div": "E0"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Bordeaux",
+    "csv_away": "Lyon",
+    "div": "F1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Angers",
+    "csv_away": "Nice",
+    "div": "F1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Charlton",
+    "csv_away": "West Brom",
+    "div": "E1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Metz",
+    "csv_away": "Strasbourg",
+    "div": "F1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Nimes",
+    "csv_away": "Reims",
+    "div": "F1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Toulouse",
+    "csv_away": "Brest",
+    "div": "F1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Middlesbrough",
+    "csv_away": "Derby",
+    "div": "E1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Luton",
+    "csv_away": "Birmingham",
+    "div": "E1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Brentford",
+    "csv_away": "QPR",
+    "div": "E1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Barnsley",
+    "csv_away": "Huddersfield",
+    "div": "E1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Blackburn",
+    "csv_away": "Preston",
+    "div": "E1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Leicester",
+    "csv_away": "Southampton",
+    "div": "E0"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Everton",
+    "csv_away": "Brighton",
+    "div": "E0"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Amiens",
+    "csv_away": "Montpellier",
+    "div": "F1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Reading",
+    "csv_away": "Nott'm Forest",
+    "div": "E1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Leeds",
+    "csv_away": "Sheffield Weds",
+    "div": "E1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Stoke",
+    "csv_away": "Millwall",
+    "div": "E1"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Man United",
+    "csv_away": "Norwich",
+    "div": "E0"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Wolves",
+    "csv_away": "Newcastle",
+    "div": "E0"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Tottenham",
+    "csv_away": "Liverpool",
+    "div": "E0"
+  },
+  {
+    "date": "2020-11-01",
+    "csv_home": "Wigan",
+    "csv_away": "Bristol City",
+    "div": "E1"
+  },
+  {
+    "date": "2020-11-02",
+    "csv_home": "Brentford",
+    "csv_away": "Leeds",
+    "div": "E1"
+  }
+]

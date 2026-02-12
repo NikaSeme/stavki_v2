@@ -1,0 +1,301 @@
+"""
+Feature Registry.
+
+Central location for all feature builders.
+Provides easy access to features by name.
+
+Usage:
+    from stavki.features.registry import FeatureRegistry
+    
+    registry = FeatureRegistry()
+    registry.fit(historical_matches)
+    
+    features = registry.compute(home_team, away_team, as_of=match_date)
+"""
+
+from typing import Dict, List, Optional, Any
+from datetime import datetime
+import pandas as pd
+import logging
+
+from stavki.data.schemas import Match
+
+from .builders.elo import EloBuilder
+from .builders.form import FormBuilder, GoalsBuilder
+from .builders.h2h import H2HBuilder
+from .builders.disagreement import DisagreementBuilder
+from .builders.advanced_stats import AdvancedFeatureBuilder
+from .builders.roster import RosterFeatureBuilder
+
+# Tier 1
+from .builders.referee import RefereeFeatureBuilder
+from .builders.player_impact import PlayerImpactFeatureBuilder
+from .builders.injuries import InjuryFeatureBuilder
+from .builders.synth_xg import SyntheticXGBuilder
+
+# Tier 2
+from .builders.formation import FormationFeatureBuilder
+from .builders.venue import VenueFeatureBuilder
+from .builders.weather import WeatherFeatureBuilder
+
+# Tier 3
+from .builders.manager import ManagerFeatureBuilder
+from .builders.sm_odds import SMOddsFeatureBuilder
+
+logger = logging.getLogger(__name__)
+
+
+class FeatureRegistry:
+    """
+    Registry of all feature builders.
+    
+    Manages feature builders and computes features for matches.
+    """
+    
+    def __init__(
+        self,
+        elo_params: Optional[Dict] = None,
+        form_window: int = 5,
+        goals_window: int = 10,
+        h2h_max_meetings: int = 10,
+        advanced_window: int = 5,
+        roster_window: int = 20,
+    ):
+        # Core builders
+        self.elo = EloBuilder(**(elo_params or {}))
+        self.form = FormBuilder(window=form_window)
+        self.goals = GoalsBuilder(window=goals_window)
+        self.h2h = H2HBuilder(max_meetings=h2h_max_meetings)
+        self.advanced = AdvancedFeatureBuilder(window=advanced_window)
+        self.roster = RosterFeatureBuilder(window=roster_window)
+        self.disagreement = DisagreementBuilder()
+        
+        # Tier 1
+        self.referee = RefereeFeatureBuilder()
+        self.player_impact = PlayerImpactFeatureBuilder()
+        self.injuries = InjuryFeatureBuilder()
+        self.synth_xg = SyntheticXGBuilder()
+        
+        # Tier 2
+        self.formation = FormationFeatureBuilder()
+        self.venue = VenueFeatureBuilder()
+        self.weather = WeatherFeatureBuilder()
+        
+        # Tier 3
+        self.manager = ManagerFeatureBuilder()
+        self.sm_odds = SMOddsFeatureBuilder()
+        
+        # Cache
+        self._historical_matches: List[Match] = []
+        self._is_fitted = False
+    
+    def fit(self, matches: List[Match]) -> None:
+        """
+        Fit builders on historical match data.
+        """
+        # Sort by date
+        sorted_matches = sorted(
+            [m for m in matches if m.is_completed],
+            key=lambda m: m.commence_time
+        )
+        
+        # Fit stateful builders
+        self.elo.fit(sorted_matches)
+        self.roster.fit(sorted_matches)
+        self.referee.fit(sorted_matches)
+        self.player_impact.fit(sorted_matches)
+        self.injuries.fit(sorted_matches)
+        self.synth_xg.fit(sorted_matches)
+        self.formation.fit(sorted_matches)
+        self.venue.fit(sorted_matches)
+        self.manager.fit(sorted_matches)
+        
+        # Store for other builders
+        self._historical_matches = sorted_matches
+        self._is_fitted = True
+        
+        logger.info(f"FeatureRegistry fitted on {len(sorted_matches)} matches")
+    
+    def compute(
+        self,
+        home_team: str,
+        away_team: str,
+        as_of: Optional[datetime] = None,
+        include_disagreement: bool = False,
+        model_probs: Optional[Dict[str, List[float]]] = None,
+        market_probs: Optional[List[float]] = None,
+        match: Optional[Match] = None,
+    ) -> Dict[str, float]:
+        """
+        Compute all features for a match.
+        """
+        if not self._is_fitted:
+            raise ValueError("FeatureRegistry not fitted. Call fit() first.")
+        
+        features = {}
+        
+        # === Core Features ===
+        
+        # ELO features
+        elo_features = self.elo.get_features(home_team, away_team, as_of)
+        features.update(elo_features)
+        
+        # Form features
+        form_features = self.form.get_features(
+            home_team, away_team, self._historical_matches, as_of
+        )
+        features.update(form_features)
+        
+        # Goals features
+        goals_features = self.goals.get_features(
+            home_team, away_team, self._historical_matches, as_of
+        )
+        features.update(goals_features)
+        
+        # H2H features
+        h2h_features = self.h2h.get_features(
+            home_team, away_team, self._historical_matches, as_of
+        )
+        features.update(h2h_features)
+        
+        # Advanced Features (xG, Shots)
+        adv_home = self.advanced.compute_for_team(home_team, self._historical_matches, as_of)
+        adv_away = self.advanced.compute_for_team(away_team, self._historical_matches, as_of)
+        
+        for k, v in adv_home.items():
+            features[f"advanced_{k}_home"] = v
+        for k, v in adv_away.items():
+            features[f"advanced_{k}_away"] = v
+            
+        # Roster Features (requires match object with lineups)
+        if match and match.lineups:
+            roster_features = self.roster.get_features(match, as_of)
+            features.update(roster_features)
+        
+        # === Tier 1: High Impact ===
+        
+        # Referee features
+        ref_features = self.referee.get_features(match=match, as_of=as_of)
+        features.update(ref_features)
+        
+        # Player Impact (requires lineups)
+        if match and match.lineups:
+            pi_features = self.player_impact.get_features(match=match, as_of=as_of)
+            features.update(pi_features)
+        
+        # Injuries
+        inj_features = self.injuries.get_features(match=match, as_of=as_of)
+        features.update(inj_features)
+        
+        # Synthetic xG
+        xg_features = self.synth_xg.get_features(match=match, as_of=as_of)
+        features.update(xg_features)
+        
+        # === Tier 2: Medium Impact ===
+        
+        # Formation
+        fmt_features = self.formation.get_features(match=match, as_of=as_of)
+        features.update(fmt_features)
+        
+        # Venue
+        venue_features = self.venue.get_features(match=match, as_of=as_of)
+        features.update(venue_features)
+        
+        # Weather
+        weather_features = self.weather.get_features(match=match, as_of=as_of)
+        features.update(weather_features)
+        
+        # === Tier 3: Nice to Have ===
+        
+        # Manager
+        mgr_features = self.manager.get_features(match=match, as_of=as_of)
+        features.update(mgr_features)
+        
+        # SM Odds
+        sm_features = self.sm_odds.get_features(match=match, as_of=as_of)
+        features.update(sm_features)
+        
+        # Disagreement (if model probs provided)
+        if include_disagreement and model_probs:
+            disagree_features = self.disagreement.get_features(
+                model_probs.get("poisson", [0.33, 0.33, 0.34]),
+                model_probs.get("catboost", [0.33, 0.33, 0.34]),
+                model_probs.get("neural", [0.33, 0.33, 0.34]),
+                market_probs
+            )
+            features.update(disagree_features)
+        
+        return features
+    
+    def compute_batch(
+        self,
+        matches: List[Match],
+        as_of: Optional[datetime] = None,
+    ) -> pd.DataFrame:
+        """
+        Compute features for multiple matches.
+        """
+        rows = []
+        
+        for match in matches:
+            try:
+                match_as_of = as_of or match.commence_time
+                features = self.compute(
+                    match.home_team.normalized_name,
+                    match.away_team.normalized_name,
+                    match_as_of,
+                    match=match  # Pass match object for enriched features
+                )
+                features["match_id"] = match.id
+                rows.append(features)
+            except Exception as e:
+                logger.warning(f"Failed to compute features for {match.id}: {e}")
+                continue
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(rows)
+        return df.set_index("match_id")
+    
+    def get_feature_names(self) -> List[str]:
+        """Get list of all feature names."""
+        # Compute for dummy match to get names
+        sample = self.compute(
+            "sample_team_a",
+            "sample_team_b",
+            None
+        )
+        # Manually add features that require match/enrichment data
+        enriched_names = [
+            "roster_regularity_home", "roster_experience_home",
+            "roster_regularity_away", "roster_experience_away",
+            "xi_xg90_home", "xi_xg90_away",
+            "xi_strength_ratio_home", "xi_strength_ratio_away",
+        ]
+        keys = list(sample.keys())
+        for name in enriched_names:
+            if name not in keys:
+                keys.append(name)
+                
+        return keys
+    
+    def get_elo_rating(self, team: str, as_of: Optional[datetime] = None) -> float:
+        """Get ELO rating for a team."""
+        return self.elo.get_rating(team, as_of)
+
+
+# Convenience function
+def build_features(
+    matches: List[Match],
+    home_team: str,
+    away_team: str,
+    as_of: Optional[datetime] = None,
+    match: Optional[Match] = None
+) -> Dict[str, float]:
+    """
+    Quick feature computation without registry setup.
+    """
+    registry = FeatureRegistry()
+    registry.fit(matches)
+    return registry.compute(home_team, away_team, as_of, match=match)
