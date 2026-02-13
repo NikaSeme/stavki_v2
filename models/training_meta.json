@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-02-13T18:33:45.345951",
+  "trained_at": "2026-02-13T19:18:27.873946",
   "data_file": "/Users/macuser/Documents/something/stavki_v2/data/features_full.csv",
   "n_features": 155,
   "n_train": 16519,
@@ -11,16 +11,16 @@
       "log_loss": 1.044592532951203
     },
     "CatBoost": {
-      "accuracy": 0.48665254237288136,
-      "log_loss": 1.0837887155952832
+      "accuracy": 0.5923728813559322,
+      "log_loss": 0.8975025625715524
     },
     "LightGBM": {
-      "accuracy": 0.5525423728813559,
-      "log_loss": 0.9220319997804686
+      "accuracy": 0.5491525423728814,
+      "log_loss": 0.9244108069421793
     },
     "Ensemble": {
-      "accuracy": 0.5180084745762712,
-      "log_loss": 0.9686422459108319
+      "accuracy": 0.5923728813559322,
+      "log_loss": 0.8729066173396157
     }
   }
 }

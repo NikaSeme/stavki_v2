@@ -39,22 +39,51 @@ from ..base import BaseModel, CalibratedModel, Prediction, Market
 logger = logging.getLogger(__name__)
 
 
-# Features for CatBoost (includes categoricals)
+# Features for CatBoost — must match real column names in features_full.csv
 CATBOOST_FEATURES = [
-    # Numeric features
-    "HomeEloBefore", "AwayEloBefore", "EloDiff",
-    "EloExpHome", "EloExpAway",
-    "Home_GF_L5", "Home_GA_L5", "Home_Pts_L5",
-    "Away_GF_L5", "Away_GA_L5", "Away_Pts_L5",
-    "Home_Overall_GF_L5", "Home_Overall_GA_L5",
-    "Away_Overall_GF_L5", "Away_Overall_GA_L5",
-    "xG_Home_L5", "xGA_Home_L5", "xG_Away_L5", "xGA_Away_L5",
-    "Sharp_Divergence", "Odds_Volatility",
-    "H2H_Home_Win_Pct", "H2H_Goals_Avg",
+    # ELO features
+    "elo_home", "elo_away", "elo_diff",
+    
+    # Form features (last 5 matches)
+    "form_home_pts", "form_away_pts", "form_diff",
+    "form_home_gf", "form_away_gf",
+    "gf_diff", "ga_diff",
+    
+    # Odds features (Bet365 as primary source)
+    "B365H", "B365D", "B365A",
+    "imp_home_norm", "imp_draw_norm", "imp_away_norm",
+    "margin",
+    
+    # Tier 1: Synthetic xG
+    "synth_xg_home", "synth_xg_away", "synth_xg_diff",
+    
+    # Tier 1: Player ratings
+    "avg_rating_home", "avg_rating_away", "rating_delta",
+    "key_players_home", "key_players_away",
+    "xi_experience_home", "xi_experience_away",
+    
+    # Tier 1: Referee profile
+    "ref_goals_per_game", "ref_cards_per_game_t1",
+    "ref_over25_rate", "ref_strictness_t1",
+    "ref_experience", "ref_goals_zscore",
+    
+    # Phase 3: Formation matchup
+    "formation_score_home", "formation_score_away",
+    "formation_mismatch", "formation_is_known",
+    "matchup_home_wr", "matchup_sample_size",
+    
+    # Phase 3: Rolling match stats
+    "rolling_fouls_home", "rolling_fouls_away",
+    "rolling_yellows_home", "rolling_yellows_away",
+    "rolling_corners_home", "rolling_corners_away",
+    "rolling_possession_home", "rolling_possession_away",
+    
+    # Phase 3: Referee target encoding
+    "ref_encoded_goals", "ref_encoded_cards",
 ]
 
 # Categorical features (CatBoost handles natively)
-CATEGORICAL_FEATURES = ["League", "HomeTeam", "AwayTeam"]
+CATEGORICAL_FEATURES = ["league", "HomeTeam", "AwayTeam"]
 
 
 class CatBoostModel(CalibratedModel):

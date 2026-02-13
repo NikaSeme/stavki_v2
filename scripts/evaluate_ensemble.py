@@ -223,7 +223,7 @@ def train_catboost(data):
         from stavki.models.catboost import CatBoostModel
         from stavki.models.base import Market
         
-        model = CatBoostModel(iterations=100)
+        model = CatBoostModel(iterations=500)
         
         # Check validation dataframe availability
         if "df_val" not in data:
@@ -283,7 +283,7 @@ def train_lightgbm(data):
         from stavki.models.base import Market
         
         feature_list = list(data["X_train"].columns)
-        model = LightGBMModel(n_estimators=100, features=feature_list)
+        model = LightGBMModel(n_estimators=500, features=feature_list)
         
         if "df_val" not in data:
              logger.error("df_val missing from data split")
@@ -450,8 +450,53 @@ def main():
     # 3. Build ensemble
     print("\n🔗 Building Ensemble...")
     
-    # Weighted ensemble (CatBoost-heavy, reflects typical production config)
-    ensemble_weights = {"Poisson": 0.25, "CatBoost": 0.45, "LightGBM": 0.30}
+    # Auto-optimize weights on validation set using log loss
+    from scipy.optimize import minimize
+    from sklearn.metrics import log_loss as sk_log_loss
+    
+    # Get each model's predictions on validation set
+    val_predictions = {}
+    for name, model_obj in trained_models.items():
+        from stavki.models.base import Market
+        preds = model_obj.predict(data["df_val"])
+        preds_1x2 = [p for p in preds if p.market == Market.MATCH_WINNER]
+        probs = []
+        for p in preds_1x2:
+            pr = p.probabilities
+            probs.append([pr.get("home", 0.33), pr.get("draw", 0.33), pr.get("away", 0.33)])
+        val_predictions[name] = np.array(probs)
+    
+    # Poisson validation predictions
+    poisson_proba, _, _ = train_poisson({**data, "df_test": data["df_val"], "y_test": data["y_val"]})
+    val_predictions["Poisson"] = poisson_proba
+    
+    y_val = data["y_val"].values if hasattr(data["y_val"], 'values') else data["y_val"]
+    model_names = list(val_predictions.keys())
+    
+    def neg_log_loss(w):
+        """Negative log loss for weight vector w."""
+        w_norm = np.abs(w) / np.sum(np.abs(w))  # normalize to sum to 1
+        blended = np.zeros_like(val_predictions[model_names[0]])
+        for i, name in enumerate(model_names):
+            blended += w_norm[i] * val_predictions[name]
+        # Clip for numerical stability
+        blended = np.clip(blended, 1e-10, 1.0)
+        blended = blended / blended.sum(axis=1, keepdims=True)
+        return sk_log_loss(y_val, blended)
+    
+    # Optimize weights
+    w0 = np.ones(len(model_names)) / len(model_names)
+    bounds = [(0.01, 1.0)] * len(model_names)
+    result = minimize(neg_log_loss, w0, method='Nelder-Mead',
+                      options={'maxiter': 5000, 'xatol': 0.001})
+    
+    optimal_w = np.abs(result.x) / np.sum(np.abs(result.x))
+    ensemble_weights = {name: round(float(w), 4) for name, w in zip(model_names, optimal_w)}
+    
+    print(f"  Optimized weights (min val log loss = {result.fun:.4f}):")
+    for name, w in ensemble_weights.items():
+        print(f"    {name}: {w:.1%}")
+    
     ens_proba, ens_class = build_ensemble(model_outputs, weights=ensemble_weights)
     model_outputs["Ensemble"] = (ens_proba, ens_class, 0)
     

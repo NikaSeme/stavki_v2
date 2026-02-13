@@ -33,31 +33,47 @@ from ..base import BaseModel, CalibratedModel, Prediction, Market
 logger = logging.getLogger(__name__)
 
 
-# Default features for 1X2 prediction
+# Default features for 1X2 prediction — must match real column names in features_full.csv
 DEFAULT_FEATURES = [
     # ELO features
-    "HomeEloBefore", "AwayEloBefore", "EloDiff",
-    "EloExpHome", "EloExpAway",
+    "elo_home", "elo_away", "elo_diff",
     
     # Form features (last 5 matches)
-    "Home_GF_L5", "Home_GA_L5", "Home_Pts_L5",
-    "Away_GF_L5", "Away_GA_L5", "Away_Pts_L5",
+    "form_home_pts", "form_away_pts", "form_diff",
+    "form_home_gf", "form_away_gf",
+    "gf_diff", "ga_diff",
     
-    # Overall form (home+away)
-    "Home_Overall_GF_L5", "Home_Overall_GA_L5", "Home_Overall_Pts_L5",
-    "Away_Overall_GF_L5", "Away_Overall_GA_L5", "Away_Overall_Pts_L5",
+    # Odds features (Bet365 as primary source)
+    "B365H", "B365D", "B365A",
+    "imp_home_norm", "imp_draw_norm", "imp_away_norm",
+    "margin",
     
-    # xG features
-    "xG_Home_L5", "xGA_Home_L5", "xG_Away_L5", "xGA_Away_L5", "xG_Diff",
+    # Tier 1: Synthetic xG
+    "synth_xg_home", "synth_xg_away", "synth_xg_diff",
     
-    # Market signals
-    "Sharp_Divergence", "Odds_Volatility", "Market_Consensus",
+    # Tier 1: Player ratings
+    "avg_rating_home", "avg_rating_away", "rating_delta",
+    "key_players_home", "key_players_away",
+    "xi_experience_home", "xi_experience_away",
     
-    # H2H
-    "H2H_Home_Win_Pct", "H2H_Goals_Avg",
+    # Tier 1: Referee profile
+    "ref_goals_per_game", "ref_cards_per_game_t1",
+    "ref_over25_rate", "ref_strictness_t1",
+    "ref_experience", "ref_goals_zscore",
     
-    # CLV
-    "CLV_Home", "CLV_Draw", "CLV_Away",
+    # Phase 3: Formation matchup
+    "formation_score_home", "formation_score_away",
+    "formation_mismatch", "formation_is_known",
+    "matchup_home_wr", "matchup_sample_size",
+    
+    # Phase 3: Rolling match stats
+    "rolling_fouls_home", "rolling_fouls_away",
+    "rolling_yellows_home", "rolling_yellows_away",
+    "rolling_corners_home", "rolling_corners_away",
+    "rolling_possession_home", "rolling_possession_away",
+    
+    # Phase 3: Referee target encoding
+    "ref_encoded_goals", "ref_encoded_cards",
 ]
 
 
