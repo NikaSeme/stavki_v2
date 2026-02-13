@@ -1,5 +1,5 @@
 {
-  "CatBoost": 0.9994,
-  "LightGBM": 0.0006,
-  "Poisson": 0.0
+  "CatBoost": 0.8,
+  "LightGBM": 0.1,
+  "Poisson": 0.1
 }

@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-02-13T19:18:27.873946",
+  "trained_at": "2026-02-13T19:39:21.387563",
   "data_file": "/Users/macuser/Documents/something/stavki_v2/data/features_full.csv",
   "n_features": 155,
   "n_train": 16519,
@@ -19,8 +19,8 @@
       "log_loss": 0.9244108069421793
     },
     "Ensemble": {
-      "accuracy": 0.5923728813559322,
-      "log_loss": 0.8729066173396157
+      "accuracy": 0.5908898305084745,
+      "log_loss": 0.8651911973723817
     }
   }
 }

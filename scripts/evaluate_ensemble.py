@@ -484,18 +484,44 @@ def main():
         blended = blended / blended.sum(axis=1, keepdims=True)
         return sk_log_loss(y_val, blended)
     
-    # Optimize weights
+    # Optimize weights with diversity constraints
+    # Constrained: 10-80% per model (ensures diversity)
     w0 = np.ones(len(model_names)) / len(model_names)
-    bounds = [(0.01, 1.0)] * len(model_names)
-    result = minimize(neg_log_loss, w0, method='Nelder-Mead',
-                      options={'maxiter': 5000, 'xatol': 0.001})
+    bounds_constrained = [(0.10, 0.80)] * len(model_names)
+    result_constrained = minimize(
+        neg_log_loss, w0, method='SLSQP',
+        bounds=bounds_constrained,
+        options={'maxiter': 5000, 'ftol': 1e-6}
+    )
     
-    optimal_w = np.abs(result.x) / np.sum(np.abs(result.x))
+    # Also try unconstrained for comparison
+    bounds_unconstrained = [(0.01, 1.0)] * len(model_names)
+    result_unconstrained = minimize(
+        neg_log_loss, w0, method='SLSQP',
+        bounds=bounds_unconstrained,
+        options={'maxiter': 5000, 'ftol': 1e-6}
+    )
+    
+    # Use constrained weights (better generalization)
+    optimal_w = np.abs(result_constrained.x) / np.sum(np.abs(result_constrained.x))
     ensemble_weights = {name: round(float(w), 4) for name, w in zip(model_names, optimal_w)}
     
-    print(f"  Optimized weights (min val log loss = {result.fun:.4f}):")
+    print(f"\n  🎯 Constrained optimization (10-80% per model):")
+    print(f"     Val log loss = {result_constrained.fun:.4f}")
     for name, w in ensemble_weights.items():
-        print(f"    {name}: {w:.1%}")
+        print(f"       {name:10s}: {w:5.1%}")
+    
+    print(f"\n  📊 Unconstrained optimization (for comparison):")
+    print(f"     Val log loss = {result_unconstrained.fun:.4f}")
+    optimal_w_unc = np.abs(result_unconstrained.x) / np.sum(np.abs(result_unconstrained.x))
+    for name, w in zip(model_names, optimal_w_unc):
+        print(f"       {name:10s}: {w:5.1%}")
+    
+    improvement = (result_unconstrained.fun - result_constrained.fun) / result_unconstrained.fun * 100
+    if improvement > 0:
+        print(f"\n  ✅ Constrained is {improvement:.2f}% better — using constrained weights")
+    else:
+        print(f"\n  ⚠️  Unconstrained is {-improvement:.2f}% better, but using constrained for robustness")
     
     ens_proba, ens_class = build_ensemble(model_outputs, weights=ensemble_weights)
     model_outputs["Ensemble"] = (ens_proba, ens_class, 0)
