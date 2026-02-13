@@ -16,6 +16,7 @@ import sys
 import time
 import logging
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -262,14 +263,14 @@ def train_catboost(data):
         
         elapsed = time.time() - start
         logger.info(f"  CatBoost trained in {elapsed:.1f}s")
-        return y_pred_proba, y_pred_class, elapsed
+        return y_pred_proba, y_pred_class, elapsed, model
         
     except Exception as e:
         logger.error(f"  CatBoost failed: {e}")
         import traceback
         traceback.print_exc()
         n = len(data["y_test"])
-        return np.full((n, 3), 1/3), np.zeros(n, dtype=int), 0
+        return np.full((n, 3), 1/3), np.zeros(n, dtype=int), 0, None
 
 
 def train_lightgbm(data):
@@ -315,14 +316,14 @@ def train_lightgbm(data):
         
         elapsed = time.time() - start
         logger.info(f"  LightGBM trained in {elapsed:.1f}s")
-        return y_pred_proba, y_pred_class, elapsed
+        return y_pred_proba, y_pred_class, elapsed, model
         
     except Exception as e:
         logger.error(f"  LightGBM failed: {e}")
         import traceback
         traceback.print_exc()
         n = len(data["y_test"])
-        return np.full((n, 3), 1/3), np.zeros(n, dtype=int), 0
+        return np.full((n, 3), 1/3), np.zeros(n, dtype=int), 0, None
 
 
 def build_ensemble(model_outputs, weights=None):
@@ -405,6 +406,7 @@ def main():
     parser = argparse.ArgumentParser(description="Evaluate STAVKI ensemble models")
     parser.add_argument("--data", default="data/features_full.csv", help="Path to features CSV")
     parser.add_argument("--test-frac", type=float, default=0.20, help="Test set fraction")
+    parser.add_argument("--save", action="store_true", help="Save trained models to models/ for production")
     args = parser.parse_args()
     
     data_path = PROJECT_ROOT / args.data
@@ -428,6 +430,7 @@ def main():
     print("-" * 50)
     
     model_outputs = {}
+    trained_models = {}  # name -> model object (for saving)
     trainers = {
         "Poisson": train_poisson,
         "CatBoost": train_catboost,
@@ -435,7 +438,14 @@ def main():
     }
     
     for name, trainer in trainers.items():
-        model_outputs[name] = trainer(data)
+        result = trainer(data)
+        if len(result) == 4:
+            proba, cls, elapsed, model_obj = result
+            model_outputs[name] = (proba, cls, elapsed)
+            if model_obj is not None:
+                trained_models[name] = model_obj
+        else:
+            model_outputs[name] = result
     
     # 3. Build ensemble
     print("\n🔗 Building Ensemble...")
@@ -487,6 +497,49 @@ def main():
         print(f"📌 Market favorite: {market_acc:.1%}")
     
     print("\nDone! ✅\n")
+    
+    # 7. Save production models if --save flag
+    if args.save:
+        from stavki.config import MODELS_DIR
+        import json
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        
+        print("\n💾 Saving production models...")
+        for name, model_obj in trained_models.items():
+            save_path = MODELS_DIR / f"{name.lower()}.pkl"
+            try:
+                model_obj.save(save_path)
+                print(f"  ✓ {name} saved to {save_path}")
+            except Exception as e:
+                print(f"  ✗ Failed to save {name}: {e}")
+        
+        # Save feature list for live predictor
+        feature_path = MODELS_DIR / "feature_columns.json"
+        with open(feature_path, "w") as f:
+            json.dump(feature_cols, f, indent=2)
+        print(f"  ✓ Feature list ({len(feature_cols)} cols) saved to {feature_path}")
+        
+        # Save ensemble weights
+        weights_path = MODELS_DIR / "ensemble_weights.json"
+        with open(weights_path, "w") as f:
+            json.dump(ensemble_weights, f, indent=2)
+        print(f"  ✓ Ensemble weights saved to {weights_path}")
+        
+        # Save training metadata
+        meta = {
+            "trained_at": datetime.now().isoformat(),
+            "data_file": str(data_path),
+            "n_features": len(feature_cols),
+            "n_train": len(data['X_train']),
+            "n_val": len(data['X_val']),
+            "n_test": len(data['X_test']),
+            "results": {name: {"accuracy": s["accuracy"], "log_loss": s["log_loss"]} for name, s in summary.items()},
+        }
+        meta_path = MODELS_DIR / "training_meta.json"
+        with open(meta_path, "w") as f:
+            json.dump(meta, f, indent=2)
+        print(f"  ✓ Training metadata saved to {meta_path}")
+        print(f"\n🎯 Production models saved to {MODELS_DIR}")
 
 
 if __name__ == "__main__":

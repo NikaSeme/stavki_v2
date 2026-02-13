@@ -92,6 +92,16 @@ class LivePredictor:
         self.team_avg_rating: Dict[str, float] = {}  # team -> rolling avg XI rating
         self.referee_profiles: Dict[str, Dict] = {}  # referee -> profile
         
+        # Phase 3: Rolling match stats per team
+        self.team_fouls: Dict[str, float] = {}
+        self.team_yellows: Dict[str, float] = {}
+        self.team_corners: Dict[str, float] = {}
+        self.team_possession: Dict[str, float] = {}
+        
+        # Phase 3: Referee target encoding
+        self.ref_encoded_goals: Dict[str, float] = {}
+        self.ref_encoded_cards: Dict[str, float] = {}
+        
         # Load ELO and form from historical data
         self._load_team_stats()
     
@@ -180,6 +190,47 @@ class LivePredictor:
                         f"ratings for {len(self.team_avg_rating)} teams, "
                         f"{len(self.referee_profiles)} referee profiles")
             
+            # Phase 3: Load rolling match stats from enriched data
+            for _, row in edf.tail(1000).iterrows():
+                home = row.get('HomeTeam', '')
+                away = row.get('AwayTeam', '')
+                # Rolling fouls
+                if home and 'rolling_fouls_home' in row and pd.notna(row['rolling_fouls_home']):
+                    self.team_fouls[home] = float(row['rolling_fouls_home'])
+                if away and 'rolling_fouls_away' in row and pd.notna(row['rolling_fouls_away']):
+                    self.team_fouls[away] = float(row['rolling_fouls_away'])
+                # Rolling yellows
+                if home and 'rolling_yellows_home' in row and pd.notna(row['rolling_yellows_home']):
+                    self.team_yellows[home] = float(row['rolling_yellows_home'])
+                if away and 'rolling_yellows_away' in row and pd.notna(row['rolling_yellows_away']):
+                    self.team_yellows[away] = float(row['rolling_yellows_away'])
+                # Rolling corners
+                if home and 'rolling_corners_home' in row and pd.notna(row['rolling_corners_home']):
+                    self.team_corners[home] = float(row['rolling_corners_home'])
+                if away and 'rolling_corners_away' in row and pd.notna(row['rolling_corners_away']):
+                    self.team_corners[away] = float(row['rolling_corners_away'])
+                # Rolling possession
+                if home and 'rolling_possession_home' in row and pd.notna(row['rolling_possession_home']):
+                    self.team_possession[home] = float(row['rolling_possession_home'])
+                if away and 'rolling_possession_away' in row and pd.notna(row['rolling_possession_away']):
+                    self.team_possession[away] = float(row['rolling_possession_away'])
+            
+            # Phase 3: Referee target encoding from enriched data 
+            if 'ref_encoded_goals' in edf.columns and 'Referee' in edf.columns:
+                for _, row in edf.tail(5000).iterrows():
+                    ref = row.get('Referee')
+                    if pd.isna(ref) or not ref:
+                        continue
+                    ref = str(ref).strip().lower()
+                    if 'ref_encoded_goals' in row and pd.notna(row['ref_encoded_goals']):
+                        self.ref_encoded_goals[ref] = float(row['ref_encoded_goals'])
+                    if 'ref_encoded_cards' in row and pd.notna(row['ref_encoded_cards']):
+                        self.ref_encoded_cards[ref] = float(row['ref_encoded_cards'])
+            
+            logger.info(f"Phase 3: {len(self.team_fouls)} teams with fouls, "
+                        f"{len(self.team_corners)} with corners, "
+                        f"{len(self.ref_encoded_goals)} refs encoded")
+            
         except Exception as e:
             logger.warning(f"Could not load team stats: {e}")
     
@@ -262,6 +313,26 @@ class LivePredictor:
             'ref_cards_per_game_t1': ref.get('cards_pg', 3.5),
             'ref_over25_rate': ref.get('over25_rate', 0.55),
             'ref_strictness_t1': ref.get('strictness', 0.0),
+            # Phase 3: Formation features
+            # Formations not available pre-match from API, use defaults
+            'formation_score_home': 0.5,
+            'formation_score_away': 0.5,
+            'formation_mismatch': 0.0,
+            'matchup_home_wr': 0.44,
+            'matchup_sample_size': 0.0,
+            'formation_is_known': 0,
+            # Phase 3: Rolling match stats
+            'rolling_fouls_home': self.team_fouls.get(home, 12.0),
+            'rolling_fouls_away': self.team_fouls.get(away, 12.0),
+            'rolling_yellows_home': self.team_yellows.get(home, 2.0),
+            'rolling_yellows_away': self.team_yellows.get(away, 2.0),
+            'rolling_corners_home': self.team_corners.get(home, 5.0),
+            'rolling_corners_away': self.team_corners.get(away, 5.0),
+            'rolling_possession_home': self.team_possession.get(home, 50.0),
+            'rolling_possession_away': self.team_possession.get(away, 50.0),
+            # Phase 3: Referee target encoding
+            'ref_encoded_goals': self.ref_encoded_goals.get(ref_name, 2.7) if ref_name else 2.7,
+            'ref_encoded_cards': self.ref_encoded_cards.get(ref_name, 3.9) if ref_name else 3.9,
         }
         
         return pd.DataFrame([features])
