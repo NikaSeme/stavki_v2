@@ -6297,3 +6297,20 @@ Done! ✅
 2026-02-13 16:53:20 [INFO] backfill:   Errors: 0
 2026-02-13 16:53:20 [INFO] backfill: 
 Done! ✅
+2026-02-13 17:13:32 [INFO] stavki.data.collectors.sportmonks: SportMonks client initialized
+2026-02-13 17:13:32 [INFO] backfill: 
+==================================================
+2026-02-13 17:13:32 [INFO] backfill: PHASE 2: Fetching xG stats
+2026-02-13 17:13:32 [INFO] backfill: ==================================================
+2026-02-13 17:13:32 [INFO] backfill: Resuming: 23330 fixtures already fetched
+2026-02-13 17:13:32 [INFO] backfill: Fixtures to fetch: 0
+2026-02-13 17:13:32 [INFO] backfill: 
+==================================================
+2026-02-13 17:13:32 [INFO] backfill: Phase 2 Complete
+2026-02-13 17:13:32 [INFO] backfill:   Total fetched: 23330
+2026-02-13 17:13:32 [INFO] backfill:   With xG data: 0 (0.0%)
+2026-02-13 17:13:32 [INFO] backfill:   With lineups: 23150 (99.2%)
+2026-02-13 17:13:32 [INFO] backfill:   With referee: 23149 (99.2%)
+2026-02-13 17:13:32 [INFO] backfill:   Errors: 0
+2026-02-13 17:13:32 [INFO] backfill: 
+Done! ✅

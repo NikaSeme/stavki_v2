@@ -290,4 +290,22 @@ def create_default_scheduler() -> Scheduler:
         run_immediately=False,
     )
     
+    # Job 3: Capture closing odds every 5 minutes (for CLV tracking)
+    def capture_closing_odds():
+        try:
+            from stavki.data.collectors.closing_odds import ClosingOddsCollector
+            collector = ClosingOddsCollector()
+            captured = collector.capture()
+            if captured:
+                logger.info(f"Captured closing odds for {captured} matches")
+        except Exception as e:
+            logger.error(f"Closing odds capture failed: {e}")
+    
+    scheduler.add_job(
+        name="closing_odds",
+        func=capture_closing_odds,
+        minutes=5,
+        run_immediately=False,
+    )
+    
     return scheduler

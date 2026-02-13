@@ -426,6 +426,105 @@ class Database:
                 for row in cursor.fetchall()
             ]
     
+    def save_closing_odds(
+        self,
+        match_id: str,
+        captured_at: datetime,
+        minutes_before_kickoff: int,
+        pinnacle_home: Optional[float] = None,
+        pinnacle_draw: Optional[float] = None,
+        pinnacle_away: Optional[float] = None,
+        avg_home: float = 0.0,
+        avg_draw: Optional[float] = None,
+        avg_away: float = 0.0,
+        best_home: float = 0.0,
+        best_draw: Optional[float] = None,
+        best_away: float = 0.0,
+    ) -> None:
+        """Save closing odds for a match (for CLV tracking)."""
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO closing_odds 
+                (match_id, captured_at, minutes_before_kickoff,
+                 pinnacle_home, pinnacle_draw, pinnacle_away,
+                 avg_home, avg_draw, avg_away,
+                 best_home, best_draw, best_away)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                match_id,
+                captured_at.isoformat(),
+                minutes_before_kickoff,
+                pinnacle_home,
+                pinnacle_draw,
+                pinnacle_away,
+                avg_home,
+                avg_draw,
+                avg_away,
+                best_home,
+                best_draw,
+                best_away,
+            ))
+            logger.debug(f"Saved closing odds for match {match_id}")
+    
+    def get_closing_odds(self, match_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get closing odds for a match.
+        
+        Returns:
+            Dict with keys: pinnacle_home, pinnacle_draw, pinnacle_away,
+            avg_home, avg_draw, avg_away, best_home, best_draw, best_away,
+            minutes_before_kickoff, captured_at. None if not found.
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM closing_odds WHERE match_id = ?",
+                (match_id,),
+            )
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            return {
+                "match_id": row["match_id"],
+                "captured_at": row["captured_at"],
+                "minutes_before_kickoff": row["minutes_before_kickoff"],
+                "pinnacle_home": row["pinnacle_home"],
+                "pinnacle_draw": row["pinnacle_draw"],
+                "pinnacle_away": row["pinnacle_away"],
+                "avg_home": row["avg_home"],
+                "avg_draw": row["avg_draw"],
+                "avg_away": row["avg_away"],
+                "best_home": row["best_home"],
+                "best_draw": row["best_draw"],
+                "best_away": row["best_away"],
+            }
+    
+    def update_bet_closing_odds(
+        self,
+        bet_id: str,
+        closing_odds: float,
+        clv_pct: float,
+    ) -> None:
+        """
+        Update a bet's closing odds and CLV without settling it.
+        
+        This is called when closing odds are captured (before kickoff),
+        separate from settlement (after the match ends).
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE bets SET 
+                    closing_odds = ?,
+                    clv_pct = ?
+                WHERE id = ?
+            """, (closing_odds, clv_pct, bet_id))
+            logger.debug(f"Updated CLV for bet {bet_id}: {clv_pct:+.1f}%")
+    
+
     # ==================== BETS ====================
     
     def save_bet(self, bet: PlacedBet) -> None:

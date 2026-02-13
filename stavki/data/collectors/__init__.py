@@ -16,6 +16,8 @@ from .historical import (
     FOOTBALL_DATA_LEAGUES,
 )
 
+from .closing_odds import ClosingOddsCollector
+
 
 __all__ = [
     # Odds API
@@ -26,4 +28,6 @@ __all__ = [
     "FootballDataLoader",
     "HistoricalOddsExtractor",
     "FOOTBALL_DATA_LEAGUES",
+    # CLV Tracking
+    "ClosingOddsCollector",
 ]
