@@ -1017,6 +1017,9 @@ class SportMonksCollector:
                             away_odds=odds_map["away"]
                         )
                         snapshots.append(snap)
+                    else:
+                        missing = [k for k in ["home", "draw", "away"] if k not in odds_map]
+                        logger.debug(f"Dropped snapshot for match {m.id} (Bookmaker: {o.get('bookmaker', 'Unknown')}): Missing {missing}")
                 
                 results[m.id] = snapshots
                 

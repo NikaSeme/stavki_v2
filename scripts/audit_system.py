@@ -46,6 +46,11 @@ def audit_system():
     # 2. Collector Logic Simulation
     print("\n--- 2. Pipeline Simulation (DailyPipeline) ---")
     
+    # Configure logging to see our debug messages
+    logging.basicConfig(level=logging.DEBUG)
+    # Filter out noisy libraries
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    
     try:
         from stavki.data.collectors.sportmonks import SportMonksCollector, SportMonksClient
         from stavki.data.schemas import League
