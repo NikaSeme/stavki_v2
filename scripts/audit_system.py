@@ -114,20 +114,50 @@ def audit_system():
                          print(f"   Total Odds Records: {len(all_odds)}")
                          
                          if all_odds:
-                             print("   Sample of available markets:")
-                             seen_markets = set()
-                             for o in all_odds[:100]: # Check more records
+                             print(f"   Scanning all {len(all_odds)} records for 1X2/Fulltime Result...")
+                             
+                             coverage = {} # { bookmaker: { home: val, draw: val, away: val } }
+                             
+                             # Iterate over ALL records to ensure we find matching parts
+                             for o in all_odds:
                                  mkt_name = o.get("market", {}).get("name", "Unknown")
                                  bk_name = o.get("bookmaker", {}).get("name", "Unknown")
                                  
-                                 # Print details for our target market - DUMP ALL of them
-                                 if "Fulltime Result" in mkt_name or "1X2" in mkt_name:
-                                     print(f"      - TARGET FOUND: '{mkt_name}' | Bookmaker: '{bk_name}' | Label: {o.get('label')} | Value: {o.get('value')}")
-                                     seen_markets.add(mkt_name)
+                                 is_target = False
+                                 if "1X2" in mkt_name or "Fulltime Result" in mkt_name or "Match Winner" in mkt_name or "3Way Result" in mkt_name:
+                                     is_target = True
                                  
-                                 elif mkt_name not in seen_markets:
-                                     print(f"      - Market: '{mkt_name}' | Bookmaker: '{bk_name}'")
-                                     seen_markets.add(mkt_name)
+                                 if is_target:
+                                     if bk_name not in coverage:
+                                         coverage[bk_name] = {}
+                                         
+                                     label = o.get("label", "").lower()
+                                     val = o.get("value")
+                                     
+                                     if label in ["1", "home"]:
+                                         coverage[bk_name]["home"] = val
+                                     elif label in ["x", "draw"]:
+                                         coverage[bk_name]["draw"] = val
+                                     elif label in ["2", "away"]:
+                                         coverage[bk_name]["away"] = val
+                             
+                             print("\n   --- Bookmaker Coverage Analysis ---")
+                             complete_count = 0
+                             for bk, outcomes in coverage.items():
+                                 has_h = "home" in outcomes
+                                 has_d = "draw" in outcomes
+                                 has_a = "away" in outcomes
+                                 
+                                 status = "✅ COMPLETE" if (has_h and has_d and has_a) else "⚠️ PARTIAL"
+                                 if status == "✅ COMPLETE":
+                                     complete_count += 1
+                                     
+                                 print(f"   {bk}: {status} [H:{outcomes.get('home')} D:{outcomes.get('draw')} A:{outcomes.get('away')}]")
+                                 
+                             if complete_count == 0:
+                                 print("\n   ❌ CRITICAL: No bookmaker has complete odds set!")
+                             else:
+                                 print(f"\n   ✅ FOUND {complete_count} bookmakers with complete odds sets.")
                          else:
                              print("   ❌ No odds data found in 'odds' field. Check plan/includes.")
                              
