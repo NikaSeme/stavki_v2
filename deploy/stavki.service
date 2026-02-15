@@ -11,6 +11,7 @@ ExecStart=/usr/bin/python3 -m stavki.interfaces.cli_app scheduler --hours 1
 
 # Environment
 EnvironmentFile=/home/%i/stavki_v2/.env
+Environment="PYTHONPATH=/home/%i/stavki_v2"
 
 # Auto-restart on crash (30s delay)
 Restart=always

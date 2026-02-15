@@ -17,6 +17,8 @@ from .historical import (
 )
 
 from .closing_odds import ClosingOddsCollector
+from .sportmonks import SportMonksCollector
+from .betfair import BetfairCollector
 
 
 __all__ = [
@@ -30,4 +32,8 @@ __all__ = [
     "FOOTBALL_DATA_LEAGUES",
     # CLV Tracking
     "ClosingOddsCollector",
+    # SportMonks
+    "SportMonksCollector",
+    # Betfair
+    "BetfairCollector",
 ]
