@@ -93,13 +93,29 @@ def audit_system():
                  m = matches[0]
                  print(f"\n   Deep Debug: Raw odds response for Match {m.source_id}...")
                  try:
-                     raw_odds = sm_collector.client.get_fixture_odds(int(m.source_id), market="1X2")
-                     print(f"   Raw Response Type: {type(raw_odds)}")
-                     print(f"   Raw Response Length: {len(raw_odds)}")
-                     if raw_odds:
-                         print(f"   Sample: {raw_odds[0]}")
+                     # Manually request with same include as collector
+                     raw_resp = sm_collector.client._request(
+                        f"fixtures/{m.source_id}",
+                        includes=["odds.bookmaker", "odds.market"] 
+                     )
+                     print(f"   API Response Keys: {list(raw_resp.keys())}")
+                     
+                     data = raw_resp.get("data", {})
+                     all_odds = data.get("odds", [])
+                     print(f"   Total Odds Records: {len(all_odds)}")
+                     
+                     if all_odds:
+                         print("   Sample of available markets:")
+                         seen_markets = set()
+                         for o in all_odds[:20]:
+                             mkt_name = o.get("market", {}).get("name", "Unknown")
+                             bk_name = o.get("bookmaker", {}).get("name", "Unknown")
+                             if mkt_name not in seen_markets:
+                                 print(f"      - Market: '{mkt_name}' | Bookmaker: '{bk_name}'")
+                                 seen_markets.add(mkt_name)
                      else:
-                         print("   Raw response is empty list []")
+                         print("   ❌ No odds data found in 'odds' field. Check plan/includes.")
+                         
                  except Exception as e:
                      print(f"   Error fetching raw odds: {e}")
 
