@@ -937,11 +937,11 @@ class SportMonksCollector:
                     id=str(f.fixture_id),
                     home_team=Team(
                         name=f.home_team,
-                        normalized_name=SourceNormalizer.normalize(f.home_team),
+                        normalized_name=SourceNormalizer.from_sportmonks(f.home_team),
                     ),
                     away_team=Team(
                         name=f.away_team,
-                        normalized_name=SourceNormalizer.normalize(f.away_team),
+                        normalized_name=SourceNormalizer.from_sportmonks(f.away_team),
                     ),
                     league=league,
                     commence_time=f.kickoff,
