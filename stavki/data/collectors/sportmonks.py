@@ -816,7 +816,9 @@ class SportMonksClient:
         data = response.get("data", {})
         all_odds = data.get("odds", [])
         
-        result = []
+        # Group by bookmaker since V3 returns flat list of outcomes
+        grouped_odds = {}
+        
         for odd in all_odds:
             market_name = odd.get("market", {}).get("name", "")
             logger.debug(f"Checking odds market: '{market_name}' against target '{market}'")
@@ -824,40 +826,53 @@ class SportMonksClient:
             # Smart market matching
             match_found = False
             if market == "1X2":
-                # Check for common aliases
                 if any(alias in market_name for alias in ["1X2", "Fulltime Result", "Match Winner", "3Way Result"]):
                     match_found = True
             else:
-                # Default substring match
                 if market.lower() in market_name.lower():
                     match_found = True
                     
             if not match_found:
                 continue
             
-            bookmaker = odd.get("bookmaker", {}).get("name", "Unknown")
-            odds_values = odd.get("odds", [])
-            
-            parsed_odds = {
-                "bookmaker": bookmaker,
-                "market": market_name,
-                "timestamp": odd.get("updated_at"),
-                "odds": {}
-            }
-            
-            for o in odds_values:
-                label = o.get("label", "").lower()
-                value = o.get("value")
+            # Key by bookmaker
+            bm_id = odd.get("bookmaker_id")
+            if not bm_id:
+                continue
                 
-                if label in ["1", "home"]:
-                    parsed_odds["odds"]["home"] = float(value)
-                elif label in ["x", "draw"]:
-                    parsed_odds["odds"]["draw"] = float(value)
-                elif label in ["2", "away"]:
-                    parsed_odds["odds"]["away"] = float(value)
+            if bm_id not in grouped_odds:
+                grouped_odds[bm_id] = {
+                    "bookmaker": odd.get("bookmaker", {}).get("name", "Unknown"),
+                    "market": market_name,
+                    "timestamp": odd.get("updated_at") or odd.get("latest_bookmaker_update"),
+                    "odds": {}
+                }
             
-            if parsed_odds["odds"]:
-                result.append(parsed_odds)
+            # Extract Value
+            label = odd.get("label", "").lower()
+            value = odd.get("value")
+            if not value:
+                continue
+                
+            try:
+                val_float = float(value)
+                if label in ["1", "home"]:
+                    grouped_odds[bm_id]["odds"]["home"] = val_float
+                elif label in ["x", "draw"]:
+                    grouped_odds[bm_id]["odds"]["draw"] = val_float
+                elif label in ["2", "away"]:
+                    grouped_odds[bm_id]["odds"]["away"] = val_float
+            except ValueError:
+                continue
+        
+        # Convert groups to list
+        result = []
+        for data in grouped_odds.values():
+            # Only include if we have at least one outcome (or strictly all 3?)
+            # Schema expects all 3 usually, but let's be permissive and filter later if needed.
+            # Actually, fetch_odds checks for all 3.
+            if data["odds"]:
+                result.append(data)
         
         return result
     
