@@ -946,7 +946,7 @@ class SportMonksCollector:
                     league=league,
                     commence_time=f.kickoff,
                     source="sportmonks",
-                    source_id=f.fixture_id,
+                    source_id=str(f.fixture_id),
                 )
                 matches.append(match)
             except Exception as e:
