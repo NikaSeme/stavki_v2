@@ -107,10 +107,18 @@ def audit_system():
                      if all_odds:
                          print("   Sample of available markets:")
                          seen_markets = set()
-                         for o in all_odds[:20]:
+                         for o in all_odds[:50]: # Check more records
                              mkt_name = o.get("market", {}).get("name", "Unknown")
                              bk_name = o.get("bookmaker", {}).get("name", "Unknown")
-                             if mkt_name not in seen_markets:
+                             
+                             # Print details for our target market
+                             if "Fulltime Result" in mkt_name or "1X2" in mkt_name:
+                                 if mkt_name not in seen_markets:
+                                     print(f"      - TARGET FOUND: '{mkt_name}' | Bookmaker: '{bk_name}'")
+                                     print(f"        Raw Values: {o.get('odds', [])}")
+                                     seen_markets.add(mkt_name)
+                             
+                             elif mkt_name not in seen_markets:
                                  print(f"      - Market: '{mkt_name}' | Bookmaker: '{bk_name}'")
                                  seen_markets.add(mkt_name)
                      else:
