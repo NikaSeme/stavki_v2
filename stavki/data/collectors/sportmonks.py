@@ -994,7 +994,9 @@ class SportMonksCollector:
                 
             except Exception as e:
                 logger.warning(f"Failed to fetch odds for match {m.id}: {e}")
-                
+        
+        return results
+
     def fetch_match_details(
         self, 
         match: "Match"
