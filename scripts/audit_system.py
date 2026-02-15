@@ -115,7 +115,7 @@ def audit_system():
                              if "Fulltime Result" in mkt_name or "1X2" in mkt_name:
                                  if mkt_name not in seen_markets:
                                      print(f"      - TARGET FOUND: '{mkt_name}' | Bookmaker: '{bk_name}'")
-                                     print(f"        Raw Values: {o.get('odds', [])}")
+                                     print(f"        Full Object Dump: {o}")  # Dump everything
                                      seen_markets.add(mkt_name)
                              
                              elif mkt_name not in seen_markets:
