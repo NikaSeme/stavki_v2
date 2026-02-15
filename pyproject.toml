@@ -38,7 +38,7 @@ all = [
 ]
 
 [project.scripts]
-stavki = "stavki.interfaces.cli:main"
+stavki = "stavki.interfaces.cli_app:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

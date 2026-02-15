@@ -7,7 +7,7 @@ Documentation=https://github.com/your-repo/stavki_v2
 Type=simple
 User=%i
 WorkingDirectory=/home/%i/stavki_v2
-ExecStart=/usr/bin/python3 -m stavki.interfaces.cli scheduler --hours 1
+ExecStart=/usr/bin/python3 -m stavki.interfaces.cli_app scheduler --hours 1
 
 # Environment
 EnvironmentFile=/home/%i/stavki_v2/.env
