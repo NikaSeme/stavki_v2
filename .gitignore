@@ -44,6 +44,8 @@ artifacts/models/*.cbm
 artifacts/models/*.pt
 artifacts/cache/
 artifacts/logs/
+logs/
+*.log
 
 # Database
 *.db
