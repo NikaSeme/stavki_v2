@@ -1,0 +1,30 @@
+[Unit]
+Description=STAVKI Telegram Bot Service
+After=network.target
+Documentation=https://github.com/your-repo/stavki_v2
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/stavki_v2
+ExecStart=/usr/bin/python3 scripts/run_bot.py
+
+# Environment
+EnvironmentFile=/home/%i/stavki_v2/.env
+Environment="PYTHONPATH=/home/%i/stavki_v2"
+
+# Auto-restart on crash (30s delay)
+Restart=always
+RestartSec=30
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=50%
+
+# Logging goes to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stavki-bot
+
+[Install]
+WantedBy=multi-user.target

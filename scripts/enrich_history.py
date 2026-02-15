@@ -95,6 +95,7 @@ def main():
         
     # 3. Process
     new_rows = []
+    total_processed = 0
     
     try:
         for row in tqdm(matches_to_process):
@@ -111,7 +112,12 @@ def main():
                 source_id=fid
             )
             
-            stats, lineups = collector.fetch_match_details(match)
+            # Fetch details
+            try:
+                stats, lineups = collector.fetch_match_details(match)
+            except Exception as e:
+                logger.warning(f"Failed to fetch details for {fid}: {e}")
+                stats, lineups = None, None
             
             # Flatten data
             rich_row = row.to_dict()
@@ -134,40 +140,91 @@ def main():
                     rich_row["away_lineup"] = lineups.away.model_dump_json()
                     
             new_rows.append(rich_row)
+            total_processed += 1
             
-            # Rate limit politeness (client handles it, but good to be safe)
-            # 500ms delay
-            # time.sleep(0.1)
-            
-            # Periodic save
-            if len(new_rows) >= 50:
-                _save_chunk(new_rows, output_path, rich_df)
-                new_rows = []
-                # Reload rich_df to keep state
-                if output_path.exists():
-                    rich_df = pd.read_parquet(output_path)
-                    
+            # Periodic save (write to temp part)
+            if len(new_rows) >= 500: # Increased chunk size
+                _write_temp_chunk(new_rows, output_path)
+                new_rows = [] 
+                
     except KeyboardInterrupt:
-        logger.warning("Interrupted! Saving progress...")
+        logger.warning("Interrupted! Saving remaining progress...")
         
-    # Final save
+    # Final save of buffer
     if new_rows:
-        _save_chunk(new_rows, output_path, rich_df)
+        _write_temp_chunk(new_rows, output_path)
         
-    logger.info("Done.")
+    # Merge all temp files
+    _finalize_merge(output_path)
+        
+    logger.info(f"Done. Processed {total_processed} matches.")
 
-def _save_chunk(new_rows, path, existing_df):
-    new_df = pd.DataFrame(new_rows)
-    if not existing_df.empty:
-        combined = pd.concat([existing_df, new_df], ignore_index=True)
-    else:
-        combined = new_df
+def _write_temp_chunk(new_rows, main_path):
+    """Write a standalone temporary chunk."""
+    if not new_rows:
+        return
         
-    # Deduplicate by match_id, keep last
+    # Unique temp name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    temp_path = main_path.parent / f"{main_path.stem}_temp_{timestamp}.parquet"
+    
+    df = pd.DataFrame(new_rows)
+    df.to_parquet(temp_path, index=False)
+    # logger.debug(f"Wrote temp chunk: {temp_path.name}") # Verbose
+
+def _finalize_merge(main_path):
+    """Merge all temp chunks into the main file."""
+    import glob
+    
+    # Find all temp files matching pattern
+    pattern = f"{main_path.parent}/{main_path.stem}_temp_*.parquet"
+    temp_files = sorted(glob.glob(pattern))
+    
+    if not temp_files:
+        logger.info("No new data chunks to merge.")
+        return
+        
+    logger.info(f"Merging {len(temp_files)} temporary chunks...")
+    
+    # Load all temps
+    dfs = []
+    
+    # Load existing main file if it exists
+    if main_path.exists():
+        try:
+            dfs.append(pd.read_parquet(main_path))
+        except Exception as e:
+            logger.error(f"CRITICAL: Could not read main file {main_path}: {e}")
+            logger.error("Aborting merge to prevent data loss. Temp files preserved.")
+            raise e
+            
+    # Load chunks
+    for tf in temp_files:
+        try:
+            dfs.append(pd.read_parquet(tf))
+        except Exception as e:
+            logger.error(f"Corrupt temp file {tf}: {e}")
+            
+    if not dfs:
+        return
+        
+    # Concat
+    combined = pd.concat(dfs, ignore_index=True)
+    
+    # Deduplicate
     combined = combined.drop_duplicates(subset=["match_id"], keep="last")
     
-    combined.to_parquet(path, index=False)
-    logger.info(f"Saved {len(combined)} rows to {path}")
+    # Write optimized result
+    combined.to_parquet(main_path, index=False)
+    logger.info(f"Successfully merged into {main_path} (Total rows: {len(combined)})")
+    
+    # Cleanup temps
+    for tf in temp_files:
+        try:
+            Path(tf).unlink()
+        except:
+            pass
+    logger.info("Cleaned up temp files.")
 
 if __name__ == "__main__":
     main()

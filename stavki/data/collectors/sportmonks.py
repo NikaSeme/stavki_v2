@@ -810,7 +810,7 @@ class SportMonksClient:
         """
         response = self._request(
             f"fixtures/{fixture_id}",
-            includes=["odds.bookmaker"]
+            includes=["odds.bookmaker", "odds.market"]
         )
         
         data = response.get("data", {})

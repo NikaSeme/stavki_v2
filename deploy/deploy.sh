@@ -57,29 +57,38 @@ echo "[5/6] Installing systemd service..."
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}@.service"
 
 # Replace %i with actual user in the template
-sudo cp "$SCRIPT_DIR/stavki.service" "$SERVICE_FILE"
+sudo cp "$SCRIPT_DIR/stavki.service" "/etc/systemd/system/${SERVICE_NAME}@.service"
+sudo cp "$SCRIPT_DIR/stavki_bot.service" "/etc/systemd/system/${SERVICE_NAME}_bot@.service"
+
 sudo systemctl daemon-reload
 sudo systemctl enable "${SERVICE_NAME}@${CURRENT_USER}"
+sudo systemctl enable "${SERVICE_NAME}_bot@${CURRENT_USER}"
 echo "Enabled ${SERVICE_NAME}@${CURRENT_USER}"
+echo "Enabled ${SERVICE_NAME}_bot@${CURRENT_USER}"
 
 # 6. Start service
 echo ""
-echo "[6/6] Starting service..."
+echo "[6/6] Starting services..."
 sudo systemctl restart "${SERVICE_NAME}@${CURRENT_USER}"
+sudo systemctl restart "${SERVICE_NAME}_bot@${CURRENT_USER}"
 sleep 2
 
 # Check status
-if sudo systemctl is-active --quiet "${SERVICE_NAME}@${CURRENT_USER}"; then
+if sudo systemctl is-active --quiet "${SERVICE_NAME}@${CURRENT_USER}" && sudo systemctl is-active --quiet "${SERVICE_NAME}_bot@${CURRENT_USER}"; then
     echo ""
     echo "============================================"
-    echo "  ✅ STAVKI is running!"
+    echo "  ✅ STAVKI System is running!"
+    echo "     - Scheduler: Active"
+    echo "     - Telegram Bot: Active"
     echo ""
     echo "  Health: curl http://localhost:8080/health"
-    echo "  Logs:   journalctl -u ${SERVICE_NAME}@${CURRENT_USER} -f"
-    echo "  Stop:   sudo systemctl stop ${SERVICE_NAME}@${CURRENT_USER}"
+    echo "  Logs (Scheduler): journalctl -u ${SERVICE_NAME}@${CURRENT_USER} -f"
+    echo "  Logs (Bot):       journalctl -u ${SERVICE_NAME}_bot@${CURRENT_USER} -f"
+    echo "  Stop All:         sudo systemctl stop ${SERVICE_NAME}@${CURRENT_USER} ${SERVICE_NAME}_bot@${CURRENT_USER}"
     echo "============================================"
 else
     echo ""
-    echo "⚠️  Service failed to start. Check logs:"
+    echo "⚠️  Services failed to start fully. Check logs:"
     echo "  journalctl -u ${SERVICE_NAME}@${CURRENT_USER} --no-pager -n 20"
+    echo "  journalctl -u ${SERVICE_NAME}_bot@${CURRENT_USER} --no-pager -n 20"
 fi

@@ -17,6 +17,7 @@ from pathlib import Path
 from stavki.config import PROJECT_ROOT, DATA_DIR, MODELS_DIR
 from stavki.data.loader import UnifiedDataLoader, get_loader
 from stavki.data.collectors.sportmonks import SportMonksClient, MatchFixture
+from stavki.features.builders.formation import FormationFeatureBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,9 @@ class LivePredictor:
         # Phase 3: Referee target encoding
         self.ref_encoded_goals: Dict[str, float] = {}
         self.ref_encoded_cards: Dict[str, float] = {}
+        
+        # Phase 3: Formation Builder
+        self.formation_builder = FormationFeatureBuilder()
         
         # Load ELO and form from historical data
         self._load_team_stats()
@@ -227,9 +231,32 @@ class LivePredictor:
                     if 'ref_encoded_cards' in row and pd.notna(row['ref_encoded_cards']):
                         self.ref_encoded_cards[ref] = float(row['ref_encoded_cards'])
             
+            # Phase 3: Load historical formations for builder
+            # Use columns formation_home / formation_away if available
+            if 'formation_home' in edf.columns and 'formation_away' in edf.columns:
+                 # Manually populate builder's internal state
+                 team_fmts = self.formation_builder._team_formations
+                 for _, row in edf.tail(2000).iterrows():
+                     h_name = str(row.get("HomeTeam")).strip().lower()
+                     a_name = str(row.get("AwayTeam")).strip().lower()
+                     h_fmt = row.get("formation_home")
+                     a_fmt = row.get("formation_away")
+                     
+                     if h_name and pd.notna(h_fmt):
+                         if h_name not in team_fmts: team_fmts[h_name] = []
+                         team_fmts[h_name].append(str(h_fmt))
+                         team_fmts[h_name] = team_fmts[h_name][-10:]
+                         
+                     if a_name and pd.notna(a_fmt):
+                         if a_name not in team_fmts: team_fmts[a_name] = []
+                         team_fmts[a_name].append(str(a_fmt))
+                         team_fmts[a_name] = team_fmts[a_name][-10:]
+                 self.formation_builder._is_fitted = True
+
             logger.info(f"Phase 3: {len(self.team_fouls)} teams with fouls, "
                         f"{len(self.team_corners)} with corners, "
-                        f"{len(self.ref_encoded_goals)} refs encoded")
+                        f"{len(self.ref_encoded_goals)} refs encoded, "
+                        f"{len(self.formation_builder._team_formations)} teams with formations")
             
         except Exception as e:
             logger.warning(f"Could not load team stats: {e}")
@@ -313,15 +340,26 @@ class LivePredictor:
             'ref_cards_per_game_t1': ref.get('cards_pg', 3.5),
             'ref_over25_rate': ref.get('over25_rate', 0.55),
             'ref_strictness_t1': ref.get('strictness', 0.0),
-            # Phase 3: Formation features
-            # Formations not available pre-match from API, use defaults
-            'formation_score_home': 0.5,
-            'formation_score_away': 0.5,
-            'formation_mismatch': 0.0,
-            'matchup_home_wr': 0.44,
-            'matchup_sample_size': 0.0,
-            'formation_is_known': 0,
-            # Phase 3: Rolling match stats
+        }
+        
+        # Phase 3: Formation features
+        from stavki.data.schemas import Match, Team, League
+        
+        # Construct minimal Match object for the builder
+        match_obj = Match(
+            id=str(fixture.fixture_id),
+            home_team=Team(name=home),
+            away_team=Team(name=away),
+            league=League.EPL, # Dummy valid league, builder doesn't use it
+            commence_time=fixture.kickoff,
+            source="live_predictor"
+        )
+        
+        fmt_features = self.formation_builder.get_features(match_obj)
+        features.update(fmt_features)
+        
+        # Phase 3: Rolling match stats & Ref encodings
+        features.update({
             'rolling_fouls_home': self.team_fouls.get(home, 12.0),
             'rolling_fouls_away': self.team_fouls.get(away, 12.0),
             'rolling_yellows_home': self.team_yellows.get(home, 2.0),
@@ -330,10 +368,9 @@ class LivePredictor:
             'rolling_corners_away': self.team_corners.get(away, 5.0),
             'rolling_possession_home': self.team_possession.get(home, 50.0),
             'rolling_possession_away': self.team_possession.get(away, 50.0),
-            # Phase 3: Referee target encoding
             'ref_encoded_goals': self.ref_encoded_goals.get(ref_name, 2.7) if ref_name else 2.7,
             'ref_encoded_cards': self.ref_encoded_cards.get(ref_name, 3.9) if ref_name else 3.9,
-        }
+        })
         
         return pd.DataFrame([features])
     
@@ -355,7 +392,7 @@ class LivePredictor:
             if api_odds:
                 odds = api_odds[0].get('odds', {})
             else:
-                odds = {'home': 2.5, 'draw': 3.3, 'away': 2.8}  # Defaults
+                odds = {}  # No odds available
         
         # Build features
         X = self._build_features(fixture, odds)
@@ -375,30 +412,48 @@ class LivePredictor:
             model_probs = np.array([exp_home, 0.27, 1 - exp_home - 0.27])
         
         # Blend with market
-        market_probs = np.array([
+        imp_probs = np.array([
             X['imp_home_norm'].iloc[0],
             X['imp_draw_norm'].iloc[0], 
             X['imp_away_norm'].iloc[0]
         ])
         
-        blended = self.model_alpha * model_probs + (1 - self.model_alpha) * market_probs
+        # If any market prob is NaN (missing odds), fallback to pure model
+        if np.isnan(imp_probs).any():
+            blended = model_probs
+        else:
+            blended = self.model_alpha * model_probs + (1 - self.model_alpha) * imp_probs
+            
         blended = blended / blended.sum()
         
         # Expected values
-        odds_arr = np.array([odds.get('home', 0), odds.get('draw', 0), odds.get('away', 0)])
-        evs = blended * odds_arr - 1
+        # Careful: odds might be missing
+        odds_h = odds.get('home')
+        odds_d = odds.get('draw')
+        odds_a = odds.get('away')
         
-        # Find best bet
-        best_idx = np.argmax(evs)
-        best_ev = evs[best_idx]
-        edge = blended[best_idx] - market_probs[best_idx]
-        
-        # Recommended?
-        recommended = best_ev >= self.min_ev and edge >= self.min_edge
-        
+        if odds_h and odds_d and odds_a:
+            odds_arr = np.array([odds_h, odds_d, odds_a])
+            evs = blended * odds_arr - 1
+            
+            # Find best bet
+            best_idx = np.argmax(evs)
+            best_ev = evs[best_idx]
+            edge = blended[best_idx] - imp_probs[best_idx]
+            
+            # Recommended?
+            recommended = best_ev >= self.min_ev and edge >= self.min_edge
+            best_bet_label = ['Home', 'Draw', 'Away'][best_idx]
+        else:
+            evs = np.array([None, None, None])
+            best_ev = None
+            edge = None
+            recommended = False
+            best_bet_label = None
+            
         # Kelly stake
         stake_pct = None
-        if recommended:
+        if recommended and best_ev is not None:
             # Kelly: f* = (p*b - 1) / (b - 1), where p=prob, b=odds
             p = blended[best_idx]
             b = odds_arr[best_idx]
@@ -421,7 +476,7 @@ class LivePredictor:
             ev_home=evs[0],
             ev_draw=evs[1],
             ev_away=evs[2],
-            best_bet=['Home', 'Draw', 'Away'][best_idx],
+            best_bet=best_bet_label,
             best_ev=best_ev,
             recommended=recommended,
             stake_pct=stake_pct
