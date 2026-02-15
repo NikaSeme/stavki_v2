@@ -819,6 +819,7 @@ class SportMonksClient:
         result = []
         for odd in all_odds:
             market_name = odd.get("market", {}).get("name", "")
+            logger.debug(f"Checking odds market: '{market_name}' against target '{market}'")
             
             # Smart market matching
             match_found = False
