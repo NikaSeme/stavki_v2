@@ -1,4 +1,8 @@
 """STAVKI CLI Module."""
-# Note: The actual CLI lives in stavki/interfaces/cli.py (the file).
-# This package exists for backwards compatibility but must not re-import
-# from itself to avoid circular imports.
+# Re-export main from the cli.py module for entry point compatibility
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from cli import main
+
+__all__ = ["main"]
