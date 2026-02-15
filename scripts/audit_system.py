@@ -116,16 +116,67 @@ def audit_system():
                              mkt_name = o.get("market", {}).get("name", "Unknown")
                              bk_name = o.get("bookmaker", {}).get("name", "Unknown")
                              
-                             # Print details for our target market
-                             if "Fulltime Result" in mkt_name or "1X2" in mkt_name:
-                                 if mkt_name not in seen_markets:
-                                     print(f"      - TARGET FOUND: '{mkt_name}' | Bookmaker: '{bk_name}'")
-                                     print(f"        Full Object Dump: {o}")  # Dump everything
-                                     seen_markets.add(mkt_name)
-                             
-                             elif mkt_name not in seen_markets:
-                                 print(f"      - Market: '{mkt_name}' | Bookmaker: '{bk_name}'")
-                                 seen_markets.add(mkt_name)
+    try:
+        from stavki.data.collectors.sportmonks import SportMonksCollector, SportMonksClient
+        
+        # Initialize
+        print("Initializing SportMonksCollector...")
+        sm_collector = SportMonksCollector()
+        print("✅ Collector initialized")
+        
+        # Test Fetch Matches
+        league_enum = League.SERIE_A
+        print(f"\nStep A: Fetching matches for {league_enum}...")
+        matches = sm_collector.fetch_matches(league_enum, max_hours_ahead=72)
+        
+        print(f"→ Found {len(matches)} matches")
+        if not matches:
+             print("❌ Failure: No matches found.")
+             # ... (matches printing code) ...
+
+        # ... (rest) ...
+        
+        # Deep debug odds for first match
+        if matches:
+             m = matches[0]
+             print(f"\n   Deep Debug: Raw odds response for Match {m.source_id}...")
+             
+             # Force logging to DEBUG again after imports might have reset it
+             logging.getLogger().setLevel(logging.DEBUG)
+             logging.getLogger("stavki").setLevel(logging.DEBUG)
+             
+             try:
+                 # Manually request with same include as collector
+                 raw_resp = sm_collector.client._request(
+                    f"fixtures/{m.source_id}",
+                    includes=["odds.bookmaker", "odds.market"] 
+                 )
+                 print(f"   API Response Keys: {list(raw_resp.keys())}")
+                 
+                 data = raw_resp.get("data", {})
+                 all_odds = data.get("odds", [])
+                 print(f"   Total Odds Records: {len(all_odds)}")
+                 
+                 if all_odds:
+                     print("   Sample of available markets:")
+                     seen_markets = set()
+                     for o in all_odds[:100]: # Check more records
+                         mkt_name = o.get("market", {}).get("name", "Unknown")
+                         bk_name = o.get("bookmaker", {}).get("name", "Unknown")
+                         
+                         # Print details for our target market - DUMP ALL of them
+                         if "Fulltime Result" in mkt_name or "1X2" in mkt_name:
+                             print(f"      - TARGET FOUND: '{mkt_name}' | Bookmaker: '{bk_name}' | Label: {o.get('label')} | Value: {o.get('value')}")
+                             seen_markets.add(mkt_name)
+                         
+                         elif mkt_name not in seen_markets:
+                             print(f"      - Market: '{mkt_name}' | Bookmaker: '{bk_name}'")
+                             seen_markets.add(mkt_name)
+                 else:
+                     print("   ❌ No odds data found in 'odds' field. Check plan/includes.")
+                     
+             except Exception as e:
+                 print(f"   Error fetching raw odds: {e}")
                      else:
                          print("   ❌ No odds data found in 'odds' field. Check plan/includes.")
                          
