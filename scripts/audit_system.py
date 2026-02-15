@@ -67,140 +67,91 @@ def audit_system():
         
         print(f"→ Found {len(matches)} matches")
         if not matches:
-            print("❌ Failure: No matches returned. Check debug_collector.py for details.")
-            return
-
-        for i, m in enumerate(matches[:3]):
-             print(f"   {i+1}. {m.home_team.name} vs {m.away_team.name} (ID: {m.id}, SourceID: {m.source_id})")
-
-        # Test Fetch Odds
-        print(f"\nStep B: Fetching odds for {len(matches)} matches...")
-        odds_results = sm_collector.fetch_odds(league_enum, matches=matches)
-        
-        print(f"→ Returned odds for {len(odds_results)} matches")
-        
-        # Inspect Odds
-        valid_odds_count = 0
-        for match_id, snapshots in odds_results.items():
-            if snapshots:
-                valid_odds_count += 1
-                snap = snapshots[0]
-                print(f"   Match {match_id}: {snap.bookmaker} -> H:{snap.home_odds} D:{snap.draw_odds} A:{snap.away_odds}")
-            else:
-                print(f"   Match {match_id}: No snapshots returned (empty list)")
-                
-        if valid_odds_count == 0:
-            print("❌ Failure: No valid odds found for any match.")
-            print("   Possible reasons: Market data missing in API, or parsing error.")
-            
-            # Deep debug odds for first match
-            if matches:
-                 m = matches[0]
-                 print(f"\n   Deep Debug: Raw odds response for Match {m.source_id}...")
-                 try:
-                     # Manually request with same include as collector
-                     raw_resp = sm_collector.client._request(
-                        f"fixtures/{m.source_id}",
-                        includes=["odds.bookmaker", "odds.market"] 
-                     )
-                     print(f"   API Response Keys: {list(raw_resp.keys())}")
-                     
-                     data = raw_resp.get("data", {})
-                     all_odds = data.get("odds", [])
-                     print(f"   Total Odds Records: {len(all_odds)}")
-                     
-                     if all_odds:
-                         print("   Sample of available markets:")
-                         seen_markets = set()
-                         for o in all_odds[:50]: # Check more records
-                             mkt_name = o.get("market", {}).get("name", "Unknown")
-                             bk_name = o.get("bookmaker", {}).get("name", "Unknown")
-                             
-    try:
-        from stavki.data.collectors.sportmonks import SportMonksCollector, SportMonksClient
-        
-        # Initialize
-        print("Initializing SportMonksCollector...")
-        sm_collector = SportMonksCollector()
-        print("✅ Collector initialized")
-        
-        # Test Fetch Matches
-        league_enum = League.SERIE_A
-        print(f"\nStep A: Fetching matches for {league_enum}...")
-        matches = sm_collector.fetch_matches(league_enum, max_hours_ahead=72)
-        
-        print(f"→ Found {len(matches)} matches")
-        if not matches:
              print("❌ Failure: No matches found.")
-             # ... (matches printing code) ...
-
-        # ... (rest) ...
-        
-        # Deep debug odds for first match
-        if matches:
-             m = matches[0]
-             print(f"\n   Deep Debug: Raw odds response for Match {m.source_id}...")
-             
-             # Force logging to DEBUG again after imports might have reset it
-             logging.getLogger().setLevel(logging.DEBUG)
-             logging.getLogger("stavki").setLevel(logging.DEBUG)
-             
-             try:
-                 # Manually request with same include as collector
-                 raw_resp = sm_collector.client._request(
-                    f"fixtures/{m.source_id}",
-                    includes=["odds.bookmaker", "odds.market"] 
-                 )
-                 print(f"   API Response Keys: {list(raw_resp.keys())}")
-                 
-                 data = raw_resp.get("data", {})
-                 all_odds = data.get("odds", [])
-                 print(f"   Total Odds Records: {len(all_odds)}")
-                 
-                 if all_odds:
-                     print("   Sample of available markets:")
-                     seen_markets = set()
-                     for o in all_odds[:100]: # Check more records
-                         mkt_name = o.get("market", {}).get("name", "Unknown")
-                         bk_name = o.get("bookmaker", {}).get("name", "Unknown")
-                         
-                         # Print details for our target market - DUMP ALL of them
-                         if "Fulltime Result" in mkt_name or "1X2" in mkt_name:
-                             print(f"      - TARGET FOUND: '{mkt_name}' | Bookmaker: '{bk_name}' | Label: {o.get('label')} | Value: {o.get('value')}")
-                             seen_markets.add(mkt_name)
-                         
-                         elif mkt_name not in seen_markets:
-                             print(f"      - Market: '{mkt_name}' | Bookmaker: '{bk_name}'")
-                             seen_markets.add(mkt_name)
-                 else:
-                     print("   ❌ No odds data found in 'odds' field. Check plan/includes.")
-                     
-             except Exception as e:
-                 print(f"   Error fetching raw odds: {e}")
-                     else:
-                         print("   ❌ No odds data found in 'odds' field. Check plan/includes.")
-                         
-                 except Exception as e:
-                     print(f"   Error fetching raw odds: {e}")
-
-        # 3. Pipeline Merge Logic (simulate daily.py)
-        print("\n--- 3. Pipeline Merge Simulation ---")
-        rows = []
-        for m in matches:
-            best_snap = None
-            if m.id in odds_results and odds_results[m.id]:
-                best_snap = odds_results[m.id][0]
-            
-            status = "✅ Included" if best_snap else "❌ Dropped (No Odds)"
-            print(f"Match {m.id}: {status}")
-            
-            if best_snap:
-                rows.append({"event_id": m.id})
-                
-        if not rows:
-            print("\n❌ Pipeline Result: 0 matches with odds (DailyPipeline would return empty DF)")
         else:
-            print(f"\n✅ Pipeline Result: {len(rows)} matches ready for prediction")
+            for i, m in enumerate(matches[:3]):
+                 print(f"   {i+1}. {m.home_team.name} vs {m.away_team.name} (ID: {m.id}, SourceID: {m.source_id})")
+
+            # Test Fetch Odds
+            print(f"\nStep B: Fetching odds for {len(matches)} matches...")
+            odds_results = sm_collector.fetch_odds(league_enum, matches=matches)
+            
+            print(f"→ Returned odds for {len(odds_results)} matches")
+            
+            # Inspect Odds
+            valid_odds_count = 0
+            for match_id, snapshots in odds_results.items():
+                if snapshots:
+                    valid_odds_count += 1
+                    snap = snapshots[0]
+                    print(f"   Match {match_id}: {snap.bookmaker} -> H:{snap.home_odds} D:{snap.draw_odds} A:{snap.away_odds}")
+                else:
+                    print(f"   Match {match_id}: No snapshots returned (empty list)")
+                    
+            if valid_odds_count == 0:
+                print("❌ Failure: No valid odds found for any match.")
+                print("   Possible reasons: Market data missing in API, or parsing error.")
+                
+                # Deep debug odds for first match
+                if matches:
+                     m = matches[0]
+                     print(f"\n   Deep Debug: Raw odds response for Match {m.source_id}...")
+                     
+                     try:
+                         # Force logging to DEBUG again after imports might have reset it
+                         logging.getLogger().setLevel(logging.DEBUG)
+                         logging.getLogger("stavki").setLevel(logging.DEBUG)
+                         
+                         # Manually request with same include as collector
+                         raw_resp = sm_collector.client._request(
+                            f"fixtures/{m.source_id}",
+                            includes=["odds.bookmaker", "odds.market"] 
+                         )
+                         print(f"   API Response Keys: {list(raw_resp.keys())}")
+                         
+                         data = raw_resp.get("data", {})
+                         all_odds = data.get("odds", [])
+                         print(f"   Total Odds Records: {len(all_odds)}")
+                         
+                         if all_odds:
+                             print("   Sample of available markets:")
+                             seen_markets = set()
+                             for o in all_odds[:100]: # Check more records
+                                 mkt_name = o.get("market", {}).get("name", "Unknown")
+                                 bk_name = o.get("bookmaker", {}).get("name", "Unknown")
+                                 
+                                 # Print details for our target market - DUMP ALL of them
+                                 if "Fulltime Result" in mkt_name or "1X2" in mkt_name:
+                                     print(f"      - TARGET FOUND: '{mkt_name}' | Bookmaker: '{bk_name}' | Label: {o.get('label')} | Value: {o.get('value')}")
+                                     seen_markets.add(mkt_name)
+                                 
+                                 elif mkt_name not in seen_markets:
+                                     print(f"      - Market: '{mkt_name}' | Bookmaker: '{bk_name}'")
+                                     seen_markets.add(mkt_name)
+                         else:
+                             print("   ❌ No odds data found in 'odds' field. Check plan/includes.")
+                             
+                     except Exception as e:
+                         print(f"   Error fetching raw odds: {e}")
+
+            # 3. Pipeline Merge Logic (simulate daily.py)
+            print("\n--- 3. Pipeline Merge Simulation ---")
+            rows = []
+            for m in matches:
+                best_snap = None
+                if m.id in odds_results and odds_results[m.id]:
+                    best_snap = odds_results[m.id][0]
+                
+                status = "✅ Included" if best_snap else "❌ Dropped (No Odds)"
+                print(f"Match {m.id}: {status}")
+                
+                if best_snap:
+                    rows.append({"event_id": m.id})
+                    
+            if not rows:
+                print("\n❌ Pipeline Result: 0 matches with odds (DailyPipeline would return empty DF)")
+            else:
+                print(f"\n✅ Pipeline Result: {len(rows)} matches ready for prediction")
 
     except Exception as e:
         print(f"\n❌ CRITICAL EXCEPTION: {e}")
