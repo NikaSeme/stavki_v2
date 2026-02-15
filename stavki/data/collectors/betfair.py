@@ -305,7 +305,7 @@ class BetfairCollector:
                     continue
                 
                 # Check normalized names
-                norm_name = SourceNormalizer.normalize(search_name)
+                norm_name = SourceNormalizer.from_football_data_uk(search_name)
                 # Compare with match home/away normalized
                 # Assuming SourceNormalizer handles "Man Utd" -> "Manchester United" etc.
                 # Use fuzzy match again if needed?
