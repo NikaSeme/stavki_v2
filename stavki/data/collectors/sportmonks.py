@@ -819,7 +819,19 @@ class SportMonksClient:
         result = []
         for odd in all_odds:
             market_name = odd.get("market", {}).get("name", "")
-            if market.lower() not in market_name.lower():
+            
+            # Smart market matching
+            match_found = False
+            if market == "1X2":
+                # Check for common aliases
+                if any(alias in market_name for alias in ["1X2", "Fulltime Result", "Match Winner", "3Way Result"]):
+                    match_found = True
+            else:
+                # Default substring match
+                if market.lower() in market_name.lower():
+                    match_found = True
+                    
+            if not match_found:
                 continue
             
             bookmaker = odd.get("bookmaker", {}).get("name", "Unknown")
