@@ -261,7 +261,11 @@ class BetfairCollector:
         # 3. Get Prices
         market_ids = list(market_map.keys())
         # Bulk fetch (max 40 usually per req, assume <40 for now or chunk loop)
-        books = self.client.get_market_book(market_ids[:40]) 
+        books = self.client.get_market_book(market_ids[:40])
+        
+        if not isinstance(books, list):
+             logger.warning(f"Betfair get_market_book failed or returned unexpected format: {books}")
+             return {}
         
         results = {}
         

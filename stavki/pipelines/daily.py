@@ -523,18 +523,173 @@ class DailyPipeline:
         matches_df: pd.DataFrame,
         odds_df: pd.DataFrame,
     ) -> pd.DataFrame:
-        """Build features for all matches."""
+        """Build features for all matches using FeatureRegistry."""
         try:
-            # Try to use feature builders
-            from stavki.features import FeatureBuilder, SMOddsFeatureBuilder
+            from stavki.features.registry import FeatureRegistry
+            from stavki.data.schemas import Match, Team, League
             
-            builder = FeatureBuilder()
-            features = builder.build_all(matches_df, odds_df=odds_df)
-            return features
+            # 1. Load historical data for fitting feature builders
+            hist_df = self._load_history()
+            if hist_df.empty:
+                logger.warning("No historical data found. Features will be limited.")
+            
+            # 2. Convert history to Match objects
+            hist_matches = self._df_to_matches(hist_df, is_historical=True)
+            
+            # 3. Fit registry
+            registry = FeatureRegistry()
+            registry.fit(hist_matches)
+            
+            # 4. Convert current matches to Match objects
+            current_matches = self._df_to_matches(matches_df, is_historical=False)
+            
+            # 5. Compute features
+            features = registry.compute_batch(current_matches)
+            
+            # 6. Ensure index alignment
+            # compute_batch returns df indexed by match_id.
+            # matches_df might range index.
+            # We need to map back to matches_df order or merge.
+            
+            if features.empty:
+                return matches_df.copy()
+            
+            # Merge features back to matches_df
+            # ensure matches_df has match_id or event_id
+            id_col = "match_id" if "match_id" in matches_df.columns else "event_id"
+            
+            # Reset index to make match_id a column
+            features = features.reset_index()
+            
+            # Merge
+            merged = pd.merge(
+                matches_df, 
+                features, 
+                left_on=id_col, 
+                right_on="match_id", 
+                how="left"
+            )
+            
+            # Drop duplicate match_id column if needed
+            if "match_id_y" in merged.columns:
+                merged = merged.drop(columns=["match_id_y"]).rename(columns={"match_id_x": "match_id"})
+            
+            return merged
+
         except Exception as e:
             logger.warning(f"Feature building failed: {e}. Using minimal features.")
+            import traceback
+            traceback.print_exc()
             # Return minimal features
             return matches_df.copy()
+
+    def _load_history(self) -> pd.DataFrame:
+        """Load historical data for feature context."""
+        from pathlib import Path
+        import pandas as pd
+        
+        # Try different locations
+        paths = [
+            Path("data/training_data.csv"),
+            Path("data/historical.csv"),
+            Path("data/features_full.csv"),
+        ]
+        
+        for p in paths:
+            if p.exists():
+                try:
+                    df = pd.read_csv(p, low_memory=False)
+                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                    return df
+                except Exception:
+                    continue
+        
+        return pd.DataFrame()
+
+    def _df_to_matches(self, df: pd.DataFrame, is_historical: bool = False) -> List['Match']:
+        """Convert DataFrame to List[Match]."""
+        from stavki.data.schemas import Match, Team, League
+        from datetime import datetime
+        import hashlib
+        
+        matches = []
+        for _, row in df.iterrows():
+            try:
+                # Teams
+                home = Team(name=str(row.get('HomeTeam', row.get('home_team'))))
+                away = Team(name=str(row.get('AwayTeam', row.get('away_team'))))
+                
+                # Date/Time
+                if is_historical:
+                    date_val = row.get('Date')
+                    if hasattr(date_val, 'date'):
+                        date_str = date_val.strftime("%Y-%m-%d")
+                    else:
+                        date_str = str(date_val).split()[0]
+                    commence = datetime.strptime(date_str, "%Y-%m-%d")
+                    
+                    # Generate ID for historical
+                    key = f"{home.normalized_name}_{away.normalized_name}_{date_str}"
+                    mid = hashlib.md5(key.encode()).hexdigest()[:12]
+                    
+                    # Scores
+                    home_score = int(row['FTHG']) if pd.notna(row.get('FTHG')) else None
+                    away_score = int(row['FTAG']) if pd.notna(row.get('FTAG')) else None
+                    
+                else:
+                    # Upcoming
+                    commence = row.get('commence_time')
+                    if isinstance(commence, str):
+                        commence = datetime.fromisoformat(commence.replace("Z", "+00:00"))
+                    
+                    # Use existing ID
+                    mid = str(row.get('event_id', row.get('match_id', 'unknown')))
+                    home_score = None
+                    away_score = None
+                
+                # League
+                league_str = str(row.get('League', row.get('league', 'unknown'))).lower()
+                
+                # Robust mapping
+                league_map = {
+                    "epl": League.EPL,
+                    "premier league": League.EPL,
+                    "premier_league": League.EPL,
+                    "soccer_epl": League.EPL,
+                    "laliga": League.LA_LIGA,
+                    "la liga": League.LA_LIGA,
+                    "soccer_spain_la_liga": League.LA_LIGA,
+                    "bundesliga": League.BUNDESLIGA,
+                    "soccer_germany_bundesliga": League.BUNDESLIGA,
+                    "seriea": League.SERIE_A,
+                    "serie a": League.SERIE_A,
+                    "soccer_italy_serie_a": League.SERIE_A,
+                    "ligue1": League.LIGUE_1,
+                    "ligue 1": League.LIGUE_1,
+                    "soccer_france_ligue_one": League.LIGUE_1,
+                    "championship": League.CHAMPIONSHIP,
+                    "soccer_efl_champ": League.CHAMPIONSHIP,
+                }
+                
+                league_enum = league_map.get(league_str, League.EPL) # Default to EPL if unknown
+                
+                m = Match(
+                    id=mid,
+                    home_team=home,
+                    away_team=away,
+                    league=league_enum,
+                    commence_time=commence,
+                    home_score=home_score,
+                    away_score=away_score,
+                    source="historical" if is_historical else "api"
+                )
+                matches.append(m)
+                
+            except Exception as e:
+                # logger.warning(f"Failed to convert match row: {e}")
+                continue
+                
+        return matches
     
     def _get_predictions(
         self,
