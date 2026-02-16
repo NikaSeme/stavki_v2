@@ -819,3 +819,14 @@ def run_training_pipeline(
     )
     pipeline = TrainingPipeline(config=config)
     return pipeline.run()
+
+if __name__ == "__main__":
+    import argparse
+    
+    logging.basicConfig(level=logging.INFO)
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-path", type=str, default="data/historical.csv")
+    args = parser.parse_args()
+    
+    run_training_pipeline(data_path=args.data_path)

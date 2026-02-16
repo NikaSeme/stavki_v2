@@ -1,0 +1,12 @@
+{
+  "default": {
+    "policy": "BET",
+    "weights": {
+      "poisson": 0.1,
+      "catboost": 0.9
+    },
+    "min_ev": 0.09,
+    "kelly_fraction": 0.05
+  },
+  "leagues": {}
+}
