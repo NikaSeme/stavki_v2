@@ -547,21 +547,18 @@ class DailyPipeline:
             features = registry.compute_batch(current_matches)
             
             # 6. Ensure index alignment
-            # compute_batch returns df indexed by match_id.
-            # matches_df might range index.
-            # We need to map back to matches_df order or merge.
-            
             if features.empty:
                 return matches_df.copy()
             
-            # Merge features back to matches_df
+            features = features.reset_index()
+            
+            # 7. Map features to model expectations (Backwards Compatibility)
+            features = self._map_features_to_model_inputs(features)
+            
+            # Merge
             # ensure matches_df has match_id or event_id
             id_col = "match_id" if "match_id" in matches_df.columns else "event_id"
             
-            # Reset index to make match_id a column
-            features = features.reset_index()
-            
-            # Merge
             merged = pd.merge(
                 matches_df, 
                 features, 
@@ -582,6 +579,64 @@ class DailyPipeline:
             traceback.print_exc()
             # Return minimal features
             return matches_df.copy()
+
+    def _map_features_to_model_inputs(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Map FeatureRegistry output names to Training Data (features_full.csv) names.
+        This ensures models trained on legacy/different names can still run.
+        """
+        # 1. Direct renames
+        rename_map = {
+            "form_home": "form_home_pts",
+            "form_away": "form_away_pts",
+            "goals_scored_home": "form_home_gf",
+            "goals_scored_away": "form_away_gf",
+            "goals_conceded_home": "form_home_ga",
+            "goals_conceded_away": "form_away_ga",
+            "roster_experience_home": "xi_experience_home",
+            "roster_experience_away": "xi_experience_away",
+            "advanced_xg_for_home": "synth_xg_home",
+            "advanced_xg_for_away": "synth_xg_away",
+            "advanced_shots_for_home": "HS", # Approximation if HS missing
+            "advanced_shots_for_away": "AS",
+        }
+        
+        # Apply renames for columns that exist
+        valid_renames = {k: v for k, v in rename_map.items() if k in df.columns}
+        df = df.rename(columns=valid_renames)
+        
+        # 2. Derived features
+        if "form_home_gf" in df.columns and "form_away_gf" in df.columns:
+             df["gf_diff"] = df["form_home_gf"] - df["form_away_gf"]
+             
+        if "form_home_ga" in df.columns and "form_away_ga" in df.columns:
+             df["ga_diff"] = df["form_home_ga"] - df["form_away_ga"]
+             
+        # 3. Fill specific missing columns expected by models (defaults)
+        # Based on features_full.csv diagnostics
+        defaults = {
+            "rolling_corners_home": 4.5,
+            "rolling_corners_away": 4.5,
+            "rolling_fouls_home": 10.5,
+            "rolling_fouls_away": 10.5,
+            "rolling_possession_home": 0.5,
+            "rolling_possession_away": 0.5,
+            "rolling_yellows_home": 1.5,
+            "rolling_yellows_away": 1.5,
+            "imp_home": 0.5,
+            "imp_away": 0.5,
+            "imp_home_norm": 0.5,
+            "imp_away_norm": 0.5,
+            "ref_cards_per_game_t1": 3.5,
+            "ref_encoded_cards": 0,
+            "ref_encoded_goals": 0,
+        }
+        
+        for col, val in defaults.items():
+            if col not in df.columns:
+                df[col] = val
+                
+        return df
 
     def _load_history(self) -> pd.DataFrame:
         """Load historical data for feature context."""
