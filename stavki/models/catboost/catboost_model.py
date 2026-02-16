@@ -152,7 +152,7 @@ class CatBoostModel(CalibratedModel):
         
         # Sort by date
         if "Date" in df.columns:
-            df["Date"] = pd.to_datetime(df["Date"])
+            df["Date"] = pd.to_datetime(df["Date"], format='mixed', dayfirst=True)
             df = df.sort_values("Date")
         
         # Create target
