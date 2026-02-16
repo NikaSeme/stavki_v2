@@ -170,59 +170,61 @@ class EnsemblePredictor(BaseModel):
                             
                             # Add essential meta columns for prediction matching
                             meta_cols = ["match_id", "HomeTeam", "AwayTeam", "Date", "League"]
-                        # Handle categorical features if present
-                            # Helper for fuzzy matching (ignore case and underscores)
-                            def normalize(s):
-                                return s.lower().replace("_", "")
+                            # Handle categorical features if present
+                            model_cat_features = getattr(model, "cat_features", [])
+                            if model_cat_features:
+                                # Helper for fuzzy matching (ignore case and underscores)
+                                def normalize(s):
+                                    return s.lower().replace("_", "")
 
-                            for cf in model_cat_features:
-                                if cf in data.columns and cf not in cols_to_use:
-                                    cols_to_use.append(cf)
-                                elif cf == "league" and "League" in data.columns:
-                                    # Special case for league/League mismatch
-                                    if "League" not in cols_to_use:
-                                        cols_to_use.append("League")
-                                else:
-                                    # Fuzzy match: HomeTeam matches home_team
-                                    found = False
-                                    for dc in data.columns:
-                                        if normalize(dc) == normalize(cf) and dc not in cols_to_use:
-                                            cols_to_use.append(dc)
-                                            found = True
-                                            break
-                                    if found: 
-                                        continue
+                                for cf in model_cat_features:
+                                    if cf in data.columns and cf not in cols_to_use:
+                                        cols_to_use.append(cf)
+                                    elif cf == "league" and "League" in data.columns:
+                                        # Special case for league/League mismatch
+                                        if "League" not in cols_to_use:
+                                            cols_to_use.append("League")
+                                    else:
+                                        # Fuzzy match: HomeTeam matches home_team
+                                        found = False
+                                        for dc in data.columns:
+                                            if normalize(dc) == normalize(cf) and dc not in cols_to_use:
+                                                cols_to_use.append(dc)
+                                                found = True
+                                                break
+                                        if found: 
+                                            continue
 
-                            model_data = data[cols_to_use].copy()
-                            
-                            # Rename columns to match model expectations
-                            # This handles League->league, home_team->HomeTeam, etc.
-                            rename_map = {}
-                            if "League" in model_data.columns and "league" in model_cat_features:
-                                rename_map["League"] = "league"
-                            
-                            # General fuzzy rename
-                            for cf in model_cat_features:
-                                if cf not in model_data.columns:
-                                    for col in model_data.columns:
-                                        if normalize(col) == normalize(cf):
-                                            rename_map[col] = cf
-                                            break
-                            
-                            if rename_map:
-                                model_data = model_data.rename(columns=rename_map)
+                                model_data = data[cols_to_use].copy()
                                 
-                            # DEBUG LOGGING for CatBoost failure
-                            if "CatBoost" in name:
-                                logger.info(f"DEBUG: CatBoost model_data shape: {model_data.shape}")
-                                logger.info(f"DEBUG: CatBoost model_data columns: {model_data.columns.tolist()}")
-                                logger.info(f"DEBUG: Missing cats? names: {model_cat_features}")
-                                missing_cats = [c for c in model_cat_features if c not in model_data.columns]
-                                if missing_cats:
-                                    logger.error(f"DEBUG: CRITICAL - Missing cat features: {missing_cats}")
-                                    logger.info(f"DEBUG: Source data columns: {data.columns.tolist()}")
-                        else:
-                            model_data = data[cols_to_use].copy()
+                                # Rename columns to match model expectations
+                                # This handles League->league, home_team->HomeTeam, etc.
+                                rename_map = {}
+                                if "League" in model_data.columns and "league" in model_cat_features:
+                                    rename_map["League"] = "league"
+                                
+                                # General fuzzy rename
+                                for cf in model_cat_features:
+                                    if cf not in model_data.columns:
+                                        for col in model_data.columns:
+                                            if normalize(col) == normalize(cf):
+                                                rename_map[col] = cf
+                                                break
+                                
+                                if rename_map:
+                                    model_data = model_data.rename(columns=rename_map)
+                                    
+                                # DEBUG LOGGING for CatBoost failure
+                                if "CatBoost" in name:
+                                    logger.info(f"DEBUG: CatBoost model_data shape: {model_data.shape}")
+                                    logger.info(f"DEBUG: CatBoost model_data columns: {model_data.columns.tolist()}")
+                                    logger.info(f"DEBUG: Missing cats? names: {model_cat_features}")
+                                    missing_cats = [c for c in model_cat_features if c not in model_data.columns]
+                                    if missing_cats:
+                                        logger.error(f"DEBUG: CRITICAL - Missing cat features: {missing_cats}")
+                                        logger.info(f"DEBUG: Source data columns: {data.columns.tolist()}")
+                            else:
+                                model_data = data[cols_to_use].copy()
                         
                         preds = model.predict(model_data)
                         # Store predictions for each market separately
