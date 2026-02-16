@@ -170,6 +170,10 @@ class EnsemblePredictor(BaseModel):
                             
                             # Add essential meta columns for prediction matching
                             meta_cols = ["match_id", "HomeTeam", "AwayTeam", "Date", "League"]
+                            for mc in meta_cols:
+                                if mc in data.columns and mc not in cols_to_use:
+                                    cols_to_use.append(mc)
+                            
                             # Handle categorical features if present
                             model_cat_features = getattr(model, "cat_features", [])
                             if model_cat_features:
@@ -214,17 +218,12 @@ class EnsemblePredictor(BaseModel):
                                 if rename_map:
                                     model_data = model_data.rename(columns=rename_map)
                                     
-                                # DEBUG LOGGING for CatBoost failure
-                                if "CatBoost" in name:
-                                    logger.info(f"DEBUG: CatBoost model_data shape: {model_data.shape}")
-                                    logger.info(f"DEBUG: CatBoost model_data columns: {model_data.columns.tolist()}")
-                                    logger.info(f"DEBUG: Missing cats? names: {model_cat_features}")
-                                    missing_cats = [c for c in model_cat_features if c not in model_data.columns]
-                                    if missing_cats:
-                                        logger.error(f"DEBUG: CRITICAL - Missing cat features: {missing_cats}")
-                                        logger.info(f"DEBUG: Source data columns: {data.columns.tolist()}")
+
                             else:
                                 model_data = data[cols_to_use].copy()
+                        else:
+                            # Use full data if no features specified
+                            model_data = data
                         
                         preds = model.predict(model_data)
                         # Store predictions for each market separately
