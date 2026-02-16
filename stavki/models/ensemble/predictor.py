@@ -375,7 +375,10 @@ class EnsemblePredictor(BaseModel):
     def _build_league_lookup(self, data: pd.DataFrame) -> Dict[str, str]:
         """Build a {match_id: league} lookup dict from the data."""
         lookup: Dict[str, str] = {}
-        if "League" not in data.columns:
+        
+        # Check for column (case insensitive priority)
+        league_col = "League" if "League" in data.columns else "league"
+        if league_col not in data.columns:
             return lookup
         
         for idx, row in data.iterrows():
@@ -383,7 +386,7 @@ class EnsemblePredictor(BaseModel):
                 "match_id",
                 f"{row.get('HomeTeam', 'home')}_vs_{row.get('AwayTeam', 'away')}"
             )
-            league = row.get("League")
+            league = row.get(league_col)
             if match_id and league:
                 lookup[match_id] = league
         
