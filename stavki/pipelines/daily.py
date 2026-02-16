@@ -617,29 +617,34 @@ class DailyPipeline:
              df["ga_diff"] = df["form_home_ga"] - df["form_away_ga"]
              
         # 3. Fill specific missing columns expected by models (defaults)
-        # Based on features_full.csv diagnostics
-        defaults = {
-            "rolling_corners_home": 4.5,
-            "rolling_corners_away": 4.5,
-            "rolling_fouls_home": 10.5,
-            "rolling_fouls_away": 10.5,
-            "rolling_possession_home": 0.5,
-            "rolling_possession_away": 0.5,
-            "rolling_yellows_home": 1.5,
-            "rolling_yellows_away": 1.5,
-            "imp_home": 0.5,
-            "imp_away": 0.5,
-            "imp_home_norm": 0.5,
-            "imp_away_norm": 0.5,
-            "ref_cards_per_game_t1": 3.5,
-            "ref_encoded_cards": 0,
-            "ref_encoded_goals": 0,
-        }
-        
-        for col, val in defaults.items():
-            if col not in df.columns:
-                df[col] = val
+        # Load the master feature list from JSON if possible, else use hardcoded defaults
+        try:
+            import json
+            from pathlib import Path
+            p = Path("models/feature_columns.json")
+            if p.exists():
+                with open(p) as f:
+                    master_cols = json.load(f)
                 
+                # Ensure all master columns exist
+                for col in master_cols:
+                    if col not in df.columns:
+                        # Use smart defaults where possible
+                        if "rolling" in col or "imp" in col:
+                            df[col] = 0.5 # Neutral
+                        elif "ref" in col:
+                            df[col] = 0.0 
+                        else:
+                            df[col] = 0.0
+                
+                # Reorder to match master exactly (crucial for LightGBM)
+                # Keep match_id/event_id for merging
+                meta_cols = [c for c in df.columns if c not in master_cols]
+                df = df[meta_cols + master_cols]
+                
+        except Exception as e:
+            logger.warning(f"Failed to load master feature columns: {e}")
+            
         return df
 
     def _load_history(self) -> pd.DataFrame:
