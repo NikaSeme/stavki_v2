@@ -191,8 +191,22 @@ class EnsemblePredictor(BaseModel):
                             model_data = data[cols_to_use].copy()
                             
                             # Rename columns to match model expectations
+                            # This handles League->league, home_team->HomeTeam, etc.
+                            rename_map = {}
                             if "League" in model_data.columns and "league" in model_cat_features:
-                                model_data = model_data.rename(columns={"League": "league"})
+                                rename_map["League"] = "league"
+                            
+                            # General case-insensitive rename
+                            for cf in model_cat_features:
+                                if cf not in model_data.columns:
+                                    # Check if we have a case-variant in model_data
+                                    for col in model_data.columns:
+                                        if col.lower() == cf.lower():
+                                            rename_map[col] = cf
+                                            break
+                            
+                            if rename_map:
+                                model_data = model_data.rename(columns=rename_map)
                         else:
                             model_data = data[cols_to_use].copy()
                         
