@@ -1,0 +1,10 @@
+[Unit]
+Description=Run STAVKI pipeline daily at 08:00 UTC
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+Unit=stavki.service
+
+[Install]
+WantedBy=timers.target
