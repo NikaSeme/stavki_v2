@@ -374,6 +374,8 @@ class DailyPipeline:
                     if best_snap:
                         row = {
                             "event_id": m.id,
+                            "fixture_id": m.id,
+                            "source_id": m.id,
                             "home_team": m.home_team.name,
                             "away_team": m.away_team.name,
                             "league": league.value,
@@ -421,7 +423,7 @@ class DailyPipeline:
         
         # Get unique matches
         match_cols = ["event_id", "home_team", "away_team"]
-        optional_cols = ["league", "sport_key", "kickoff", "commence_time"]
+        optional_cols = ["league", "sport_key", "kickoff", "commence_time", "fixture_id", "source_id"]
         
         for col in optional_cols:
             if col in odds_df.columns:
@@ -675,8 +677,8 @@ class DailyPipeline:
             if p.exists():
                 try:
                     df = pd.read_csv(p, low_memory=False)
-                    # Specify format or let pandas infer with dayfirst=True for DD/MM/YYYY
-                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce', dayfirst=True)
+                    # Specify format or let pandas infer
+                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
                     return df
                 except Exception:
                     continue
@@ -855,10 +857,41 @@ class DailyPipeline:
         from stavki.strategy import check_outlier_odds
         
         if "outcome_price" not in odds_df.columns:
-            # Try to find odds column
-            odds_cols = [c for c in odds_df.columns if "odds" in c.lower() or "price" in c.lower()]
-            if odds_cols:
-                odds_df = odds_df.rename(columns={odds_cols[0]: "outcome_price"})
+            # Check for wide format (SportMonks style columns)
+            if "home_odds" in odds_df.columns:
+                # Melt into long format
+                id_vars = [c for c in odds_df.columns if c not in ["home_odds", "draw_odds", "away_odds", "_enrichment"]]
+                
+                melted = odds_df.melt(
+                    id_vars=id_vars,
+                    value_vars=["home_odds", "draw_odds", "away_odds"],
+                    var_name="outcome_temp",
+                    value_name="outcome_price"
+                )
+                
+                # Map temp names to localized Outcome names (must match model output keys: home, draw, away)
+                outcome_map = {
+                    "home_odds": "home",
+                    "draw_odds": "draw", 
+                    "away_odds": "away"
+                }
+                melted["outcome_name"] = melted["outcome_temp"].map(outcome_map)
+                melted = melted.drop(columns=["outcome_temp"])
+                
+                # Ensure outcome_price is numeric
+                melted["outcome_price"] = pd.to_numeric(melted["outcome_price"], errors="coerce")
+                
+                # Map bookmaker (approximate using home_bookmaker)
+                if "home_bookmaker" in melted.columns:
+                    melted["bookmaker_title"] = melted["home_bookmaker"]
+                
+                odds_df = melted
+                
+            # Try to find odds column (Legacy fallback)
+            elif any("odds" in c.lower() or "price" in c.lower() for c in odds_df.columns):
+                odds_cols = [c for c in odds_df.columns if "odds" in c.lower() or "price" in c.lower()]
+                if odds_cols:
+                    odds_df = odds_df.rename(columns={odds_cols[0]: "outcome_price"})
             else:
                 logger.warning("No odds column found")
                 return odds_df
