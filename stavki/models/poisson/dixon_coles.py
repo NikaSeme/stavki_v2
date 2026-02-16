@@ -89,7 +89,7 @@ class DixonColesModel(BaseModel):
         
         # Convert dates & weights
         df = data.copy()
-        df["Date"] = pd.to_datetime(df["Date"])
+        df["Date"] = pd.to_datetime(df["Date"], format='mixed', dayfirst=True)
         df = df.sort_values("Date")
         
         max_date = df["Date"].max()
