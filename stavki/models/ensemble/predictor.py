@@ -146,11 +146,46 @@ class EnsemblePredictor(BaseModel):
         
         for name, model in self.models.items():
             if model.is_fitted:
-                try:
-                    preds = model.predict(data)
-                    model_predictions[name] = preds
-                except Exception as e:
-                    logger.warning(f"Model {name} prediction failed: {e}")
+                # Iterate over all markets this ensemble supports
+                for market in self.markets:
+                    if not model.supports_market(market):
+                        continue
+                    
+                    try:
+                        # Prepare data subset for this model
+                        model_features = getattr(model, "features", [])
+                        if not model_features and hasattr(model, "metadata"):
+                            model_features = model.metadata.get("features", [])
+                        
+                        # If model has specific features, enforce them
+                        if model_features and len(model_features) > 0:
+                            # Check if we have all features
+                            missing = [f for f in model_features if f not in data.columns]
+                            if missing:
+                                # Log warning but try to proceed (defaults might be handled in predict)
+                                logger.debug(f"Model {name} missing features: {len(missing)}")
+                            
+                            # Create subset with ONLY model features + meta
+                            cols_to_use = [f for f in model_features if f in data.columns]
+                            
+                            # Add essential meta columns for prediction matching
+                            meta_cols = ["match_id", "HomeTeam", "AwayTeam", "Date", "League"]
+                            for mc in meta_cols:
+                                if mc in data.columns and mc not in cols_to_use:
+                                    cols_to_use.append(mc)
+                                    
+                            model_data = data[cols_to_use].copy()
+                        else:
+                            # Use full data if no features specified
+                            model_data = data
+                        
+                        preds = model.predict(model_data)
+                        # Store predictions for each market separately
+                        if name not in model_predictions:
+                            model_predictions[name] = []
+                        model_predictions[name].extend(preds)
+                    except Exception as e:
+                        logger.warning(f"Model {name} prediction for market {market.value} failed: {e}")
         
         # Group by match and market
         grouped = self._group_predictions(model_predictions, data)

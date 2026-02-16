@@ -629,20 +629,29 @@ class DailyPipeline:
                 with open(p) as f:
                     master_cols = json.load(f)
                 
-                # Ensure all master columns exist
+                # Identify missing columns
+                missing_cols = {}
                 for col in master_cols:
                     if col not in df.columns:
                         # Use smart defaults where possible
                         if "rolling" in col or "imp" in col:
-                            df[col] = 0.5 # Neutral
+                            missing_cols[col] = 0.5 # Neutral
                         elif "ref" in col:
-                            df[col] = 0.0 
+                            missing_cols[col] = 0.0 
                         else:
-                            df[col] = 0.0
+                            missing_cols[col] = 0.0
+                
+                # Add all missing columns at once to avoid fragmentation
+                if missing_cols:
+                    new_cols_df = pd.DataFrame(missing_cols, index=df.index)
+                    df = pd.concat([df, new_cols_df], axis=1)
                 
                 # Reorder to match master exactly (crucial for LightGBM)
                 # Keep match_id/event_id for merging
                 meta_cols = [c for c in df.columns if c not in master_cols]
+                # Avoid duplicates in meta_cols if they are in master_cols (shouldn't happen but safe)
+                meta_cols = [c for c in meta_cols if c not in master_cols]
+                
                 df = df[meta_cols + master_cols]
                 
         except Exception as e:
