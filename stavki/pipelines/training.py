@@ -564,22 +564,44 @@ class TrainingPipeline:
             model_predictions = {}
             for name, model in self.trained_models.items():
                 try:
+                    # Models in this codebase expect the raw DataFrame, not X_test
                     if hasattr(model, 'predict_proba'):
-                        proba = model.predict_proba(X_test.values)
+                        # CatBoost / LightGBM
+                        proba = model.predict_proba(self.test_df)
                         if isinstance(proba, dict) and '1x2' in proba:
                             proba = np.array(proba['1x2'])
                         proba_df = pd.DataFrame(
-                            proba, index=X_test.index,
+                            proba, index=self.test_df.index,
                             columns=["H", "D", "A"][:proba.shape[1] if hasattr(proba, 'shape') and len(proba.shape) > 1 else 3]
                         )
                     elif hasattr(model, 'predict'):
-                        preds = model.predict(X_test.values)
-                        if isinstance(preds, np.ndarray) and len(preds.shape) == 2:
+                        # Poisson returns List[Prediction]
+                        preds = model.predict(self.test_df)
+                        
+                        if isinstance(preds, list) and len(preds) > 0 and hasattr(preds[0], 'probabilities'):
+                            # Handle list of Prediction objects (Poisson)
+                            rows = []
+                            for p in preds:
+                                # Start with defaults
+                                row = {"H": 0.33, "D": 0.33, "A": 0.33}
+                                if p.market == Market.MATCH_WINNER:
+                                     # normalize keys
+                                     probs = p.probabilities
+                                     row = {
+                                         "H": probs.get("home", 0.0),
+                                         "D": probs.get("draw", 0.0),
+                                         "A": probs.get("away", 0.0)
+                                     }
+                                rows.append(row)
+                            proba_df = pd.DataFrame(rows, index=self.test_df.index[:len(rows)])
+                        
+                        elif isinstance(preds, np.ndarray) and len(preds.shape) == 2:
                             proba_df = pd.DataFrame(
-                                preds, index=X_test.index,
+                                preds, index=self.test_df.index,
                                 columns=["H", "D", "A"][:preds.shape[1]]
                             )
                         else:
+                            logger.warning(f"  → Unknown prediction format from {name}: {type(preds)}")
                             continue
                     else:
                         continue
@@ -674,17 +696,40 @@ class TrainingPipeline:
                 logger.warning(f"test_df is not a DataFrame: {type(self.test_df)}")
                 return bets
                 
-            X_test, y_test = self._build_features(self.test_df)
+            # We need y_test for ground truth results
+            _, y_test = self._build_features(self.test_df)
+            
+            # Get probabilities using raw dataframe
+            proba = None
             
             if hasattr(model, 'predict_proba'):
-                proba = model.predict_proba(X_test.values)
-                if isinstance(proba, dict) and '1x2' in proba:
-                    proba = np.array(proba['1x2'])
+                p = model.predict_proba(self.test_df)
+                if isinstance(p, dict) and '1x2' in p:
+                    proba = np.array(p['1x2'])
+                elif isinstance(p, np.ndarray):
+                    proba = p
+            
             elif hasattr(model, 'predict'):
-                proba = model.predict(X_test.values)
-                if not isinstance(proba, np.ndarray) or len(proba.shape) != 2:
-                    return bets
-            else:
+                preds = model.predict(self.test_df)
+                
+                if isinstance(preds, list) and len(preds) > 0 and hasattr(preds[0], 'probabilities'):
+                    # Poisson list of predictions
+                    rows = []
+                    for p in preds:
+                        if p.market == Market.MATCH_WINNER:
+                             probs = p.probabilities
+                             # Order: H, D, A to match logic below
+                             rows.append([
+                                 probs.get("home", 0.0),
+                                 probs.get("draw", 0.0),
+                                 probs.get("away", 0.0)
+                             ])
+                    proba = np.array(rows)
+                
+                elif isinstance(preds, np.ndarray) and len(preds.shape) == 2:
+                    proba = preds
+            
+            if proba is None:
                 return bets
             
             # Map predictions to bet records
