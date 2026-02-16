@@ -170,14 +170,31 @@ class EnsemblePredictor(BaseModel):
                             
                             # Add essential meta columns for prediction matching
                             meta_cols = ["match_id", "HomeTeam", "AwayTeam", "Date", "League"]
-                            for mc in meta_cols:
-                                if mc in data.columns and mc not in cols_to_use:
-                                    cols_to_use.append(mc)
-                                    
+                        # Handle categorical features if present
+                        model_cat_features = getattr(model, "cat_features", [])
+                        if model_cat_features:
+                            # Add cat features to cols_to_use
+                            for cf in model_cat_features:
+                                if cf in data.columns and cf not in cols_to_use:
+                                    cols_to_use.append(cf)
+                                elif cf == "league" and "League" in data.columns:
+                                    # Special case for league/League mismatch
+                                    if "League" not in cols_to_use:
+                                        cols_to_use.append("League")
+                                # Try case-insensitive match for others
+                                else:
+                                    for dc in data.columns:
+                                        if dc.lower() == cf.lower() and dc not in cols_to_use:
+                                            cols_to_use.append(dc)
+                                            break
+
                             model_data = data[cols_to_use].copy()
+                            
+                            # Rename columns to match model expectations
+                            if "League" in model_data.columns and "league" in model_cat_features:
+                                model_data = model_data.rename(columns={"League": "league"})
                         else:
-                            # Use full data if no features specified
-                            model_data = data
+                            model_data = data[cols_to_use].copy()
                         
                         preds = model.predict(model_data)
                         # Store predictions for each market separately
