@@ -171,9 +171,10 @@ class EnsemblePredictor(BaseModel):
                             # Add essential meta columns for prediction matching
                             meta_cols = ["match_id", "HomeTeam", "AwayTeam", "Date", "League"]
                         # Handle categorical features if present
-                        model_cat_features = getattr(model, "cat_features", [])
-                        if model_cat_features:
-                            # Add cat features to cols_to_use
+                            # Helper for fuzzy matching (ignore case and underscores)
+                            def normalize(s):
+                                return s.lower().replace("_", "")
+
                             for cf in model_cat_features:
                                 if cf in data.columns and cf not in cols_to_use:
                                     cols_to_use.append(cf)
@@ -181,12 +182,16 @@ class EnsemblePredictor(BaseModel):
                                     # Special case for league/League mismatch
                                     if "League" not in cols_to_use:
                                         cols_to_use.append("League")
-                                # Try case-insensitive match for others
                                 else:
+                                    # Fuzzy match: HomeTeam matches home_team
+                                    found = False
                                     for dc in data.columns:
-                                        if dc.lower() == cf.lower() and dc not in cols_to_use:
+                                        if normalize(dc) == normalize(cf) and dc not in cols_to_use:
                                             cols_to_use.append(dc)
+                                            found = True
                                             break
+                                    if found: 
+                                        continue
 
                             model_data = data[cols_to_use].copy()
                             
@@ -196,12 +201,11 @@ class EnsemblePredictor(BaseModel):
                             if "League" in model_data.columns and "league" in model_cat_features:
                                 rename_map["League"] = "league"
                             
-                            # General case-insensitive rename
+                            # General fuzzy rename
                             for cf in model_cat_features:
                                 if cf not in model_data.columns:
-                                    # Check if we have a case-variant in model_data
                                     for col in model_data.columns:
-                                        if col.lower() == cf.lower():
+                                        if normalize(col) == normalize(cf):
                                             rename_map[col] = cf
                                             break
                             
