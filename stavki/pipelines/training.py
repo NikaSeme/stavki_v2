@@ -26,6 +26,8 @@ import click
 import numpy as np
 import pandas as pd
 
+from stavki.models.base import Market
+
 logger = logging.getLogger(__name__)
 
 
@@ -346,6 +348,9 @@ class TrainingPipeline:
             
             accuracy = correct / total if total > 0 else 0
             
+            # Register model for optimization steps
+            self.trained_models["poisson"] = model
+            
             return TrainingResult(
                 model_name="poisson",
                 accuracy=accuracy,
@@ -665,6 +670,10 @@ class TrainingPipeline:
         model = next(iter(self.trained_models.values()))
         
         try:
+            if not isinstance(self.test_df, pd.DataFrame):
+                logger.warning(f"test_df is not a DataFrame: {type(self.test_df)}")
+                return bets
+                
             X_test, y_test = self._build_features(self.test_df)
             
             if hasattr(model, 'predict_proba'):
