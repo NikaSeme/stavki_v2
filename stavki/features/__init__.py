@@ -22,6 +22,7 @@ from .builders.disagreement import (
 )
 from .builders.advanced_stats import AdvancedFeatureBuilder
 from .builders.roster import RosterFeatureBuilder
+from .builders.sm_odds import SMOddsFeatureBuilder
 
 
 __all__ = [
@@ -49,4 +50,6 @@ __all__ = [
     # Advanced
     "AdvancedFeatureBuilder",
     "RosterFeatureBuilder",
+    # Odds
+    "SMOddsFeatureBuilder",
 ]
