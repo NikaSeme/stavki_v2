@@ -679,6 +679,7 @@ class DailyPipeline:
                     df = pd.read_csv(p, low_memory=False)
                     # Parse Date if it's string (avoid warning)
                     if df['Date'].dtype == 'object':
+                        # Use ISO8601 or mixed format to silence warning
                         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
                     return df
                 except Exception:

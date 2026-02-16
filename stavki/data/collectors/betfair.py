@@ -104,7 +104,7 @@ class BetfairClient:
         """Make JSON-RPC request."""
         if not self.session_token:
             if not self.login():
-                 return {"error": "Login failed"}
+                 return {}
         
         headers = {
             "X-Application": self.config.app_key,
@@ -213,7 +213,13 @@ class BetfairCollector:
             logger.warning(f"Betfair Comp ID not found for {league}")
             return {}
             
-        # 1. Get Markets
+        # 1. Check login/init
+        if not self.client.session_token:
+            if not self.client.login():
+                logger.warning("Betfair login failed/not configured. Skipping.")
+                return {}
+            
+        # 2. Get Markets
         markets = self.client.get_market_catalogue([comp_id])
         if not markets:
             return {}
