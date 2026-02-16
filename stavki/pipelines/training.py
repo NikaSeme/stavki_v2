@@ -779,6 +779,16 @@ class TrainingPipeline:
         output_dir = self.config.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         
+        
+        # Save trained models
+        for name, model in self.trained_models.items():
+            try:
+                model_path = output_dir / f"{name}.pkl"
+                model.save(model_path)
+                logger.info(f"  → Saved {name} model to {model_path}")
+            except Exception as e:
+                logger.error(f"Failed to save {name} model: {e}")
+
         # Save training summary
         summary = {
             "timestamp": datetime.now().isoformat(),
