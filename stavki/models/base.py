@@ -178,14 +178,54 @@ class BaseModel(ABC):
         with open(path, "rb") as f:
             state = pickle.load(f)
         
-        instance = cls.__new__(cls)
-        instance.name = state["name"]
-        instance.markets = [Market(m) for m in state["markets"]]
-        instance.is_fitted = state["is_fitted"]
-        instance.metadata = state["metadata"]
-        instance._set_state(state["model_state"])
-        
-        return instance
+        # If state is a dict (new save format), reconstruct object
+        if isinstance(state, dict):
+            name = state.get("name", "")
+            
+            # Dynamic factory based on name
+            if "CatBoost" in name:
+                from stavki.models.catboost.catboost_model import CatBoostModel
+                model_cls = CatBoostModel
+            elif "LightGBM" in name:
+                from stavki.models.gradient_boost.lightgbm_model import LightGBMModel
+                model_cls = LightGBMModel
+            elif "Neural" in name:
+                from stavki.models.neural.multitask import NeuralMultiTask
+                model_cls = NeuralMultiTask
+            elif "Poisson" in name or "Dixon" in name:
+                from stavki.models.poisson.dixon_coles import DixonColesModel
+                model_cls = DixonColesModel
+            else:
+                # Fallback: try to guess or use base if possible (though base is abstract)
+                logger.warning(f"Unknown model type for {name}, trying to load as is.")
+                # This might fail if cls is BaseModel
+                model_cls = cls
+            
+            try:
+                # Instantiate with default args
+                # Models like CatBoostModel/LightGBMModel don't take name/markets in init
+                instance = model_cls()
+                
+                # Restore base attributes
+                instance.name = name
+                instance.markets = [Market(m) for m in state.get("markets", [])]
+                if not instance.markets:
+                    instance.markets = [Market.MATCH_WINNER]
+                
+                instance.is_fitted = state.get("is_fitted", False)
+                instance.metadata = state.get("metadata", {})
+                
+                # Restore internal state
+                if "model_state" in state:
+                    instance._set_state(state["model_state"])
+                
+                return instance
+            except Exception as e:
+                logger.error(f"Failed to reconstruct model {name}: {e}")
+                raise e
+
+        # Legacy: pickle might return the object directly
+        return state
     
     @abstractmethod
     def _get_state(self) -> Dict[str, Any]:

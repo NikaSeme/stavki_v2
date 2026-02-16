@@ -829,7 +829,7 @@ class DailyPipeline:
                 ensemble.add_model(model)
                 logger.info(f"  Loaded model: {model.name} from {model_path.name}")
             except Exception as e:
-                logger.debug(f"  Could not load {model_path.name}: {e}")
+                logger.warning(f"  Could not load {model_path.name}: {e}")
         
         return ensemble if ensemble.models else None
     
