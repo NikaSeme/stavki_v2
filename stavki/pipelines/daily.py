@@ -559,6 +559,10 @@ class DailyPipeline:
             # ensure matches_df has match_id or event_id
             id_col = "match_id" if "match_id" in matches_df.columns else "event_id"
             
+            # Ensure merge keys are same type (string)
+            matches_df[id_col] = matches_df[id_col].astype(str)
+            features["match_id"] = features["match_id"].astype(str)
+            
             merged = pd.merge(
                 matches_df, 
                 features, 
@@ -654,7 +658,8 @@ class DailyPipeline:
             if p.exists():
                 try:
                     df = pd.read_csv(p, low_memory=False)
-                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                    # Specify format or let pandas infer with dayfirst=True for DD/MM/YYYY
+                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce', dayfirst=True)
                     return df
                 except Exception:
                     continue
