@@ -677,8 +677,9 @@ class DailyPipeline:
             if p.exists():
                 try:
                     df = pd.read_csv(p, low_memory=False)
-                    # Specify format or let pandas infer
-                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                    # Parse Date if it's string (avoid warning)
+                    if df['Date'].dtype == 'object':
+                        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
                     return df
                 except Exception:
                     continue
@@ -970,6 +971,11 @@ class DailyPipeline:
                 
                 # Get probabilities
                 p_model = event_model_probs.get(outcome)
+                
+                # Robust key matching (handle case differences)
+                if p_model is None:
+                    p_model = event_model_probs.get(outcome.lower()) or event_model_probs.get(outcome.title())
+                
                 if p_model is None:
                     continue
                 
@@ -1017,6 +1023,7 @@ class DailyPipeline:
                 candidates.append(candidate)
         
         # Sort by EV
+        # Sort by best EV
         candidates.sort(key=lambda x: -x.ev)
         
         return candidates
