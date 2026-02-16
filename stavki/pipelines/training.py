@@ -582,8 +582,6 @@ class TrainingPipeline:
                             # Handle list of Prediction objects (Poisson)
                             rows = []
                             for p in preds:
-                                # Start with defaults
-                                row = {"H": 0.33, "D": 0.33, "A": 0.33}
                                 if p.market == Market.MATCH_WINNER:
                                      # normalize keys
                                      probs = p.probabilities
@@ -592,7 +590,7 @@ class TrainingPipeline:
                                          "D": probs.get("draw", 0.0),
                                          "A": probs.get("away", 0.0)
                                      }
-                                rows.append(row)
+                                     rows.append(row)
                             proba_df = pd.DataFrame(rows, index=self.test_df.index[:len(rows)])
                         
                         elif isinstance(preds, np.ndarray) and len(preds.shape) == 2:
