@@ -198,7 +198,7 @@ class TrainingPipeline:
         if not path.exists():
             raise FileNotFoundError(f"Data file not found: {path}")
         
-        df = pd.read_csv(path)
+        df = pd.read_csv(path, low_memory=False)
         
         # Ensure required columns
         required = ["HomeTeam", "AwayTeam", "FTR"]  # Full Time Result
