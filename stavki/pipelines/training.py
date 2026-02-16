@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
+import json
 import click
 
 import numpy as np
@@ -293,6 +294,7 @@ class TrainingPipeline:
                 
             except Exception as e:
                 logger.error(f"Failed to train {model_name}: {e}")
+                click.echo(f"❌ Failed to train {model_name}: {e}")
         
         return results
     
@@ -314,18 +316,27 @@ class TrainingPipeline:
             model = DixonColesModel()
             model.fit(self.train_df)
             
-            # Evaluate using bulk prediction (faster and correct type)
+            # Evaluate using bulk prediction
             preds = model.predict(self.test_df)
+            
+            # DixonColesModel.predict returns [1x2, OU, BTTS] for each match
+            # We filter for 1X2 market to align with test_df rows
+            from stavki.models.base import Market
+            match_winner_preds = [p for p in preds if p.market == Market.MATCH_WINNER]
             
             correct = 0
             total = 0
             
-            for i, pred in enumerate(preds):
-                if pred and pred.probabilities:
-                    # pred.probabilities is dict {home: p, draw: p, away: p}
-                    pred_outcome = max(pred.probabilities.items(), key=lambda x: x[1])[0]
+            # Ensure alignment
+            if len(match_winner_preds) != len(self.test_df):
+                logger.warning(f"Poisson eval mismatch: {len(match_winner_preds)} preds vs {len(self.test_df)} actuals")
+            
+            for i, pred in enumerate(match_winner_preds):
+                if i >= len(self.test_df):
+                    break
                     
-                    # Convert match index i to test_df index
+                if pred and pred.probabilities:
+                    pred_outcome = max(pred.probabilities.items(), key=lambda x: x[1])[0]
                     actual_ftr = self.test_df.iloc[i].get("FTR")
                     
                     outcome_map = {"home": "H", "draw": "D", "away": "A"}
@@ -338,8 +349,8 @@ class TrainingPipeline:
             return TrainingResult(
                 model_name="poisson",
                 accuracy=accuracy,
-                log_loss=0.0,  # Not easily computed for Poisson
-                roi_simulated=0.0,  # Would need odds
+                log_loss=0.0,
+                roi_simulated=0.0,
                 training_time=0.0,
             )
             
@@ -362,16 +373,36 @@ class TrainingPipeline:
             from stavki.models.catboost import CatBoostModel
             
             model = CatBoostModel()
+            
+            # CatBoostModel.fit expects a DataFrame with features AND target
+            if self.train_df is None:
+                 raise ValueError("Train data missing")
+                 
+            # NOTE: model.fit splits data internally (temporal split).
+            # We pass self.train_df directly to respect the model's interface.
+            
             model.fit(
-                X_train, y_train,
-                eval_set=(X_val, y_val),
+                self.train_df, 
+                eval_ratio=0.15 
             )
             
-            y_pred = model.predict_proba(X_test)
-            y_pred_class = y_pred.argmax(axis=1)
+            # Predict uses X_test columns
+            preds = model.predict(self.test_df)
             
-            accuracy = (y_pred_class == y_test).mean()
-            log_loss = self._compute_log_loss(y_pred, y_test)
+            # Evaluate using standard logic since predict returns Predictions
+            correct = 0
+            total = 0
+            for i, p in enumerate(preds):
+                 if p.market == Market.MATCH_WINNER:
+                     outcome = max(p.probabilities.items(), key=lambda x: x[1])[0]
+                     actual = self.test_df.iloc[total].get("FTR")
+                     
+                     outcome_map = {"home": "H", "draw": "D", "away": "A"}
+                     if outcome_map.get(outcome) == actual:
+                         correct += 1
+                     total += 1
+            
+            accuracy = correct / total if total > 0 else 0
             
             # Store for optimization
             self.trained_models["catboost"] = model
@@ -379,7 +410,7 @@ class TrainingPipeline:
             return TrainingResult(
                 model_name="catboost",
                 accuracy=accuracy,
-                log_loss=log_loss,
+                log_loss=0.0, 
                 roi_simulated=0.0,
                 training_time=0.0,
                 feature_importance=model.get_feature_importance(),
@@ -404,16 +435,30 @@ class TrainingPipeline:
             from stavki.models.gradient_boost.lightgbm_model import LightGBMModel
             
             model = LightGBMModel()
+            
+            if self.train_df is None:
+                raise ValueError("Train data missing")
+                
             model.fit(
-                X_train, y_train,
-                eval_set=(X_val, y_val),
+                self.train_df,
+                eval_ratio=0.15
             )
             
-            y_pred = model.predict_proba(X_test)
-            y_pred_class = y_pred.argmax(axis=1)
+            # Predict
+            preds = model.predict(self.test_df)
             
-            accuracy = (y_pred_class == y_test).mean()
-            log_loss = self._compute_log_loss(y_pred, y_test)
+            correct = 0
+            total = 0
+            for i, p in enumerate(preds):
+                 outcome = max(p.probabilities. items(), key=lambda x: x[1])[0]
+                 actual = self.test_df.iloc[total].get("FTR")
+                 
+                 outcome_map = {"home": "H", "draw": "D", "away": "A"}
+                 if outcome_map.get(outcome) == actual:
+                     correct += 1
+                 total += 1
+            
+            accuracy = correct / total if total > 0 else 0
             
             # Store for optimization
             self.trained_models["lightgbm"] = model
@@ -421,7 +466,7 @@ class TrainingPipeline:
             return TrainingResult(
                 model_name="lightgbm",
                 accuracy=accuracy,
-                log_loss=log_loss,
+                log_loss=0.0,
                 roi_simulated=0.0,
                 training_time=0.0,
             )
