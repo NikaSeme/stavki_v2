@@ -13,7 +13,7 @@ Key features:
 import os
 import time
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 import logging
@@ -245,7 +245,7 @@ class OddsAPICollector:
             return []
         
         matches = []
-        cutoff = datetime.utcnow() + timedelta(hours=max_hours_ahead)
+        cutoff = datetime.now(timezone.utc) + timedelta(hours=max_hours_ahead)
         
         for event in response.data:
             try:
@@ -256,7 +256,7 @@ class OddsAPICollector:
                 # Skip matches too far ahead or already started
                 if commence_time > cutoff:
                     continue
-                if commence_time < datetime.utcnow():
+                if commence_time < datetime.now(timezone.utc):
                     continue
                 
                 home_name = event["home_team"]
