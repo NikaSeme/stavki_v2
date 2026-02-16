@@ -338,6 +338,7 @@ class TrainingPipeline:
             
         except Exception as e:
             logger.warning(f"Poisson training failed: {e}")
+            click.echo(f"❌ Poisson training failed: {e}")
             return TrainingResult("poisson", 0.33, 1.0, 0.0, 0.0)
     
     def _train_catboost(
@@ -379,6 +380,7 @@ class TrainingPipeline:
             
         except Exception as e:
             logger.warning(f"CatBoost training failed: {e}")
+            click.echo(f"❌ CatBoost training failed: {e}")
             return TrainingResult("catboost", 0.33, 1.0, 0.0, 0.0)
     
     def _train_lightgbm(
@@ -419,6 +421,7 @@ class TrainingPipeline:
             
         except Exception as e:
             logger.warning(f"LightGBM training failed: {e}")
+            click.echo(f"❌ LightGBM training failed: {e}")
             return TrainingResult("lightgbm", 0.33, 1.0, 0.0, 0.0)
     
     def _train_neural(
@@ -465,6 +468,7 @@ class TrainingPipeline:
             
         except Exception as e:
             logger.warning(f"Neural training failed: {e}")
+            click.echo(f"❌ Neural training failed: {e}")
             return TrainingResult("neural", 0.33, 1.0, 0.0, 0.0)
     
     def _compute_log_loss(
