@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
-import json
+import click
 
 import numpy as np
 import pandas as pd
@@ -236,7 +236,7 @@ class TrainingPipeline:
             y = df["Result"].map(ftr_map)
         else:
             y = pd.Series([0] * len(df))
-        
+            
         # Select numeric features
         feature_cols = [
             c for c in df.columns
@@ -245,9 +245,12 @@ class TrainingPipeline:
         ]
         
         X = df[feature_cols].copy() if feature_cols else pd.DataFrame(index=df.index)
-        
-        # Fill NaN
         X = X.fillna(0)
+        
+        # Drop rows where target is NaN (invalid FTR)
+        valid_mask = y.notna()
+        X = X[valid_mask]
+        y = y[valid_mask].astype(int)
         
         return X, y
     
@@ -311,18 +314,22 @@ class TrainingPipeline:
             model = DixonColesModel()
             model.fit(self.train_df)
             
-            # Evaluate
+            # Evaluate using bulk prediction (faster and correct type)
+            preds = model.predict(self.test_df)
+            
             correct = 0
             total = 0
             
-            for _, row in self.test_df.iterrows():
-                pred = model.predict(row.to_dict())
-                if pred:
-                    pred_outcome = max(pred[0].probs.items(), key=lambda x: x[1])[0]
-                    actual = row.get("FTR")
+            for i, pred in enumerate(preds):
+                if pred and pred.probabilities:
+                    # pred.probabilities is dict {home: p, draw: p, away: p}
+                    pred_outcome = max(pred.probabilities.items(), key=lambda x: x[1])[0]
+                    
+                    # Convert match index i to test_df index
+                    actual_ftr = self.test_df.iloc[i].get("FTR")
                     
                     outcome_map = {"home": "H", "draw": "D", "away": "A"}
-                    if outcome_map.get(pred_outcome) == actual:
+                    if outcome_map.get(pred_outcome) == actual_ftr:
                         correct += 1
                     total += 1
             
@@ -394,7 +401,7 @@ class TrainingPipeline:
     ) -> TrainingResult:
         """Train LightGBM model."""
         try:
-            from stavki.models.lightgbm import LightGBMModel
+            from stavki.models.gradient_boost.lightgbm_model import LightGBMModel
             
             model = LightGBMModel()
             model.fit(
