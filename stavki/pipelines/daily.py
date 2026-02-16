@@ -609,6 +609,9 @@ class DailyPipeline:
         valid_renames = {k: v for k, v in rename_map.items() if k in df.columns}
         df = df.rename(columns=valid_renames)
         
+        # Remove duplicates if rename caused collisions (e.g. synth_xg_home existed + was renamed to)
+        df = df.loc[:, ~df.columns.duplicated()]
+        
         # 2. Derived features
         if "form_home_gf" in df.columns and "form_away_gf" in df.columns:
              df["gf_diff"] = df["form_home_gf"] - df["form_away_gf"]
