@@ -526,7 +526,7 @@ class DailyPipeline:
         """Build features for all matches."""
         try:
             # Try to use feature builders
-            from stavki.features import FeatureBuilder, SMOddsFeatureBuilder, SeasonalFeatures
+            from stavki.features import FeatureBuilder, SMOddsFeatureBuilder
             
             builder = FeatureBuilder()
             features = builder.build_all(matches_df, odds_df=odds_df)
