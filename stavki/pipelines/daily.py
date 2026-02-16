@@ -760,6 +760,7 @@ class DailyPipeline:
                     commence_time=commence,
                     home_score=home_score,
                     away_score=away_score,
+                    enrichment=row.get("_enrichment") if pd.notna(row.get("_enrichment")) else None,
                     source="historical" if is_historical else "api"
                 )
                 matches.append(m)
