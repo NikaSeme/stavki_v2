@@ -1,0 +1,50 @@
+{
+  "championship": {
+    "1x2": {
+      "DixonColes": 0.0,
+      "CatBoost_1X2": 0.9485658629936419,
+      "NeuralMultiTask": 0.0,
+      "LightGBM_1X2": 0.051434137006358085
+    }
+  },
+  "seriea": {
+    "1x2": {
+      "DixonColes": 0.0,
+      "CatBoost_1X2": 1.0,
+      "NeuralMultiTask": 0.0,
+      "LightGBM_1X2": 0.0
+    }
+  },
+  "epl": {
+    "1x2": {
+      "DixonColes": 0.0,
+      "CatBoost_1X2": 1.0,
+      "NeuralMultiTask": 0.0,
+      "LightGBM_1X2": 0.0
+    }
+  },
+  "ligue1": {
+    "1x2": {
+      "DixonColes": 0.0,
+      "CatBoost_1X2": 1.0,
+      "NeuralMultiTask": 0.0,
+      "LightGBM_1X2": 0.0
+    }
+  },
+  "laliga": {
+    "1x2": {
+      "DixonColes": 0.0,
+      "CatBoost_1X2": 0.8719843565113159,
+      "NeuralMultiTask": 0.1280156434886841,
+      "LightGBM_1X2": 0.0
+    }
+  },
+  "bundesliga": {
+    "1x2": {
+      "DixonColes": 0.0,
+      "CatBoost_1X2": 0.9101996743656786,
+      "NeuralMultiTask": 0.08980032563432135,
+      "LightGBM_1X2": 0.0
+    }
+  }
+}

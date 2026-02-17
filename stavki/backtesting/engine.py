@@ -24,6 +24,8 @@ import json
 import numpy as np
 import pandas as pd
 
+from ..strategy.ev import EVResult
+
 logger = logging.getLogger(__name__)
 
 
@@ -104,11 +106,22 @@ class BacktestEngine:
     """
     Main backtesting engine.
     
-    Simulates betting on historical data, tracking PnL, drawdown, etc.
+    Simulates betting on historical data using KellyStaker for realistic
+    bankroll management and risk control.
     """
     
     def __init__(self, config: Optional[BacktestConfig] = None):
         self.config = config or BacktestConfig()
+        
+        # Initialize Staker
+        from ..strategy.kelly import KellyStaker
+        
+        staker_config = {
+            "kelly_fraction": self.config.kelly_fraction,
+            "max_stake_pct": self.config.max_stake_pct,
+            # Map other config params if needed
+        }
+        self.staker = KellyStaker(bankroll=1000.0, config=staker_config)
     
     def run(
         self,
@@ -116,208 +129,252 @@ class BacktestEngine:
         model_probs: Optional[Dict[str, np.ndarray]] = None,
     ) -> BacktestResult:
         """
-        Run backtest on historical data.
-        
-        Args:
-            data: DataFrame with historical matches and odds.
-                  Required columns: HomeTeam, AwayTeam, FTR, AvgOddsH, AvgOddsD, AvgOddsA
-            model_probs: Pre-computed model probabilities (optional)
-        
-        Returns:
-            BacktestResult with all metrics
+        Run backtest on historical data with vectorized signal generation.
         """
         logger.info(f"Running backtest on {len(data)} matches")
         
-        # Initialize tracking
-        bankroll = 1000.0
-        initial_bankroll = bankroll
-        peak_bankroll = bankroll
-        max_drawdown = 0.0
+        # Reset staker for new run
+        self.staker.bankroll = 1000.0
+        self.staker.peak_bankroll = 1000.0
+        self.staker.bet_history = []
+        self.staker.pending_bets = []
+        self.staker.daily_exposure.clear()
+        self.staker.league_exposure.clear()
         
-        bets = []
-        league_stats = {}
-        
-        returns = []  # For Sharpe calculation
+        # Ensure chronological order
+        df = data.copy()
+        if "Date" in df.columns:
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+            df = df.sort_values("Date")
         
         # Filter by leagues if specified
-        if self.config.leagues and "League" in data.columns:
-            data = data[data["League"].isin(self.config.leagues)]
+        if self.config.leagues and "League" in df.columns:
+            df = df[df["League"].isin(self.config.leagues)]
+            
+        # 1. Vectorized Signal Generation
+        # This replaces the row-by-row iteration for EV calculation
+        signals = self._generate_signals(df, model_probs)
         
-        # Process each match
-        for idx, row in data.iterrows():
-            result = self._evaluate_match(row, model_probs, idx)
-            
-            if result is None:
-                continue
-            
-            bet_outcome, stake, odds, ev, league = result
-            
-            # Calculate profit
-            if bet_outcome == "win":
-                profit = stake * (odds - 1)
-            elif bet_outcome == "loss":
-                profit = -stake
-            else:
-                profit = 0
-            
-            # Apply slippage
-            if self.config.slippage > 0:
-                profit *= (1 - self.config.slippage)
-            
-            # Update bankroll
-            bankroll += profit
-            
-            # Track drawdown
-            if bankroll > peak_bankroll:
-                peak_bankroll = bankroll
-            
-            current_dd = (peak_bankroll - bankroll) / peak_bankroll
-            max_drawdown = max(max_drawdown, current_dd)
-            
-            # Track returns
-            returns.append(profit / stake if stake > 0 else 0)
-            
-            # Record bet
-            bet_record = {
-                "match": f"{row.get('HomeTeam', '')} vs {row.get('AwayTeam', '')}",
-                "league": league,
-                "odds": odds,
-                "stake": stake,
-                "ev": ev,
-                "outcome": bet_outcome,
-                "profit": profit,
-                "bankroll_after": bankroll,
-            }
-            bets.append(bet_record)
-            
-            # Track per-league
-            if league not in league_stats:
-                league_stats[league] = {"bets": 0, "wins": 0, "profit": 0, "stake": 0}
-            
-            league_stats[league]["bets"] += 1
-            league_stats[league]["stake"] += stake
-            league_stats[league]["profit"] += profit
-            if bet_outcome == "win":
-                league_stats[league]["wins"] += 1
+        logger.info(f"Generated {len(signals)} betting signals from {len(df)} matches")
         
-        # Calculate final metrics
-        total_bets = len(bets)
-        winning_bets = sum(1 for b in bets if b["outcome"] == "win")
-        total_stake = sum(b["stake"] for b in bets)
-        total_profit = bankroll - initial_bankroll
+        # 2. Sequential Execution (Staking)
+        # We only iterate over potential bets, not all matches
+        for row in signals.itertuples():
+            # Extract date
+            date = row.Date
+            
+            # Create EVResult from pre-calculated data
+            ev_result = EVResult(
+                match_id=row.match_id,
+                market="match_winner",
+                selection=row.selection,
+                model_prob=row.model_prob,
+                odds=row.odds,
+                ev=row.ev,
+                edge_pct=row.edge,
+                implied_prob=row.implied_prob,
+                bookmaker="Avg",
+            )
+            
+            # Calculate stake (stateful)
+            stake_result = self.staker.calculate_stake(
+                ev_result=ev_result,
+                league=row.League,
+                date=date,
+            )
+            
+            if stake_result.stake_amount > 0:
+                # Place bet
+                self.staker.place_bet(stake_result, row.League, date=date)
+                
+                # Apply slippage/bans
+                if self.config.market_ban_prob > 0 and np.random.random() < self.config.market_ban_prob:
+                    self.staker.settle_bet(ev_result.match_id, "void", date=date)
+                    continue
+                
+                # Settle bet
+                self.staker.settle_bet(ev_result.match_id, row.outcome, date=date)
         
-        roi = total_profit / total_stake if total_stake > 0 else 0
-        win_rate = winning_bets / total_bets if total_bets > 0 else 0
+        return self._compile_results()
+
+    def _generate_signals(
+        self,
+        df: pd.DataFrame,
+        model_probs: Optional[Dict[str, np.ndarray]]
+    ) -> pd.DataFrame:
+        """
+        Vectorized generation of betting signals.
+        Returns DataFrame of OPPORTUNITIES (EV > min_ev).
+        """
+        # 1. Extract Odds
+        odds_h = df.get("AvgOddsH", df.get("WHH", df.get("B365H", 0))).astype(float)
+        odds_d = df.get("AvgOddsD", df.get("WHD", df.get("B365D", 0))).astype(float)
+        odds_a = df.get("AvgOddsA", df.get("WHA", df.get("B365A", 0))).astype(float)
         
-        # Sharpe ratio
+        # Valid odds mask
+        valid_mask = (odds_h > 1) & (odds_d > 1) & (odds_a > 1)
+        
+        # 2. Align Model Probs
+        n = len(df)
+        if model_probs:
+            # Convert dict to array aligned with df index
+            # This handles the case where model_probs might be sparse or unordered
+            # Assuming model_probs keys match df.index
+            
+            # Pre-allocate
+            p_model = np.zeros((n, 3))
+            
+            # Identify indices present in both
+            common_indices = df.index.intersection(list(model_probs.keys()))
+            
+            if len(common_indices) > 0:
+                # This loop is technically iterating, but only for mapping
+                # For huge datasets, we'd want model_probs to be a DataFrame already
+                # But typically this dictionary lookup is fast enough compared to full logic
+                # Optimization: if model_probs keys are exactly df.index, we can stack
+                
+                # Fast path: check if keys match exactly
+                if len(model_probs) == n and np.array_equal(df.index, list(model_probs.keys())):
+                     p_model = np.stack(list(model_probs.values()))
+                else:
+                    # Slow path: map
+                    # Use reindexing if model_probs can be converted to DF
+                    # Or simple loop for now (still faster than full logic)
+                    # For safety in this refactor, let's use a safe mapping
+                    # Create a Series of arrays? No, 2D array is better for math.
+                    
+                    # Create temporary DF to align
+                    probs_df = pd.DataFrame.from_dict(model_probs, orient='index')
+                    probs_df = probs_df.reindex(df.index).fillna(0)
+                    p_model = probs_df.values
+            
+        else:
+            # Market implied baseline
+            inv_h, inv_d, inv_a = 1/odds_h, 1/odds_d, 1/odds_a
+            total_inv = inv_h + inv_d + inv_a
+            p_model = np.column_stack([inv_h/total_inv, inv_d/total_inv, inv_a/total_inv])
+            # Handle zeros (inf)
+            p_model = np.nan_to_num(p_model, 0.0)
+
+        # 3. Market Implied Probs (Normalized)
+        inv_h, inv_d, inv_a = 1/odds_h, 1/odds_d, 1/odds_a
+        total_inv = inv_h + inv_d + inv_a
+        p_market = np.column_stack([inv_h/total_inv, inv_d/total_inv, inv_a/total_inv])
+        
+        # 4. Blend
+        alpha = self.config.model_alpha
+        p_blended = alpha * p_model + (1 - alpha) * p_market
+        
+        # 5. Calculate EVs
+        # odds_arr shape: (N, 3)
+        odds_arr = np.column_stack([odds_h, odds_d, odds_a])
+        evs = p_blended * odds_arr - 1
+        
+        # 6. Find Best Bet per Row
+        best_idx = np.argmax(evs, axis=1)
+        # Advanced indexing to get values
+        rows = np.arange(n)
+        best_ev = evs[rows, best_idx]
+        best_prob = p_blended[rows, best_idx]
+        best_implied = p_market[rows, best_idx]
+        best_odds = odds_arr[rows, best_idx]
+        
+        edge = best_prob - best_implied
+        
+        # 7. Apply Filters
+        mask = (valid_mask) & \
+               (best_ev >= self.config.min_ev) & \
+               (edge >= self.config.min_edge)
+               
+        if not mask.any():
+            return pd.DataFrame()
+            
+        # 8. Construct Result DataFrame
+        # Get outcomes
+        ftr = df.get("FTR", df.get("Result", "")).map({"H": 0, "D": 1, "A": 2}).fillna(-1).astype(int)
+        actual_outcomes = np.where(ftr == best_idx, "win", "loss")
+        
+        # Selection strings
+        selections = np.array(["home", "draw", "away"])
+        best_selections = selections[best_idx]
+        
+        # Build signals DF
+        signals = df[mask].copy()
+        signals["selection"] = best_selections[mask]
+        signals["model_prob"] = best_prob[mask]
+        signals["odds"] = best_odds[mask]
+        signals["ev"] = best_ev[mask]
+        signals["edge"] = edge[mask]
+        signals["outcome"] = actual_outcomes[mask]
+        signals["implied_prob"] = best_implied[mask]
+        
+        # Ensure match_id exists
+        if "match_id" not in signals.columns:
+            from stavki.utils import generate_match_id
+            # Vectorized ID generation is tricky with the util fn
+            # But we can iterate just for ID if needed, or use apply
+            # Since we filtered down significantly, apply is fine
+            signals["match_id"] = signals.apply(
+                lambda x: generate_match_id(x.get("HomeTeam", ""), x.get("AwayTeam", ""), x.get("Date")),
+                axis=1
+            )
+            
+        return signals
+
+    def _compile_results(self) -> BacktestResult:
+        """Helper to compile final stats from staker."""
+        stats = self.staker.get_stats()
+        
+        # Calculate Sharpe from history
+        returns = []
+        bets = self.staker.bet_history
+        for b in bets:
+            if b.get("stake", 0) > 0:
+                returns.append(b.get("profit", 0) / b["stake"])
+        
         if len(returns) > 1:
-            avg_return = np.mean(returns)
-            std_return = np.std(returns)
-            sharpe = (avg_return / std_return) * np.sqrt(252) if std_return > 0 else 0
+            avg_ret = np.mean(returns)
+            std_ret = np.std(returns)
+            sharpe = (avg_ret / std_ret) * np.sqrt(252) if std_ret > 0 else 0
         else:
             sharpe = 0
-        
-        # Per-league results
-        for league in league_stats:
-            ls = league_stats[league]
-            ls["roi"] = ls["profit"] / ls["stake"] if ls["stake"] > 0 else 0
-            ls["win_rate"] = ls["wins"] / ls["bets"] if ls["bets"] > 0 else 0
-        
-        result = BacktestResult(
-            total_bets=total_bets,
-            winning_bets=winning_bets,
-            total_stake=total_stake,
-            total_profit=total_profit,
-            roi=roi,
-            win_rate=win_rate,
-            max_drawdown=max_drawdown,
+            
+        # Reconstruct league stats
+        league_stats = {}
+        for b in bets:
+            l = b.get("league", "Unknown")
+            if l not in league_stats:
+                league_stats[l] = {"bets": 0, "wins": 0, "profit": 0.0, "stake": 0.0}
+            
+            league_stats[l]["bets"] += 1
+            league_stats[l]["stake"] += b.get("stake", 0)
+            league_stats[l]["profit"] += b.get("profit", 0)
+            if b.get("status") == "win":
+                league_stats[l]["wins"] += 1
+
+        for l in league_stats:
+            s = league_stats[l]
+            s["roi"] = s["profit"] / s["stake"] if s["stake"] > 0 else 0
+            s["win_rate"] = s["wins"] / s["bets"] if s["bets"] > 0 else 0
+            
+        return BacktestResult(
+            total_bets=stats["total_bets"],
+            winning_bets=stats["wins"],
+            total_stake=stats["total_staked"],
+            total_profit=stats["total_profit"],
+            roi=stats["roi"],
+            win_rate=stats["win_rate"],
+            max_drawdown=stats["drawdown"],
             sharpe_ratio=sharpe,
             avg_odds=np.mean([b["odds"] for b in bets]) if bets else 0,
             avg_ev=np.mean([b["ev"] for b in bets]) if bets else 0,
             league_results=league_stats,
             bet_history=bets,
         )
-        
-        logger.info(f"Backtest complete: {total_bets} bets, ROI={roi:.2%}")
-        
-        return result
-    
-    def _evaluate_match(
-        self,
-        row: pd.Series,
-        model_probs: Optional[Dict],
-        idx: Any,
-    ) -> Optional[Tuple[str, float, float, float, str]]:
-        """
-        Evaluate a single match for betting.
-        
-        Returns:
-            (outcome, stake, odds, ev, league) or None if no bet
-        """
-        # Get odds
-        odds_h = row.get("AvgOddsH", row.get("WHH", row.get("B365H", 0)))
-        odds_d = row.get("AvgOddsD", row.get("WHD", row.get("B365D", 0)))
-        odds_a = row.get("AvgOddsA", row.get("WHA", row.get("B365A", 0)))
-        
-        if not all([odds_h, odds_d, odds_a]) or any(o <= 1 for o in [odds_h, odds_d, odds_a]):
-            return None
-        
-        # Get model probabilities
-        if model_probs is not None and idx in model_probs:
-            p_model = model_probs[idx]
-        else:
-            # Use market-implied probabilities as baseline
-            implied = [1/odds_h, 1/odds_d, 1/odds_a]
-            total = sum(implied)
-            p_model = np.array([p/total for p in implied])
-        
-        # Blend with market
-        implied_probs = np.array([1/odds_h, 1/odds_d, 1/odds_a])
-        implied_probs /= implied_probs.sum()
-        
-        alpha = self.config.model_alpha
-        blended = alpha * p_model + (1 - alpha) * implied_probs
-        
-        # Calculate EVs
-        odds_arr = np.array([odds_h, odds_d, odds_a])
-        evs = blended * odds_arr - 1
-        
-        # Find best bet
-        best_idx = np.argmax(evs)
-        best_ev = evs[best_idx]
-        
-        if best_ev < self.config.min_ev:
-            return None
-        
-        # Check edge
-        edge = blended[best_idx] - implied_probs[best_idx]
-        if edge < self.config.min_edge:
-            return None
-        
-        # Calculate stake (Kelly)
-        kelly_full = (blended[best_idx] * odds_arr[best_idx] - 1) / (odds_arr[best_idx] - 1)
-        stake_pct = min(
-            kelly_full * self.config.kelly_fraction,
-            self.config.max_stake_pct
-        )
-        stake = 1000 * stake_pct  # Assume 1000 bankroll
-        
-        if stake < 1:  # Minimum stake
-            return None
-        
-        # Determine actual outcome
-        actual_result = row.get("FTR", row.get("Result", ""))
-        result_map = {"H": 0, "D": 1, "A": 2}
-        actual_idx = result_map.get(actual_result, -1)
-        
-        if actual_idx == -1:
-            return None
-        
-        outcome = "win" if actual_idx == best_idx else "loss"
-        
-        league = row.get("League", row.get("Div", "Unknown"))
-        
-        return (outcome, stake, odds_arr[best_idx], best_ev, league)
+
+    # Legacy method kept but unused in vectorized run
+    def _evaluate_match(self, *args, **kwargs):
+        pass
 
 
 class WalkForwardValidator:

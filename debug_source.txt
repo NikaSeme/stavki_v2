@@ -1,0 +1,174 @@
+    def predict(self, data: pd.DataFrame) -> List[Prediction]:
+        """Generate ensemble predictions using vectorized operations."""
+        all_predictions = []
+        
+        # 1. Collect predictions from all models
+        # Structure: market -> match_id -> model_name -> Prediction
+        market_preds: Dict[Market, Dict[str, Dict[str, Prediction]]] = defaultdict(lambda: defaultdict(dict))
+        
+        # ALIASING: Map pipeline columns to training columns
+        # Training data uses PascalCase, pipeline uses snake_case
+        df = data.copy()
+        mappings = {
+            "home_team": "HomeTeam",
+            "away_team": "AwayTeam", 
+            "league": "League",
+            "date": "Date",
+            "commence_time": "Date",
+            # Map generic odds to specific columns models might expect (Avg/Max)
+            "home_odds": "AvgH",
+            "draw_odds": "AvgD",
+            "away_odds": "AvgA",
+        }
+        for src, dst in mappings.items():
+            if src in df.columns and dst not in df.columns:
+                df[dst] = df[src]
+            # Also map reverse if needed? No, pipeline has src.
+            
+        # Ensure Date is datetime
+        if "Date" in df.columns:
+            df["Date"] = pd.to_datetime(df["Date"])
+
+        for name, model in self.models.items():
+            if model.is_fitted:
+                # Iterate over all markets this ensemble supports
+                for market in self.markets:
+                    if not model.supports_market(market):
+                        continue
+                    
+                    try:
+                        # Prepare data subset for this model (same code as before)
+                        # ... (omitted for brevity, assume data preparation is fast or handled inside model)
+                        # Ideally, models should handle extra columns gracefully.
+                        # For now, we trust basic data compatibility or rely on model's internal handling.
+                        
+                        print(f"DEBUG: Predicting with {name} for {market.value}...")
+                        preds = model.predict(df)
+                        print(f"DEBUG:   -> {name} returned {len(preds)} predictions")
+                        
+                        for p in preds:
+                            if p.market == market:
+                                market_preds[market][p.match_id][name] = p
+                                
+                    except Exception as e:
+                        print(f"DEBUG: Model {name} prediction for market {market.value} failed: {e}")
+            else:
+                print(f"DEBUG: Model {name} is NOT FITTED")
+
+        
+        # 2. Build League Lookup Vectorized
+        league_lookup = {}
+        # df has aliased columns (PascalCase)
+        league_col = "League"
+        
+        if league_col in df.columns and "HomeTeam" in df.columns:
+            # Try to vectorize ID generation if possible, else use apply
+            from stavki.utils import generate_match_id
+            
+            # Use a temporary dataframe to avoid modifying input
+            temp = df[[league_col, "HomeTeam", "AwayTeam", "Date"]].copy()
+            temp["mid"] = temp.apply(
+                lambda x: generate_match_id(x.get("HomeTeam", ""), x.get("AwayTeam", ""), x.get("Date")), 
+                axis=1
+            )
+            league_lookup = dict(zip(temp["mid"], temp[league_col]))
+            
+        # 3. Process each market vectorized
+        for market, match_dict in market_preds.items():
+            # Convert to list for processing
+            match_ids = list(match_dict.keys())
+            
+            if not match_ids:
+                continue
+                
+            # Get outcomes from first prediction
+            first_match = match_ids[0]
+            first_model = list(match_dict[first_match].keys())[0]
+            outcomes = sorted(list(match_dict[first_match][first_model].probabilities.keys()))
+            outcome_map = {out: i for i, out in enumerate(outcomes)}
+            n_outcomes = len(outcomes)
+            
+            # Build Tensors
+            # We need to handle missing models for some matches
+            # But efficiently.
+            
+            # Let's iterate matches to create Prediction objects directly if N is small?
+            # No, goal is vectorization.
+            
+            # Since models might differ per match, strict vectorization is hard 
+            # unless we align everything.
+            # But the weighting logic is what's slow.
+            
+            for match_id in match_ids:
+                preds_map = match_dict[match_id]
+                league = league_lookup.get(match_id)
+                weights = self.get_weights(market, league)
+                
+                # Fast inner loop
+                valid_preds = []
+                valid_weights = []
+                
+                for model_name, pred in preds_map.items():
+                    w = weights.get(model_name, 0.0)
+                    if w > 0:
+                        valid_preds.append(pred)
+                        valid_weights.append(w)
+                    # else:
+                        # print(f"DEBUG: Skipping {model_name} due to 0 weight")
+                
+                if not valid_preds:
+                    continue
+                    
+                # Normalize weights
+                total_w = sum(valid_weights)
+                if total_w == 0:
+                    probs = {o: 0.0 for o in outcomes} # Should not happen
+                    confidence = 0.0
+                else:
+                    norm_weights = [w/total_w for w in valid_weights]
+                    
+                    # Weighted Sum
+                    final_probs = {o: 0.0 for o in outcomes}
+                    for i, p in enumerate(valid_preds):
+                        nw = norm_weights[i]
+                        for o, prob in p.probabilities.items():
+                            final_probs[o] += prob * nw
+                    
+                    # Confidence
+                    sorted_p = sorted(final_probs.values(), reverse=True)
+                    confidence = sorted_p[0] - sorted_p[1] if len(sorted_p) > 1 else sorted_p[0]
+                    
+                    # Disagreement (only if enabled)
+                    disagreement = 0.0
+                    if self.use_disagreement and len(valid_preds) >= 2:
+                        # Vectorized JS divergence for this single match
+                        # Build (N_models, N_outcomes) matrix
+                        p_matrix = np.zeros((len(valid_preds), n_outcomes))
+                        for i, p in enumerate(valid_preds):
+                            for o, prob in p.probabilities.items():
+                                if o in outcome_map:
+                                    p_matrix[i, outcome_map[o]] = prob
+                        
+                        # Mean distribution
+                        m = np.mean(p_matrix, axis=0)
+                        
+                        # KL Divergence: sum(p * log(p/m))
+                        # Add epsilon
+                        eps = 1e-10
+                        # p * np.log((p+eps)/(m+eps))
+                        kls = np.sum(p_matrix * np.log((p_matrix + eps) / (m + eps)), axis=1)
+                        disagreement = np.mean(kls)
+
+                    probs = final_probs
+                    
+                    # Create Prediction
+                    all_predictions.append(Prediction(
+                        match_id=match_id,
+                        market=market,
+                        probabilities=probs,
+                        confidence=confidence * (1 - disagreement * 0.5),
+                        model_name=self.name,
+                        features_used={"disagreement": disagreement, "n_models": len(valid_preds)}
+                    ))
+                    
+        return all_predictions

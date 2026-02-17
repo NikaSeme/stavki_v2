@@ -153,5 +153,15 @@
   "rolling_possession_home",
   "rolling_possession_away",
   "ref_encoded_goals",
-  "ref_encoded_cards"
+  "ref_encoded_cards",
+  "form_home_ga",
+  "form_away_ga",
+  "attack_strength_home",
+  "attack_strength_away",
+  "defense_strength_home",
+  "defense_strength_away",
+  "advanced_xg_against_home",
+  "advanced_xg_against_away",
+  "h2h_avg_goals",
+  "league_avg_goals"
 ]

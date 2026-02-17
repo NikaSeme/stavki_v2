@@ -128,7 +128,7 @@ class CatBoostModel(CalibratedModel):
         self.random_seed = random_seed
         self.use_gpu = use_gpu
         
-        self.features = features or CATBOOST_FEATURES
+        self.features = features # If None, will auto-detect from input data
         self.cat_features = cat_features or CATEGORICAL_FEATURES
         
         self.model: Optional[CatBoostClassifier] = None
@@ -156,13 +156,34 @@ class CatBoostModel(CalibratedModel):
             df = df.sort_values("Date")
         
         # Create target
-        df["target"] = self._create_target(df)
+        if "target" not in df.columns:
+            df["target"] = self._create_target(df)
         df = df.dropna(subset=["target"])
         
+        # Auto-detect features if not specified
+        if self.features is None:
+             exclude = {
+                 "target", "Date", "FTHG", "FTAG", "FTR", "match_id", "id", 
+                 "HomeTeam", "AwayTeam", "home_team", "away_team", "league", "season", "Div", "Time",
+                 # Match Stats (Leakage)
+                 "HTHG", "HTAG", "HTR",
+                 "HS", "AS", "HST", "AST", "HF", "AF", "HC", "AC", "HY", "AY", "HR", "AR",
+                 # Target aliases
+                 "FTR_num", "Result", "Res",
+             }
+             self.features = [c for c in df.columns if c not in exclude and df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
+             # Add known categoricals if present
+             for cat in self.cat_features:
+                 if cat in df.columns and cat not in self.features:
+                     self.features.append(cat)
+                     
         # Get available features (numeric + categorical)
-        available_numeric = [f for f in self.features if f in df.columns]
+        available_numeric = [f for f in self.features if f in df.columns and f not in self.cat_features]
         available_cat = [f for f in self.cat_features if f in df.columns]
-        all_features = available_numeric + available_cat
+        
+        # Update features list to match what we actually found
+        self.features = available_numeric + available_cat
+        all_features = self.features
         
         if len(all_features) < 3:
             # Fallback
@@ -304,15 +325,21 @@ class CatBoostModel(CalibratedModel):
         # Process categoricals
         for cat_col in cat_features:
             if cat_col in X.columns:
+                # Force to string to match training
                 X[cat_col] = X[cat_col].fillna("Unknown").astype(str)
-        
+                
         # Fill numeric
         for col in X.columns:
             if col not in cat_features:
                 X[col] = X[col].fillna(0)
         
-        # Predict
-        raw_probs = self.model.predict_proba(X)
+        # Predict with safety wrapper
+        try:
+            raw_probs = self.model.predict_proba(X)
+        except Exception as e:
+            logger.error(f"CatBoost prediction failed (likely unseen categorical): {e}")
+            # Fallback to equal probabilities
+            raw_probs = np.full((len(X), 3), 1.0/3.0)
         
         # Calibrate
         calibrated = np.zeros_like(raw_probs)
@@ -327,8 +354,7 @@ class CatBoostModel(CalibratedModel):
         calibrated = calibrated / row_sums
         
         predictions = []
-        for idx, row in data.iterrows():
-            i = data.index.get_loc(idx)
+        for i, (idx, row) in enumerate(data.iterrows()):
             match_id = row.get("match_id", f"{row.get('HomeTeam', 'home')}_vs_{row.get('AwayTeam', 'away')}_{idx}")
             
             # Note: CatBoost uses 0=Home, 1=Draw, 2=Away

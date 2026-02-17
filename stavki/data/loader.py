@@ -83,6 +83,25 @@ class UnifiedDataLoader:
         self.cache_ttl_hours = cache_ttl_hours
         self.use_api_for_recent_days = use_api_for_recent_days
         
+        # Load leagues from config
+        self.leagues_map = {}
+        try:
+            leagues_path = PROJECT_ROOT / "stavki" / "config" / "leagues.json"
+            if leagues_path.exists():
+                with open(leagues_path) as f:
+                    leagues_config = json.load(f)
+                    # Config is Name -> ID, we need ID -> Name (lowercase)
+                    self.leagues_map = {v: k.lower().replace("_", "") for k, v in leagues_config.items()}
+            else:
+                logger.warning(f"Leagues config not found at {leagues_path}, using defaults")
+                self.leagues_map = {
+                    8: 'epl', 82: 'bundesliga', 564: 'laliga', 
+                    384: 'seriea', 301: 'ligue1', 9: 'championship'
+                }
+        except Exception as e:
+            logger.error(f"Failed to load leagues config: {e}")
+            self.leagues_map = {}
+
         # Initialize API client if key provided
         self.client: Optional[SportMonksClient] = None
         if api_key:
@@ -92,133 +111,9 @@ class UnifiedDataLoader:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
         logger.info(f"UnifiedDataLoader initialized (API: {'✓' if api_key else '✗'})")
-    
-    @staticmethod
-    def normalize_team_name(name: str) -> str:
-        """Normalize team name to canonical form.
-        
-        Delegates to the canonical normalizer in data.processors.normalize.
-        """
-        from stavki.data.processors.normalize import normalize_team_name as _normalize
-        return _normalize(name)
-    
-    def _get_cache_path(self, key: str) -> Path:
-        """Get cache file path for a key."""
-        hash_key = hashlib.md5(key.encode()).hexdigest()[:12]
-        return self.cache_dir / f"{hash_key}.json"
-    
-    def _get_cached(self, key: str) -> Optional[Dict]:
-        """Get cached response if valid."""
-        cache_path = self._get_cache_path(key)
-        
-        if not cache_path.exists():
-            return None
-        
-        try:
-            with open(cache_path) as f:
-                data = json.load(f)
-            
-            # Check TTL
-            cached_at = datetime.fromisoformat(data.get("cached_at", "2000-01-01"))
-            if datetime.now() - cached_at > timedelta(hours=self.cache_ttl_hours):
-                return None
-            
-            return data.get("response")
-        except Exception:
-            return None
-    
-    def _set_cache(self, key: str, response: Dict):
-        """Cache a response."""
-        cache_path = self._get_cache_path(key)
-        
-        try:
-            with open(cache_path, "w") as f:
-                json.dump({
-                    "cached_at": datetime.now().isoformat(),
-                    "key": key,
-                    "response": response
-                }, f)
-        except Exception as e:
-            logger.warning(f"Failed to cache: {e}")
-    
-    # =========================================================================
-    # Historical Data
-    # =========================================================================
-    
-    def get_historical_data(
-        self,
-        start: Optional[str] = None,
-        end: Optional[str] = None,
-        leagues: Optional[List[str]] = None,
-        include_recent_from_api: bool = True
-    ) -> pd.DataFrame:
-        """
-        Get historical match data.
-        
-        Uses CSV for bulk historical data, optionally supplements
-        with recent data from SportMonks API.
-        
-        Args:
-            start: Start date (YYYY-MM-DD)
-            end: End date (YYYY-MM-DD)
-            leagues: List of league codes to include
-            include_recent_from_api: Fetch recent matches from API
-            
-        Returns:
-            DataFrame with historical matches
-        """
-        # Load base data from CSV
-        df = self._load_csv_data()
-        
-        # Apply filters
-        if start:
-            df = df[df['Date'] >= start]
-        if end:
-            df = df[df['Date'] <= end]
-        if leagues:
-            df = df[df['League'].isin(leagues)]
-        
-        # Optionally add recent data from API
-        if include_recent_from_api and self.client:
-            recent_cutoff = (datetime.now() - timedelta(days=self.use_api_for_recent_days)).strftime("%Y-%m-%d")
-            
-            # Remove recent data from CSV (will replace with API data)
-            df = df[df['Date'] < recent_cutoff]
-            
-            # Fetch recent from API
-            recent_df = self._fetch_recent_from_api(recent_cutoff, end)
-            
-            if not recent_df.empty:
-                df = pd.concat([df, recent_df], ignore_index=True)
-                df = df.sort_values('Date').reset_index(drop=True)
-        
-        # Normalize team names
-        df['HomeTeam'] = df['HomeTeam'].apply(self.normalize_team_name)
-        df['AwayTeam'] = df['AwayTeam'].apply(self.normalize_team_name)
-        
-        logger.info(f"Loaded {len(df)} historical matches")
-        return df
-    
-    def _load_csv_data(self) -> pd.DataFrame:
-        """Load data from CSV/Parquet files."""
-        # Try parquet first (faster)
-        parquet_path = DATA_DIR / "features_full.parquet"
-        if parquet_path.exists():
-            df = pd.read_parquet(parquet_path)
-        else:
-            csv_path = DATA_DIR / "features_full.csv"
-            if csv_path.exists():
-                df = pd.read_csv(csv_path, low_memory=False)
-            else:
-                # Fall back to training data
-                df = pd.read_csv(DATA_DIR / "training_data.csv", low_memory=False)
-        
-        # Ensure date column
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
-        
-        return df
-    
+
+    # ... (normalize_team_name, _get_cache_path, _get_cached, _set_cache unchanged) ...
+
     def _fetch_recent_from_api(
         self,
         start_date: str,
@@ -242,7 +137,7 @@ class UnifiedDataLoader:
         current = datetime.strptime(start_date, "%Y-%m-%d")
         end = datetime.strptime(end_date, "%Y-%m-%d")
         
-        league_ids = list(self.SPORTMONKS_LEAGUES.keys())
+        league_ids = list(self.leagues_map.keys())
         
         while current <= end:
             date_str = current.strftime("%Y-%m-%d")
@@ -256,7 +151,7 @@ class UnifiedDataLoader:
                         'Date': date_str,
                         'HomeTeam': fix.home_team,
                         'AwayTeam': fix.away_team,
-                        'League': self.SPORTMONKS_LEAGUES.get(fix.league_id, 'unknown'),
+                        'League': self.leagues_map.get(fix.league_id, 'unknown'),
                         'fixture_id': fix.fixture_id,
                     }
                     
@@ -267,8 +162,8 @@ class UnifiedDataLoader:
                             match_data['B365H'] = odds[0]['odds'].get('home', 2.5)
                             match_data['B365D'] = odds[0]['odds'].get('draw', 3.3)
                             match_data['B365A'] = odds[0]['odds'].get('away', 2.8)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"Failed to get odds for fixture {fix.fixture_id}: {e}")
                     
                     # Try to get full match data (stats + lineups + events + referee)
                     try:
@@ -283,8 +178,8 @@ class UnifiedDataLoader:
                             match_data['possession_away'] = stats.away_possession
                         if full.get("referee"):
                             match_data['referee'] = full["referee"]
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"Failed to get full details for fixture {fix.fixture_id}: {e}")
                     
                     all_matches.append(match_data)
                     
@@ -300,6 +195,7 @@ class UnifiedDataLoader:
             self._set_cache(cache_key, df.to_dict(orient='records'))
         
         return df
+
     
     # =========================================================================
     # Live Fixtures

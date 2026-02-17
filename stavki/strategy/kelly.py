@@ -75,7 +75,7 @@ class KellyStaker:
         # Exposure limits
         "max_daily_exposure_pct": 0.20,   # Max 20% bankroll per day
         "max_league_exposure_pct": 0.10,  # Max 10% per league
-        "max_concurrent_bets": 10,        # Max open bets at once
+        "max_concurrent_bets": 50,        # Max open bets at once
         
         # Drawdown limits
         "drawdown_reduce_threshold": 0.15,  # Reduce stakes at 15% drawdown
@@ -131,8 +131,10 @@ class KellyStaker:
         self,
         ev_result: EVResult,
         league: str = "unknown",
+        date: Optional[datetime] = None,
         apply_limits: bool = True,
     ) -> StakeResult:
+
         """
         Calculate stake for a betting opportunity.
         
@@ -182,7 +184,8 @@ class KellyStaker:
             )
         
         # Apply limits
-        stake_pct, reason = self._apply_all_limits(stake_pct, league)
+        stake_pct, reason = self._apply_all_limits(stake_pct, league, date)
+
         
         if stake_pct <= 0:
             return StakeResult(
@@ -230,10 +233,14 @@ class KellyStaker:
     def _apply_all_limits(
         self, 
         stake_pct: float, 
-        league: str
+        league: str,
+        date: Optional[datetime] = None,
     ) -> Tuple[float, Optional[str]]:
         """Apply all stake limits."""
-        today = datetime.now().strftime("%Y-%m-%d")
+        if date:
+            today = date.strftime("%Y-%m-%d")
+        else:
+            today = datetime.now().strftime("%Y-%m-%d")
         
         # 1. Max stake per bet
         if stake_pct > self.config["max_stake_pct"]:
@@ -284,15 +291,25 @@ class KellyStaker:
         
         return (self.peak_bankroll - self.bankroll) / self.peak_bankroll
     
-    def place_bet(self, stake_result: StakeResult, league: str = "unknown"):
+    def place_bet(
+        self, 
+        stake_result: StakeResult, 
+        league: str = "unknown",
+        date: Optional[datetime] = None,
+    ):
         """Record a placed bet (pending until settled)."""
         if stake_result.stake_amount <= 0:
             return
         
-        today = datetime.now().strftime("%Y-%m-%d")
+        if date:
+            today = date.strftime("%Y-%m-%d")
+            timestamp = date.isoformat()
+        else:
+            today = datetime.now().strftime("%Y-%m-%d")
+            timestamp = datetime.now().isoformat()
         
         bet_record = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": timestamp,
             "match_id": stake_result.match_id,
             "market": stake_result.market,
             "selection": stake_result.selection,
@@ -316,7 +333,9 @@ class KellyStaker:
         self,
         match_id: str,
         result: str,  # "win", "loss", "void", "half_win", "half_loss"
+        date: Optional[datetime] = None,
     ):
+
         """Settle a pending bet."""
         # Find the bet
         bet_idx = None
@@ -355,14 +374,21 @@ class KellyStaker:
         
         # Release exposure
         stake_pct = stake / (self.bankroll - profit) if (self.bankroll - profit) > 0 else 0
-        today = datetime.now().strftime("%Y-%m-%d")
+        
+        if date:
+            today = date.strftime("%Y-%m-%d")
+            settled_at = date.isoformat()
+        else:
+            today = datetime.now().strftime("%Y-%m-%d")
+            settled_at = datetime.now().isoformat()
+            
         self.daily_exposure[today] = max(0, self.daily_exposure[today] - stake_pct)
         self.league_exposure[league] = max(0, self.league_exposure[league] - stake_pct)
         
         # Record
         bet["status"] = result
         bet["profit"] = profit
-        bet["settled_at"] = datetime.now().isoformat()
+        bet["settled_at"] = settled_at
         bet["bankroll_after"] = self.bankroll
         self.bet_history.append(bet)
         
@@ -378,9 +404,19 @@ class KellyStaker:
         if not self.bet_history:
             return {
                 "total_bets": 0,
-                "bankroll": self.bankroll,
+                "pending_bets": 0,
+                "wins": 0,
+                "losses": 0,
+                "win_rate": 0.0,
+                "total_staked": 0.0,
+                "total_profit": 0.0,
                 "roi": 0.0,
+                "bankroll": self.bankroll,
+                "peak_bankroll": self.peak_bankroll,
+                "drawdown": 0.0,
+                "initial_bankroll": self.initial_bankroll,
             }
+
         
         wins = sum(1 for b in self.bet_history if b["status"] == "win")
         losses = sum(1 for b in self.bet_history if b["status"] == "loss")

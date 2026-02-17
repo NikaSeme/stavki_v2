@@ -27,32 +27,33 @@ logger = logging.getLogger(__name__)
 
 
 # BTTS-specific features
+
+# BTTS-specific features (Updated to match pipeline snake_case)
 BTTS_FEATURES = [
     # Scoring patterns
-    "Home_GF_L5", "Home_GA_L5",
-    "Away_GF_L5", "Away_GA_L5",
-    "Home_Overall_GF_L5", "Away_Overall_GF_L5",
+    "form_home_gf", "form_home_ga",
+    "form_away_gf", "form_away_ga",
     
-    # Clean sheets / scoring probability
-    "Home_Clean_Sheet_Pct", "Away_Clean_Sheet_Pct",
-    "Home_Scored_Pct", "Away_Scored_Pct",
-    "Home_Failed_Score_Pct", "Away_Failed_Score_Pct",
+    # Clean sheets / scoring probability (Computed)
+    "home_clean_sheet_pct", "away_clean_sheet_pct",
+    "home_scored_pct", "away_scored_pct",
     
     # xG features
-    "xG_Home_L5", "xGA_Home_L5", "xG_Away_L5", "xGA_Away_L5",
+    "synth_xg_home", "advanced_xg_against_home", 
+    "synth_xg_away", "advanced_xg_against_away",
     
     # Defense strength
-    "Home_Defense_Rating", "Away_Defense_Rating",
-    "Home_Attack_Rating", "Away_Attack_Rating",
+    "defense_strength_home", "defense_strength_away",
+    "attack_strength_home", "attack_strength_away",
     
     # ELO components
-    "HomeEloBefore", "AwayEloBefore",
+    "elo_home", "elo_away",
     
     # H2H BTTS history
-    "H2H_BTTS_Pct", "H2H_Goals_Per_Game",
+    "h2h_avg_goals",
     
     # League BTTS rate
-    "League_BTTS_Rate",
+    "league_avg_goals",
 ]
 
 
@@ -186,14 +187,15 @@ class BTTSModel(CalibratedModel):
     def _add_computed_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add BTTS-specific computed features."""
         # Clean sheet percentage (if we have the data)
-        if "Home_GF_L5" in df.columns and "Home_GA_L5" in df.columns:
+        if "form_home_gf" in df.columns and "form_home_ga" in df.columns:
             # Approximate clean sheet % from average goals against
-            df["Home_Clean_Sheet_Pct"] = np.clip(1 - df["Home_GA_L5"] / 1.5, 0, 1)
-            df["Away_Clean_Sheet_Pct"] = np.clip(1 - df["Away_GA_L5"] / 1.5, 0, 1)
+            # Assuming form features are averages or comparable scale
+            df["home_clean_sheet_pct"] = np.clip(1 - df["form_home_ga"] / 1.5, 0, 1)
+            df["away_clean_sheet_pct"] = np.clip(1 - df["form_away_ga"] / 1.5, 0, 1)
             
             # Scoring probability
-            df["Home_Scored_Pct"] = np.clip(df["Home_GF_L5"] / 2, 0, 1)
-            df["Away_Scored_Pct"] = np.clip(df["Away_GF_L5"] / 2, 0, 1)
+            df["home_scored_pct"] = np.clip(df["form_home_gf"] / 2, 0, 1)
+            df["away_scored_pct"] = np.clip(df["form_away_gf"] / 2, 0, 1)
         
         return df
     
@@ -202,10 +204,31 @@ class BTTSModel(CalibratedModel):
         if not self.is_fitted:
             raise RuntimeError("Model not fitted")
         
-        features = self.metadata.get("features", [])
-        available = [f for f in features if f in data.columns]
+        # Add computed features if missing
+        # We work on a copy to avoid side effects
+        df_pred = self._add_computed_features(data.copy())
         
-        X = data[available].fillna(0)
+        features = self.metadata.get("features", [])
+        
+        # Safe feature alignment
+        # If model expects specific features, we must match them
+        if hasattr(self.model, "booster_"):
+             model_features = self.model.booster_.feature_name()
+             # Intersect
+             final_features = [f for f in model_features if f in df_pred.columns]
+             
+             # If missing required features, fill with 0
+             missing = set(model_features) - set(final_features)
+             if missing:
+                 logger.debug(f"BTTS missing features, filling 0: {missing}")
+                 for m in missing:
+                     df_pred[m] = 0.0
+             
+             X = df_pred[model_features].fillna(0)
+        else:
+             # Fallback
+             available = [f for f in features if f in df_pred.columns]
+             X = df_pred[available].fillna(0)
         raw_probs = self.model.predict_proba(X)[:, 1]
         
         # Calibrate
@@ -217,7 +240,12 @@ class BTTSModel(CalibratedModel):
         predictions = []
         for idx, row in data.iterrows():
             i = data.index.get_loc(idx)
-            match_id = row.get("match_id", f"{row.get('HomeTeam', 'home')}_vs_{row.get('AwayTeam', 'away')}")
+            from stavki.utils import generate_match_id
+            match_id = row.get("match_id", generate_match_id(
+                row.get("HomeTeam", "home"), 
+                row.get("AwayTeam", "away"), 
+                row.get("Date")
+            ))
             
             predictions.append(Prediction(
                 match_id=match_id,

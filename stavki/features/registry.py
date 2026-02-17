@@ -38,9 +38,11 @@ from .builders.formation import FormationFeatureBuilder
 from .builders.venue import VenueFeatureBuilder
 from .builders.weather import WeatherFeatureBuilder
 
-# Tier 3
+# Tier 3 (New)
 from .builders.manager import ManagerFeatureBuilder
 from .builders.sm_odds import SMOddsFeatureBuilder
+from .builders.seasonal import SeasonalFeatureBuilder
+from .builders.corners import CornersFeatureBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -60,30 +62,47 @@ class FeatureRegistry:
         h2h_max_meetings: int = 10,
         advanced_window: int = 5,
         roster_window: int = 20,
+        corners_window: int = 10,
+        training_mode: bool = False,
     ):
-        # Core builders
+        self.training_mode = training_mode
+        
+        # Core builders (always active)
         self.elo = EloBuilder(**(elo_params or {}))
         self.form = FormBuilder(window=form_window)
         self.goals = GoalsBuilder(window=goals_window)
         self.h2h = H2HBuilder(max_meetings=h2h_max_meetings)
         self.advanced = AdvancedFeatureBuilder(window=advanced_window)
-        self.roster = RosterFeatureBuilder(window=roster_window)
         self.disagreement = DisagreementBuilder()
         
-        # Tier 1
+        # Tier 1 — Referee + SynthXG work from CSV data; others need API
         self.referee = RefereeFeatureBuilder()
-        self.player_impact = PlayerImpactFeatureBuilder()
-        self.injuries = InjuryFeatureBuilder()
         self.synth_xg = SyntheticXGBuilder()
         
-        # Tier 2
-        self.formation = FormationFeatureBuilder()
-        self.venue = VenueFeatureBuilder()
-        self.weather = WeatherFeatureBuilder()
+        # Tier 3 — CSV supported
+        self.corners = CornersFeatureBuilder(rolling_window=corners_window)
+        self.seasonal = SeasonalFeatureBuilder()
         
-        # Tier 3
-        self.manager = ManagerFeatureBuilder()
-        self.sm_odds = SMOddsFeatureBuilder()
+        # API-dependent builders — only initialize if not in training mode
+        # (these produce constant defaults from historical CSV and add noise)
+        if not training_mode:
+            self.roster = RosterFeatureBuilder(window=roster_window)
+            self.player_impact = PlayerImpactFeatureBuilder()
+            self.injuries = InjuryFeatureBuilder()
+            self.formation = FormationFeatureBuilder()
+            self.venue = VenueFeatureBuilder()
+            self.weather = WeatherFeatureBuilder()
+            self.manager = ManagerFeatureBuilder()
+            self.sm_odds = SMOddsFeatureBuilder()
+        else:
+            self.roster = None
+            self.player_impact = None
+            self.injuries = None
+            self.formation = None
+            self.venue = None
+            self.weather = None
+            self.manager = None
+            self.sm_odds = None
         
         # Cache
         self._historical_matches: List[Match] = []
@@ -99,22 +118,39 @@ class FeatureRegistry:
             key=lambda m: m.commence_time
         )
         
-        # Fit stateful builders
+        # Fit core builders (always)
         self.elo.fit(sorted_matches)
-        self.roster.fit(sorted_matches)
+        self.form.fit(sorted_matches) # Form/goals now need explicit fit for indexing
+        self.goals.fit(sorted_matches)
+        self.advanced.fit(sorted_matches) # Pre-index advanced stats
+        self.corners.fit(sorted_matches)
+        
         self.referee.fit(sorted_matches)
-        self.player_impact.fit(sorted_matches)
-        self.injuries.fit(sorted_matches)
         self.synth_xg.fit(sorted_matches)
-        self.formation.fit(sorted_matches)
-        self.venue.fit(sorted_matches)
-        self.manager.fit(sorted_matches)
+        
+        # Seasonal needs no fitting but good to init
+        self.seasonal.fit(sorted_matches)
+        
+        # Fit API-dependent builders only if initialized
+        if self.roster:
+            self.roster.fit(sorted_matches)
+        if self.player_impact:
+            self.player_impact.fit(sorted_matches)
+        if self.injuries:
+            self.injuries.fit(sorted_matches)
+        if self.formation:
+            self.formation.fit(sorted_matches)
+        if self.venue:
+            self.venue.fit(sorted_matches)
+        if self.manager:
+            self.manager.fit(sorted_matches)
         
         # Store for other builders
         self._historical_matches = sorted_matches
         self._is_fitted = True
         
-        logger.info(f"FeatureRegistry fitted on {len(sorted_matches)} matches")
+        mode_label = "training" if self.training_mode else "full"
+        logger.info(f"FeatureRegistry ({mode_label}) fitted on {len(sorted_matches)} matches")
     
     def compute(
         self,
@@ -142,13 +178,13 @@ class FeatureRegistry:
         
         # Form features
         form_features = self.form.get_features(
-            home_team, away_team, self._historical_matches, as_of
+            match=match, as_of=as_of
         )
         features.update(form_features)
         
         # Goals features
         goals_features = self.goals.get_features(
-            home_team, away_team, self._historical_matches, as_of
+            match=match, as_of=as_of
         )
         features.update(goals_features)
         
@@ -158,9 +194,12 @@ class FeatureRegistry:
         )
         features.update(h2h_features)
         
-        # Advanced Features (xG, Shots)
-        adv_home = self.advanced.compute_for_team(home_team, self._historical_matches, as_of)
-        adv_away = self.advanced.compute_for_team(away_team, self._historical_matches, as_of)
+        # Advanced Features (xG, Shots) — uses pre-indexed lookups
+        # Note: compute_for_team signature was simplified to (team, matches, as_of)
+        # But wait, AdvancedFeatureBuilder.compute_for_team now expects (team, matches=None, as_of=None)
+        # Registry assumes old signature? No, updated code used named args.
+        adv_home = self.advanced.compute_for_team(home_team, as_of=as_of)
+        adv_away = self.advanced.compute_for_team(away_team, as_of=as_of)
         
         for k, v in adv_home.items():
             features[f"advanced_{k}_home"] = v
@@ -168,52 +207,61 @@ class FeatureRegistry:
             features[f"advanced_{k}_away"] = v
             
         # Roster Features (requires match object with lineups)
-        if match and match.lineups:
+        if self.roster and match and match.lineups:
             roster_features = self.roster.get_features(match, as_of)
             features.update(roster_features)
         
         # === Tier 1: High Impact ===
         
-        # Referee features
+        # Referee features (works from CSV Referee column)
         ref_features = self.referee.get_features(match=match, as_of=as_of)
         features.update(ref_features)
         
-        # Player Impact (requires lineups)
-        if match and match.lineups:
+        # Player Impact (requires lineups — API only)
+        if self.player_impact and match and match.lineups:
             pi_features = self.player_impact.get_features(match=match, as_of=as_of)
             features.update(pi_features)
         
-        # Injuries
-        inj_features = self.injuries.get_features(match=match, as_of=as_of)
-        features.update(inj_features)
+        # Injuries (API only)
+        if self.injuries:
+            inj_features = self.injuries.get_features(match=match, as_of=as_of)
+            features.update(inj_features)
         
-        # Synthetic xG
+        # Synthetic xG (works from goal data)
         xg_features = self.synth_xg.get_features(match=match, as_of=as_of)
         features.update(xg_features)
         
-        # === Tier 2: Medium Impact ===
+        # === Tier 2: Medium Impact (API only) ===
         
-        # Formation
-        fmt_features = self.formation.get_features(match=match, as_of=as_of)
-        features.update(fmt_features)
+        if self.formation:
+            fmt_features = self.formation.get_features(match=match, as_of=as_of)
+            features.update(fmt_features)
         
-        # Venue
-        venue_features = self.venue.get_features(match=match, as_of=as_of)
-        features.update(venue_features)
+        if self.venue:
+            venue_features = self.venue.get_features(match=match, as_of=as_of)
+            features.update(venue_features)
         
-        # Weather
-        weather_features = self.weather.get_features(match=match, as_of=as_of)
-        features.update(weather_features)
+        if self.weather:
+            weather_features = self.weather.get_features(match=match, as_of=as_of)
+            features.update(weather_features)
         
         # === Tier 3: Nice to Have ===
         
-        # Manager
-        mgr_features = self.manager.get_features(match=match, as_of=as_of)
-        features.update(mgr_features)
+        # Seasonal (CSV supported)
+        seasonal_features = self.seasonal.get_features(match=match, as_of=as_of)
+        features.update(seasonal_features)
         
-        # SM Odds
-        sm_features = self.sm_odds.get_features(match=match, as_of=as_of)
-        features.update(sm_features)
+        # Corners (CSV supported)
+        corners_features = self.corners.get_features(match=match, as_of=as_of)
+        features.update(corners_features)
+        
+        if self.manager:
+            mgr_features = self.manager.get_features(match=match, as_of=as_of)
+            features.update(mgr_features)
+        
+        if self.sm_odds:
+            sm_features = self.sm_odds.get_features(match=match, as_of=as_of)
+            features.update(sm_features)
         
         # Disagreement (if model probs provided)
         if include_disagreement and model_probs:

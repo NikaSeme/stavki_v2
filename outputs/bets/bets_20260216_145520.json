@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-02-16T14:55:20.321543",
+  "bankroll": 1000.0,
+  "total_bets": 2,
+  "total_stake": 40.44,
+  "bets": [
+    {
+      "match_id": "19439483",
+      "match": "Girona vs FC Barcelona",
+      "league": "soccer_spain_la_liga",
+      "kickoff": null,
+      "market": "1x2",
+      "selection": "home",
+      "odds": 6.0,
+      "bookmaker": "Coral",
+      "model_prob": 0.4493,
+      "market_prob": 0.1568,
+      "ev": 0.4675,
+      "edge": 0.0779,
+      "stake_pct": 0.0234,
+      "stake_amount": 23.37,
+      "confidence": 0.2925,
+      "justified_score": 60
+    },
+    {
+      "match_id": "19439483",
+      "match": "Girona vs FC Barcelona",
+      "league": "soccer_spain_la_liga",
+      "kickoff": null,
+      "market": "1x2",
+      "selection": "draw",
+      "odds": 5.5,
+      "bookmaker": "Coral",
+      "model_prob": 0.393,
+      "market_prob": 0.1711,
+      "ev": 0.3072,
+      "edge": 0.0559,
+      "stake_pct": 0.0171,
+      "stake_amount": 17.07,
+      "confidence": 0.222,
+      "justified_score": 60
+    }
+  ]
+}

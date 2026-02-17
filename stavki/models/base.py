@@ -174,7 +174,40 @@ class BaseModel(ABC):
     
     @classmethod
     def load(cls, path: Path) -> "BaseModel":
-        """Load model from file."""
+        """Load model from file (supporting both pickle and split-file formats)."""
+        path = Path(path)
+        
+        # 1. Try Split-File Format (JSON Config)
+        # Check if path is a directory or if path_config.json exists
+        # Our save logic uses: parent / f"{stem}_config.json"
+        config_path = path.parent / f"{path.stem}_config.json"
+        
+        if config_path.exists():
+            try:
+                with open(config_path) as f:
+                    config = json.load(f)
+                
+                name = config.get("name", "")
+                
+                # Dynamic factory
+                if "BTTS" in name:
+                    from stavki.models.gradient_boost.btts_model import BTTSModel
+                    return BTTSModel.load(path) # Class-specific load (if implemented) or fallback
+                elif "Neural" in name or "MultiTask" in name:
+                    from stavki.models.neural.multitask import MultiTaskModel
+                    return MultiTaskModel.load(path)
+                
+                # If other models adopt this format but don't have custom .load, we need generic logic here
+                # But for now, only Neural uses it.
+                
+            except Exception as e:
+                logger.warning(f"Found config at {config_path} but failed to load: {e}")
+                # Fallthrough to try pickle
+        
+        # 2. Try Legacy Pickle
+        if not path.exists():
+            raise FileNotFoundError(f"Model file not found: {path} (checked .pkl and _config.json)")
+            
         with open(path, "rb") as f:
             state = pickle.load(f)
         
@@ -183,15 +216,18 @@ class BaseModel(ABC):
             name = state.get("name", "")
             
             # Dynamic factory based on name
-            if "CatBoost" in name:
+            if "BTTS" in name:
+                from stavki.models.gradient_boost.btts_model import BTTSModel
+                model_cls = BTTSModel
+            elif "CatBoost" in name:
                 from stavki.models.catboost.catboost_model import CatBoostModel
                 model_cls = CatBoostModel
             elif "LightGBM" in name:
                 from stavki.models.gradient_boost.lightgbm_model import LightGBMModel
                 model_cls = LightGBMModel
-            elif "Neural" in name:
-                from stavki.models.neural.multitask import NeuralMultiTask
-                model_cls = NeuralMultiTask
+            elif "Neural" in name or "MultiTask" in name:
+                from stavki.models.neural.multitask import MultiTaskModel
+                model_cls = MultiTaskModel
             elif "Poisson" in name or "Dixon" in name:
                 from stavki.models.poisson.dixon_coles import DixonColesModel
                 model_cls = DixonColesModel
@@ -200,6 +236,7 @@ class BaseModel(ABC):
                 logger.warning(f"Unknown model type for {name}, trying to load as is.")
                 # This might fail if cls is BaseModel
                 model_cls = cls
+
             
             try:
                 # Instantiate with default args

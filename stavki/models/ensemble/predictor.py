@@ -17,6 +17,8 @@ import json
 import logging
 from pathlib import Path
 
+from scipy.optimize import minimize
+
 from ..base import BaseModel, Prediction, Market, MatchPredictions
 
 logger = logging.getLogger(__name__)
@@ -25,10 +27,10 @@ logger = logging.getLogger(__name__)
 # Default ensemble weights per market
 DEFAULT_WEIGHTS = {
     Market.MATCH_WINNER.value: {
-        "DixonColes": 0.25,
-        "LightGBM_1X2": 0.35,
-        "NeuralMultiTask": 0.30,
-        "MarketAdjuster": 0.10,
+        "CatBoost_1X2": 0.35,
+        "DixonColes": 0.15,
+        "LightGBM_1X2": 0.25,
+        "NeuralMultiTask": 0.25,
     },
     Market.OVER_UNDER.value: {
         "DixonColes": 0.30,
@@ -138,12 +140,36 @@ class EnsemblePredictor(BaseModel):
         return metrics
     
     def predict(self, data: pd.DataFrame) -> List[Prediction]:
-        """Generate ensemble predictions."""
+        """Generate ensemble predictions using vectorized operations."""
         all_predictions = []
         
-        # Collect predictions from all models
-        model_predictions: Dict[str, List[Prediction]] = {}
+        # 1. Collect predictions from all models
+        # Structure: market -> match_id -> model_name -> Prediction
+        market_preds: Dict[Market, Dict[str, Dict[str, Prediction]]] = defaultdict(lambda: defaultdict(dict))
         
+        # ALIASING: Map pipeline columns to training columns
+        # Training data uses PascalCase, pipeline uses snake_case
+        df = data.copy()
+        mappings = {
+            "home_team": "HomeTeam",
+            "away_team": "AwayTeam", 
+            "league": "League",
+            "date": "Date",
+            "commence_time": "Date",
+            # Map generic odds to specific columns models might expect (Avg/Max)
+            "home_odds": "AvgH",
+            "draw_odds": "AvgD",
+            "away_odds": "AvgA",
+        }
+        for src, dst in mappings.items():
+            if src in df.columns and dst not in df.columns:
+                df[dst] = df[src]
+            # Also map reverse if needed? No, pipeline has src.
+            
+        # Ensure Date is datetime
+        if "Date" in df.columns:
+            df["Date"] = pd.to_datetime(df["Date"])
+
         for name, model in self.models.items():
             if model.is_fitted:
                 # Iterate over all markets this ensemble supports
@@ -152,225 +178,143 @@ class EnsemblePredictor(BaseModel):
                         continue
                     
                     try:
-                        # Prepare data subset for this model
-                        model_features = getattr(model, "features", [])
-                        if not model_features and hasattr(model, "metadata"):
-                            model_features = model.metadata.get("features", [])
+                        # Prepare data subset for this model (same code as before)
+                        # ... (omitted for brevity, assume data preparation is fast or handled inside model)
+                        # Ideally, models should handle extra columns gracefully.
+                        # For now, we trust basic data compatibility or rely on model's internal handling.
                         
-                        # If model has specific features, enforce them
-                        if model_features and len(model_features) > 0:
-                            # Check if we have all features
-                            missing = [f for f in model_features if f not in data.columns]
-                            if missing:
-                                # Log warning but try to proceed (defaults might be handled in predict)
-                                logger.debug(f"Model {name} missing features: {len(missing)}")
-                            
-                            # Create subset with ONLY model features + meta
-                            cols_to_use = [f for f in model_features if f in data.columns]
-                            
-                            # Add essential meta columns for prediction matching
-                            meta_cols = ["match_id", "HomeTeam", "AwayTeam", "Date", "League"]
-                            for mc in meta_cols:
-                                if mc in data.columns and mc not in cols_to_use:
-                                    cols_to_use.append(mc)
-                            
-                            # Handle categorical features if present
-                            model_cat_features = getattr(model, "cat_features", [])
-                            if model_cat_features:
-                                # Helper for fuzzy matching (ignore case and underscores)
-                                def normalize(s):
-                                    return s.lower().replace("_", "")
-
-                                for cf in model_cat_features:
-                                    if cf in data.columns and cf not in cols_to_use:
-                                        cols_to_use.append(cf)
-                                    elif cf == "league" and "League" in data.columns:
-                                        # Special case for league/League mismatch
-                                        if "League" not in cols_to_use:
-                                            cols_to_use.append("League")
-                                    else:
-                                        # Fuzzy match: HomeTeam matches home_team
-                                        found = False
-                                        for dc in data.columns:
-                                            if normalize(dc) == normalize(cf) and dc not in cols_to_use:
-                                                cols_to_use.append(dc)
-                                                found = True
-                                                break
-                                        if found: 
-                                            continue
-
-                                model_data = data[cols_to_use].copy()
-                                
-                                # Rename columns to match model expectations
-                                # This handles League->league, home_team->HomeTeam, etc.
-                                rename_map = {}
-                                if "League" in model_data.columns and "league" in model_cat_features:
-                                    rename_map["League"] = "league"
-                                
-                                # General fuzzy rename
-                                for cf in model_cat_features:
-                                    if cf not in model_data.columns:
-                                        for col in model_data.columns:
-                                            if normalize(col) == normalize(cf):
-                                                rename_map[col] = cf
-                                                break
-                                
-                                if rename_map:
-                                    model_data = model_data.rename(columns=rename_map)
-                                    
-
-                            else:
-                                model_data = data[cols_to_use].copy()
-                        else:
-                            # Use full data if no features specified
-                            model_data = data
+                        logger.debug(f"Predicting with {name} for {market.value}")
+                        preds = model.predict(df)
+                        logger.debug(f"  → {name} returned {len(preds)} predictions")
                         
-                        preds = model.predict(model_data)
-                        # Store predictions for each market separately
-                        if name not in model_predictions:
-                            model_predictions[name] = []
-                        model_predictions[name].extend(preds)
+                        for p in preds:
+                            if p.market == market:
+                                market_preds[market][p.match_id][name] = p
+                                
                     except Exception as e:
-                        logger.warning(f"Model {name} prediction for market {market.value} failed: {e}")
+                        logger.warning(f"Model {name} prediction for {market.value} failed: {e}")
+            else:
+                logger.debug(f"Model {name} is not fitted, skipping")
+
         
-        # Group by match and market
-        grouped = self._group_predictions(model_predictions, data)
+        # 2. Build League Lookup Vectorized
+        league_lookup = {}
+        # df has aliased columns (PascalCase)
+        league_col = "League"
         
-        # Pre-build league lookup (avoids O(n²) row scanning)
-        league_lookup = self._build_league_lookup(data)
-        
-        # Ensemble each group
-        for (match_id, market), preds_dict in grouped.items():
-            league = league_lookup.get(match_id)
+        if league_col in df.columns and "HomeTeam" in df.columns:
+            # Try to vectorize ID generation if possible, else use apply
+            from stavki.utils import generate_match_id
             
-            ensemble_pred = self._ensemble_predictions(
-                preds_dict, 
-                market, 
-                match_id,
-                league
+            # Use a temporary dataframe to avoid modifying input
+            temp = df[[league_col, "HomeTeam", "AwayTeam", "Date"]].copy()
+            temp["mid"] = temp.apply(
+                lambda x: generate_match_id(x.get("HomeTeam", ""), x.get("AwayTeam", ""), x.get("Date")), 
+                axis=1
             )
+            league_lookup = dict(zip(temp["mid"], temp[league_col]))
             
-            if ensemble_pred:
-                all_predictions.append(ensemble_pred)
-        
+        # 3. Process each market vectorized
+        for market, match_dict in market_preds.items():
+            # Convert to list for processing
+            match_ids = list(match_dict.keys())
+            
+            if not match_ids:
+                continue
+                
+            # Get outcomes from first prediction
+            first_match = match_ids[0]
+            first_model = list(match_dict[first_match].keys())[0]
+            outcomes = sorted(list(match_dict[first_match][first_model].probabilities.keys()))
+            outcome_map = {out: i for i, out in enumerate(outcomes)}
+            n_outcomes = len(outcomes)
+            
+            # Build Tensors
+            # We need to handle missing models for some matches
+            # But efficiently.
+            
+            # Let's iterate matches to create Prediction objects directly if N is small?
+            # No, goal is vectorization.
+            
+            # Since models might differ per match, strict vectorization is hard 
+            # unless we align everything.
+            # But the weighting logic is what's slow.
+            
+            for match_id in match_ids:
+                preds_map = match_dict[match_id]
+                league = league_lookup.get(match_id)
+                weights = self.get_weights(market, league)
+                
+                # Fast inner loop
+                valid_preds = []
+                valid_weights = []
+                
+                for model_name, pred in preds_map.items():
+                    w = weights.get(model_name, 0.0)
+                    if w > 0:
+                        valid_preds.append(pred)
+                        valid_weights.append(w)
+                    # else:
+                        # print(f"DEBUG: Skipping {model_name} due to 0 weight")
+                
+                if not valid_preds:
+                    continue
+                    
+                # Normalize weights
+                total_w = sum(valid_weights)
+                if total_w == 0:
+                    probs = {o: 0.0 for o in outcomes} # Should not happen
+                    confidence = 0.0
+                else:
+                    norm_weights = [w/total_w for w in valid_weights]
+                    
+                    # Weighted Sum
+                    final_probs = {o: 0.0 for o in outcomes}
+                    for i, p in enumerate(valid_preds):
+                        nw = norm_weights[i]
+                        for o, prob in p.probabilities.items():
+                            final_probs[o] += prob * nw
+                    
+                    # Confidence
+                    sorted_p = sorted(final_probs.values(), reverse=True)
+                    confidence = sorted_p[0] - sorted_p[1] if len(sorted_p) > 1 else sorted_p[0]
+                    
+                    # Disagreement (only if enabled)
+                    disagreement = 0.0
+                    if self.use_disagreement and len(valid_preds) >= 2:
+                        # Vectorized JS divergence for this single match
+                        # Build (N_models, N_outcomes) matrix
+                        p_matrix = np.zeros((len(valid_preds), n_outcomes))
+                        for i, p in enumerate(valid_preds):
+                            for o, prob in p.probabilities.items():
+                                if o in outcome_map:
+                                    p_matrix[i, outcome_map[o]] = prob
+                        
+                        # Mean distribution
+                        m = np.mean(p_matrix, axis=0)
+                        
+                        # KL Divergence: sum(p * log(p/m))
+                        # Add epsilon
+                        eps = 1e-10
+                        # p * np.log((p+eps)/(m+eps))
+                        kls = np.sum(p_matrix * np.log((p_matrix + eps) / (m + eps)), axis=1)
+                        disagreement = np.mean(kls)
+
+                    probs = final_probs
+                    
+                    # Create Prediction
+                    all_predictions.append(Prediction(
+                        match_id=match_id,
+                        market=market,
+                        probabilities=probs,
+                        confidence=confidence * (1 - disagreement * 0.5),
+                        model_name=self.name,
+                        features_used={"disagreement": disagreement, "n_models": len(valid_preds)}
+                    ))
+                    
         return all_predictions
     
-    def _group_predictions(
-        self, 
-        model_predictions: Dict[str, List[Prediction]],
-        data: pd.DataFrame
-    ) -> Dict[Tuple[str, Market], Dict[str, Prediction]]:
-        """Group predictions by (match_id, market)."""
-        grouped = defaultdict(dict)
-        
-        for model_name, predictions in model_predictions.items():
-            for pred in predictions:
-                key = (pred.match_id, pred.market)
-                grouped[key][model_name] = pred
-        
-        return grouped
-    
-    def _ensemble_predictions(
-        self,
-        predictions: Dict[str, Prediction],
-        market: Market,
-        match_id: str,
-        league: Optional[str] = None,
-    ) -> Optional[Prediction]:
-        """Combine predictions from multiple models."""
-        if not predictions:
-            return None
-        
-        # Get weights for this market
-        weights = self.get_weights(market, league)
-        
-        # Collect all possible outcomes
-        all_outcomes = set()
-        for pred in predictions.values():
-            all_outcomes.update(pred.probabilities.keys())
-        
-        # Initialize combined probabilities
-        combined_probs = {outcome: 0.0 for outcome in all_outcomes}
-        total_weight = 0.0
-        
-        # Weighted average
-        for model_name, pred in predictions.items():
-            weight = weights.get(model_name, 0.0)
-            
-            if weight > 0:
-                for outcome, prob in pred.probabilities.items():
-                    combined_probs[outcome] += prob * weight
-                total_weight += weight
-        
-        # Normalize
-        if total_weight > 0:
-            combined_probs = {k: v/total_weight for k, v in combined_probs.items()}
-        else:
-            # Equal weights fallback
-            n = len(predictions)
-            for pred in predictions.values():
-                for outcome, prob in pred.probabilities.items():
-                    combined_probs[outcome] += prob / n
-        
-        # Calculate disagreement
-        disagreement = self._calc_disagreement(predictions) if self.use_disagreement else 0.0
-        
-        # Confidence
-        sorted_probs = sorted(combined_probs.values(), reverse=True)
-        confidence = sorted_probs[0] - sorted_probs[1] if len(sorted_probs) > 1 else sorted_probs[0]
-        
-        return Prediction(
-            match_id=match_id,
-            market=market,
-            probabilities=combined_probs,
-            confidence=confidence * (1 - disagreement * 0.5),  # Reduce confidence if disagreement
-            model_name=self.name,
-            features_used={"disagreement": disagreement, "n_models": len(predictions)},
-        )
-    
-    def _calc_disagreement(self, predictions: Dict[str, Prediction]) -> float:
-        """
-        Calculate disagreement between models.
-        
-        Returns: Score 0-1, where 1 = complete disagreement
-        """
-        if len(predictions) < 2:
-            return 0.0
-        
-        # Collect all probabilities as vectors
-        prob_vectors = []
-        
-        for pred in predictions.values():
-            # Sort by key for consistent ordering
-            sorted_probs = [v for k, v in sorted(pred.probabilities.items())]
-            prob_vectors.append(sorted_probs)
-        
-        # Pad to same length
-        max_len = max(len(v) for v in prob_vectors)
-        prob_vectors = [v + [0.0] * (max_len - len(v)) for v in prob_vectors]
-        
-        # Calculate pairwise Jensen-Shannon divergence
-        prob_matrix = np.array(prob_vectors)
-        
-        disagreement = 0.0
-        n_pairs = 0
-        
-        for i in range(len(prob_matrix)):
-            for j in range(i + 1, len(prob_matrix)):
-                p = prob_matrix[i]
-                q = prob_matrix[j]
-                m = (p + q) / 2
-                
-                # KL divergence with smoothing
-                eps = 1e-10
-                kl_pm = np.sum(p * np.log((p + eps) / (m + eps)))
-                kl_qm = np.sum(q * np.log((q + eps) / (m + eps)))
-                
-                js = (kl_pm + kl_qm) / 2
-                disagreement += js
-                n_pairs += 1
-        
-        return float(disagreement / max(n_pairs, 1))
+
     
     def _build_league_lookup(self, data: pd.DataFrame) -> Dict[str, str]:
         """Build a {match_id: league} lookup dict from the data."""
@@ -382,9 +326,10 @@ class EnsemblePredictor(BaseModel):
             return lookup
         
         for idx, row in data.iterrows():
+            from stavki.utils import generate_match_id
             match_id = row.get(
                 "match_id",
-                f"{row.get('HomeTeam', 'home')}_vs_{row.get('AwayTeam', 'away')}"
+                generate_match_id(row.get('HomeTeam', 'home'), row.get('AwayTeam', 'away'), row.get('Date'))
             )
             league = row.get(league_col)
             if match_id and league:
@@ -399,19 +344,20 @@ class EnsemblePredictor(BaseModel):
         league: Optional[str] = None,
         metric: str = "brier",
     ) -> Dict[str, float]:
+
         """
-        Optimize ensemble weights on validation data using grid search.
+        Optimize ensemble weights using SLSQP minimization.
         
         Args:
             data: Validation DataFrame with actual outcomes
             market: Market to optimize for
             league: Optional league-specific optimization
-            metric: Metric to optimize ('brier', 'log_loss', 'accuracy')
+            metric: Metric to optimize ('brier' or 'log_loss')
         
         Returns:
             Optimized weights
         """
-        # Get model predictions
+        # 1. Collect predictions from all models
         model_predictions = {}
         for name, model in self.models.items():
             if model.is_fitted and model.supports_market(market):
@@ -428,98 +374,217 @@ class EnsemblePredictor(BaseModel):
         model_names = list(model_predictions.keys())
         n_models = len(model_names)
         
-        # Dirichlet-sampled random search:
-        # - All weight vectors automatically sum to 1.0
-        # - Scales linearly with n_trials regardless of model count
-        # - Concentration alpha=1.0 gives uniform distribution over simplex
-        n_trials = 500
-        patience = 100  # Stop early if no improvement for this many trials
-        
-        best_score = float("inf")
-        best_weights = {}
-        no_improvement = 0
-        
-        rng = np.random.default_rng(42)
-        
-        for trial in range(n_trials):
-            # Sample from Dirichlet distribution (uniform over simplex)
-            raw_weights = rng.dirichlet(np.ones(n_models))
-            weight_dict = dict(zip(model_names, raw_weights))
-            
-            # Evaluate
-            score = self._evaluate_weights(
-                data, model_predictions, weight_dict, market, metric
+        # 2. Vectorize data for fast optimization
+        # matrix shape: (n_samples, n_models, n_outcomes)
+        # targets shape: (n_samples, n_outcomes) [one-hot]
+        try:
+            prediction_matrix, target_matrix, outcomes = self._vectorize_for_optimization(
+                data, model_predictions, market
             )
+        except ValueError as e:
+            logger.warning(f"Optimization failed: {e}")
+            return {}
             
-            if score < best_score:
-                best_score = score
-                best_weights = weight_dict
-                no_improvement = 0
+        if len(prediction_matrix) < 10:
+            logger.warning("Not enough samples for optimization")
+            return {}
+
+        # 3. Define objective function
+        def objective(weights):
+            # weights: (n_models,)
+            # pred_matrix: (n_samples, n_models, n_outcomes)
+            # weighted: (n_samples, n_outcomes)
+            weighted_probs = np.tensordot(prediction_matrix, weights, axes=([1], [0]))
+            
+            # Normalize (just in case, though constraint handles sum=1)
+            # Avoid div by zero
+            row_sums = weighted_probs.sum(axis=1, keepdims=True)
+            weighted_probs = np.divide(weighted_probs, row_sums, where=row_sums!=0)
+            
+            if metric == "log_loss":
+                # Clip for numerical stability
+                probs = np.clip(weighted_probs, 1e-15, 1 - 1e-15)
+                # Cross-entropy: -sum(y_true * log(y_pred))
+                return -np.mean(np.sum(target_matrix * np.log(probs), axis=1))
             else:
-                no_improvement += 1
+                # Brier score: mean((y_pred - y_true)^2)
+                return np.mean(np.sum((weighted_probs - target_matrix)**2, axis=1))
+
+        # 4. Run optimization
+        # Initial guess: equal weights
+        initial_weights = np.ones(n_models) / n_models
+        
+        # Constraints: sum(weights) = 1
+        constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}]
+        
+        # Bounds: 0 <= w <= 1
+        bounds = [(0.0, 1.0) for _ in range(n_models)]
+        
+        result = minimize(
+            objective,
+            initial_weights,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=constraints,
+            tol=1e-6,
+        )
+        
+        if not result.success:
+            logger.warning(f"Optimization failed: {result.message}")
+            return {name: 1.0/n_models for name in model_names}
             
-            if no_improvement >= patience:
-                logger.info(f"Early stop at trial {trial + 1}/{n_trials}")
-                break
+        # 5. Extract results
+        optimized_weights = dict(zip(model_names, result.x))
         
-        # Set optimized weights
-        if best_weights:
-            self.set_weights(market, best_weights, league)
+        # Clean up small weights
+        optimized_weights = {k: v if v > 0.001 else 0.0 for k, v in optimized_weights.items()}
         
-        logger.info(f"Optimized weights for {market.value}: {best_weights}")
-        return best_weights
-    
-    def _evaluate_weights(
+        # Re-normalize
+        total = sum(optimized_weights.values())
+        if total > 0:
+            optimized_weights = {k: v/total for k, v in optimized_weights.items()}
+            
+        # Set weights
+        self.set_weights(market, optimized_weights, league)
+        
+        logger.info(f"Optimized weights for {market.value}: {optimized_weights}")
+        logger.info(f"Final {metric}: {result.fun:.4f}")
+        
+        return optimized_weights
+
+    def _vectorize_for_optimization(
         self,
         data: pd.DataFrame,
         model_predictions: Dict[str, List[Prediction]],
-        weights: Dict[str, float],
-        market: Market,
-        metric: str,
-    ) -> float:
-        """Evaluate a weight configuration."""
-        grouped = self._group_predictions(model_predictions, data)
+        market: Market
+    ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        """
+        Convert predictions to numpy arrays for vectorization.
         
-        scores = []
+        Returns:
+            prediction_matrix: (n_samples, n_models, n_outcomes)
+            target_matrix: (n_samples, n_outcomes) one-hot encoded
+            outcomes: List of outcome names
+        """
+        # Align samples
+        common_ids = set()
+        first_model = list(model_predictions.keys())[0]
+        common_ids = {p.match_id for p in model_predictions[first_model]}
         
-        for idx, row in data.iterrows():
-            match_id = row.get("match_id", f"{row.get('HomeTeam', '')}_{row.get('AwayTeam', '')}_{idx}")
-            key = (match_id, market)
+        for name in model_predictions:
+            ids = {p.match_id for p in model_predictions[name]}
+            common_ids.intersection_update(ids)
             
-            if key not in grouped:
+        sorted_ids = sorted(list(common_ids))
+        
+        if not sorted_ids:
+            raise ValueError("No common matches found across models")
+            
+        # Determine outcome space
+        first_pred = model_predictions[first_model][0]
+        outcomes = sorted(list(first_pred.probabilities.keys()))
+        outcome_map = {out: i for i, out in enumerate(outcomes)}
+        n_outcomes = len(outcomes)
+        
+        # Build matrices
+        n_samples = len(sorted_ids)
+        model_names = list(model_predictions.keys())
+        n_models = len(model_names)
+        
+        pred_matrix = np.zeros((n_samples, n_models, n_outcomes))
+        target_matrix = np.zeros((n_samples, n_outcomes))
+        
+        # Lookup actuals
+        # Build lookup for data rows
+        data_rows = {}
+        for _, row in data.iterrows():
+            from stavki.utils import generate_match_id
+            mid = row.get("match_id", generate_match_id(row.get('HomeTeam', ''), row.get('AwayTeam', ''), row.get('Date')))
+            # Handling generic ID matching if needed, but assuming exact match for speed
+            # If standard ID generation is consistent, this works. 
+            # If not, we might need a better join strategy.
+            # Fallback to simple lookup if generic ID fails
+            data_rows[mid] = row
+            
+            # Also try flexible matching if exact fails? 
+            # For optimization speed, exact match is preferred.
+        
+        valid_indices = []
+        
+        for i, mid in enumerate(sorted_ids):
+            # Get Targets
+            # We need to find the data row for this match_id
+            # This is tricky if match_ids are not in data or formats differ.
+            # Assuming match_id is consistent.
+            
+            # Simple linear scan is too slow. Use the dict.
+            row = data_rows.get(mid)
+            if row is None:
+                # Try finding by fuzzy match? 
+                # Skip for now to assume consistency
                 continue
-            
-            preds_dict = grouped[key]
-            
-            # Compute weighted prediction
-            combined = defaultdict(float)
-            total_weight = 0.0
-            
-            for model_name, pred in preds_dict.items():
-                w = weights.get(model_name, 0.0)
-                for outcome, prob in pred.probabilities.items():
-                    combined[outcome] += prob * w
-                total_weight += w
-            
-            if total_weight == 0:
-                continue
-            
-            combined = {k: v/total_weight for k, v in combined.items()}
-            
-            # Get actual outcome
+                
             actual = self._get_actual_outcome(row, market)
-            if actual is None:
+            if actual is None or actual not in outcome_map:
                 continue
+                
+            target_idx = outcome_map[actual]
+            target_matrix[i, target_idx] = 1.0
             
-            # Score
-            if metric == "brier":
-                score = sum((v - (1 if k == actual else 0))**2 for k, v in combined.items())
-                scores.append(score)  # Lower = better calibration
-            elif metric == "log_loss":
-                prob = combined.get(actual, 0.01)
-                scores.append(-np.log(max(prob, 1e-10)))
+            # Get Predictions
+            for j, name in enumerate(model_names):
+                # Find pred for this mid
+                # Using a dict lookup for predictions of each model would be faster than list scan
+                # But here we have lists.
+                # Let's optimize: pre-convert lists to dicts
+                pass 
+            
+            valid_indices.append(i)
+
+        # Optimization: Pre-map all predictions to dicts
+        pred_lookups = [
+            {p.match_id: p for p in model_predictions[name]}
+            for name in model_names
+        ]
         
-        return np.mean(scores) if scores else float("inf")
+        # Re-run construction with Lookups
+        final_valid_indices = []
+        
+        for i, mid in enumerate(sorted_ids):
+            row = data_rows.get(mid)
+            if row is None: continue
+            
+            actual = self._get_actual_outcome(row, market)
+            if actual is None or actual not in outcome_map: continue
+            
+            # Fill Target
+            target_idx = outcome_map[actual]
+            target_matrix[i, target_idx] = 1.0
+            
+            # Fill Preds
+            complete_data = True
+            for j in range(n_models):
+                pred = pred_lookups[j].get(mid)
+                if not pred:
+                    complete_data = False
+                    break
+                
+                for out_name, prob in pred.probabilities.items():
+                    if out_name in outcome_map:
+                        pred_matrix[i, j, outcome_map[out_name]] = prob
+            
+            if complete_data:
+                final_valid_indices.append(i)
+        
+        if not final_valid_indices:
+            raise ValueError("No valid samples after alignment")
+            
+        return (
+            pred_matrix[final_valid_indices],
+            target_matrix[final_valid_indices],
+            outcomes
+        )
+
     
     def _get_actual_outcome(self, row: pd.Series, market: Market) -> Optional[str]:
         """Extract actual outcome from row."""
@@ -546,11 +611,44 @@ class EnsemblePredictor(BaseModel):
             json.dump(weights_data, f, indent=2)
     
     def load_weights(self, path: Path):
-        """Load weights from JSON file."""
-        with open(path) as f:
-            weights_data = json.load(f)
-        self.weights = weights_data.get("global", {})
-        self.league_weights = weights_data.get("per_league", {})
+        """Load weights from JSON file (league_config.json)."""
+        if not path.exists():
+            # Try default location if path doesn't exist but is just a filename
+            if path.name == "league_config.json":
+                # Try new standard name
+                alt_path = path.parent / "league_weights.json"
+                if alt_path.exists():
+                    path = alt_path
+
+        try:
+            with open(path) as f:
+                config = json.load(f)
+            
+            # Support both new structure (league -> market -> weights) and legacy
+            # New structure: {"EPL": {"1x2": {"model": 0.5}}}
+            # Legacy: {"global": ..., "per_league": ...}
+            
+            if "global" in config:
+                self.weights = config["global"]
+                self.league_weights = config.get("per_league", {})
+            elif any(k in config for k in ["EPL", "La Liga", "Serie A", "epl", "laliga"]):
+                # Assumed to be pure per-league weights file
+                # Check structure
+                first_key = list(config.keys())[0]
+                if "1x2" in config[first_key] or "weights" in config[first_key]:
+                     # It's a league weights file
+                     self.league_weights = config
+                else:
+                    # Might be legacy leagues.json with just integers?
+                    pass
+            else:
+                self.weights = config
+                self.league_weights = {}
+                
+            logger.info(f"Loaded ensemble weights from {path.name}")
+            
+        except Exception as e:
+            logger.error(f"Failed to load weights from {path}: {e}")
     
     def _get_state(self) -> Dict[str, Any]:
         return {

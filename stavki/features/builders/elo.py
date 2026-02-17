@@ -74,7 +74,7 @@ class EloCalculator:
     
     # Default parameters (can be tuned)
     DEFAULT_RATING = 1500.0
-    K_FACTOR = 32  # Base K-factor
+    K_FACTOR = 15  # Optimized K-factor (was 32)
     HOME_ADVANTAGE = 65  # ELO points for home field
     SEASON_REGRESSION = 0.33  # Regress 1/3 to mean between seasons
     

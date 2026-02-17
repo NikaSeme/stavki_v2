@@ -1,0 +1,60 @@
+{
+  "EPL": 8,
+  "LA_LIGA": 564,
+  "BUNDESLIGA": 82,
+  "SERIE_A": 384,
+  "LIGUE_1": 301,
+  "CHAMPIONSHIP": 9,
+  "EREDIVISIE": 72,
+  "PRIMEIRA": 462,
+  "SCOTTISH": 501,
+  "BELGIAN": 208,
+  "epl": {
+    "weights": {
+      "poisson": 0.0,
+      "lightgbm": 0.0,
+      "catboost": 0.0,
+      "neural": 1.0
+    }
+  },
+  "seriea": {
+    "weights": {
+      "poisson": 0.0,
+      "lightgbm": 0.0,
+      "catboost": 0.0,
+      "neural": 1.0
+    }
+  },
+  "laliga": {
+    "weights": {
+      "poisson": 0.0,
+      "lightgbm": 0.0,
+      "catboost": 0.0,
+      "neural": 1.0
+    }
+  },
+  "bundesliga": {
+    "weights": {
+      "poisson": 0.0,
+      "lightgbm": 0.0,
+      "catboost": 0.0,
+      "neural": 1.0
+    }
+  },
+  "ligue1": {
+    "weights": {
+      "poisson": 0.0,
+      "lightgbm": 0.0,
+      "catboost": 0.0,
+      "neural": 1.0
+    }
+  },
+  "championship": {
+    "weights": {
+      "poisson": 0.0,
+      "lightgbm": 0.0,
+      "catboost": 0.0,
+      "neural": 1.0
+    }
+  }
+}

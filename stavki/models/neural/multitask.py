@@ -15,6 +15,15 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 import logging
+import pickle
+import base64
+
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+
+from pathlib import Path
+from typing import Dict, List, Optional, Any, Tuple
+from datetime import datetime
+import logging
 
 try:
     import torch
@@ -33,23 +42,39 @@ logger = logging.getLogger(__name__)
 
 
 # Default features for neural model
+# Default features for neural model - MUST match features_full.csv
 NEURAL_FEATURES = [
     # ELO
-    "HomeEloBefore", "AwayEloBefore", "EloDiff", "EloExpHome", "EloExpAway",
+    "elo_home", "elo_away", "elo_diff",
+    #"EloExpHome", "EloExpAway", # Not in features_full.csv
     
     # Form
-    "Home_GF_L5", "Home_GA_L5", "Home_Pts_L5",
-    "Away_GF_L5", "Away_GA_L5", "Away_Pts_L5",
+    "form_home_gf", "form_home_pts", 
+    "form_away_gf", "form_away_pts",
+    "form_diff", "gf_diff", "ga_diff",
     
     # xG
-    "xG_Home_L5", "xGA_Home_L5", "xG_Away_L5", "xGA_Away_L5", "xG_Diff",
+    "synth_xg_home", "synth_xg_away", "synth_xg_diff",
+    #"xGA_Home_L5", "xGA_Away_L5", # Not in features_full.csv
     
-    # Market
-    "Sharp_Divergence", "Odds_Volatility", "Market_Consensus",
-    "Odds_1X2_Home", "Odds_1X2_Draw", "Odds_1X2_Away",
+    # Market (Odds & Imp. Prob)
+    "B365H", "B365D", "B365A",
+    "imp_home_norm", "imp_draw_norm", "imp_away_norm",
+    "margin",
     
-    # H2H
-    "H2H_Home_Win_Pct", "H2H_Goals_Avg", "H2H_BTTS_Pct",
+    # Player / Team Stats
+    "avg_rating_home", "avg_rating_away", "rating_delta",
+    "key_players_home", "key_players_away",
+    "xi_experience_home", "xi_experience_away",
+    
+    # Referee
+    "ref_goals_per_game", "ref_cards_per_game_t1",
+    "ref_strictness_t1",
+    
+    # H2H / Matchup
+    "matchup_home_wr", "matchup_sample_size",
+    "formation_score_home", "formation_score_away",
+    "formation_mismatch",
 ]
 
 
@@ -74,20 +99,20 @@ class ResidualBlock(nn.Module):
 
 class MultiTaskNetwork(nn.Module):
     """
-    Neural network with shared backbone and multiple heads.
+    Neural network with shared backbone, entity embeddings, and multiple heads.
     
     Architecture:
-    - Input projection → [128 dims]
-    - ResNet blocks × 3 → [128 dims]
-    - Heads:
-        - 1X2: [128 → 32 → 3]
-        - O/U: [128 → 32 → 2]
-        - BTTS: [128 → 32 → 2]
+    - Embeddings (Team/League) → Concatenated with numeric input
+    - Input projection → [hidden_dims]
+    - ResNet blocks × n
+    - Heads: 1X2, O/U, BTTS
     """
     
     def __init__(
         self,
         input_dim: int,
+        cat_dims: List[int],     # [num_teams, num_leagues]
+        emb_dims: List[int],     # [team_emb_dim, league_emb_dim]
         hidden_dim: int = 128,
         n_blocks: int = 3,
         dropout: float = 0.2,
@@ -97,9 +122,19 @@ class MultiTaskNetwork(nn.Module):
         
         self.temperature = nn.Parameter(torch.tensor(temperature))
         
+        # Embeddings
+        # 0: HomeTeam, 1: AwayTeam, 2: League
+        self.home_emb = nn.Embedding(cat_dims[0], emb_dims[0])
+        self.away_emb = nn.Embedding(cat_dims[0], emb_dims[0])
+        self.league_emb = nn.Embedding(cat_dims[1], emb_dims[1])
+        
+        total_emb_dim = (emb_dims[0] * 2) + emb_dims[1]
+        
         # Input projection
+        total_input_dim = input_dim + total_emb_dim
+        
         self.input_proj = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
+            nn.Linear(total_input_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.GELU(),
             nn.Dropout(dropout),
@@ -114,7 +149,6 @@ class MultiTaskNetwork(nn.Module):
         # Prediction heads
         head_dim = 32
         
-        # 1X2 head (3 classes: home, draw, away)
         self.head_1x2 = nn.Sequential(
             nn.Linear(hidden_dim, head_dim),
             nn.GELU(),
@@ -122,7 +156,6 @@ class MultiTaskNetwork(nn.Module):
             nn.Linear(head_dim, 3),
         )
         
-        # Over/Under head (2 classes: over, under)
         self.head_ou = nn.Sequential(
             nn.Linear(hidden_dim, head_dim),
             nn.GELU(),
@@ -130,7 +163,6 @@ class MultiTaskNetwork(nn.Module):
             nn.Linear(head_dim, 2),
         )
         
-        # BTTS head (2 classes: yes, no)
         self.head_btts = nn.Sequential(
             nn.Linear(hidden_dim, head_dim),
             nn.GELU(),
@@ -138,13 +170,22 @@ class MultiTaskNetwork(nn.Module):
             nn.Linear(head_dim, 2),
         )
     
-    def forward(self, x) -> Dict[str, torch.Tensor]:
+    def forward(self, x_num, x_cat) -> Dict[str, torch.Tensor]:
         """
-        Forward pass returning logits for all markets.
+        Forward pass.
         
-        Returns:
-            Dict with keys '1x2', 'ou', 'btts' containing logits
+        Args:
+            x_num: Numeric features [batch, n_features]
+            x_cat: Categorical features [batch, 3] (Home, Away, League)
         """
+        # Embeddings
+        home = self.home_emb(x_cat[:, 0])
+        away = self.away_emb(x_cat[:, 1])
+        league = self.league_emb(x_cat[:, 2])
+        
+        # Concatenate
+        x = torch.cat([x_num, home, away, league], dim=1)
+        
         # Shared processing
         h = self.input_proj(x)
         
@@ -158,9 +199,8 @@ class MultiTaskNetwork(nn.Module):
             "btts": self.head_btts(h) / self.temperature,
         }
     
-    def predict_proba(self, x) -> Dict[str, torch.Tensor]:
-        """Get softmax probabilities for all markets."""
-        logits = self.forward(x)
+    def predict_proba(self, x_num, x_cat) -> Dict[str, torch.Tensor]:
+        logits = self.forward(x_num, x_cat)
         return {
             "1x2": F.softmax(logits["1x2"], dim=-1),
             "ou": F.softmax(logits["ou"], dim=-1),
@@ -191,6 +231,7 @@ class MultiTaskModel(BaseModel):
     - 1X2 (Match Winner)
     - Over/Under 2.5
     - BTTS (Both Teams To Score)
+    - Entity Embeddings for Teams and Leagues
     """
     
     SUPPORTED_MARKETS = [Market.MATCH_WINNER, Market.OVER_UNDER, Market.BTTS]
@@ -230,9 +271,11 @@ class MultiTaskModel(BaseModel):
         self.features = features or NEURAL_FEATURES
         
         self.network: Optional[MultiTaskNetwork] = None
-        self.feature_means: Optional[np.ndarray] = None
-        self.feature_stds: Optional[np.ndarray] = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Preprocessing
+        self.encoders: Dict[str, LabelEncoder] = {}
+        self.scaler: Optional[StandardScaler] = None
     
     def fit(
         self,
@@ -241,14 +284,7 @@ class MultiTaskModel(BaseModel):
         patience: int = 10,
         **kwargs
     ) -> Dict[str, float]:
-        """
-        Train multi-task model.
-        
-        Args:
-            data: DataFrame with features and targets
-            eval_ratio: Validation set fraction
-            patience: Early stopping patience
-        """
+        """Train multi-task model with embeddings."""
         df = data.copy()
         
         # Sort by date
@@ -260,20 +296,67 @@ class MultiTaskModel(BaseModel):
         available = [f for f in self.features if f in df.columns]
         
         if len(available) < 5:
-            # Fallback to all numeric columns
             available = [c for c in df.columns 
                         if df[c].dtype in [np.float64, np.int64]
                         and c not in ["FTHG", "FTAG"]][:30]
         
         logger.info(f"Using {len(available)} features for neural model")
         
+        # Prepare categorical data
+        # Fill missing with "unknown"
+        df["HomeTeam"] = df["HomeTeam"].fillna("unknown")
+        df["AwayTeam"] = df["AwayTeam"].fillna("unknown")
+        df["League"] = df["League"].fillna("unknown")
+        
+        # Fit encoders
+        le_team = LabelEncoder()
+        all_teams = pd.concat([df["HomeTeam"], df["AwayTeam"]]).unique()
+        # Add 'unknown' explicitly if not present
+        if "unknown" not in all_teams:
+            all_teams = np.append(all_teams, "unknown")
+        le_team.fit(all_teams)
+        
+        le_league = LabelEncoder()
+        all_leagues = df["League"].unique()
+        if "unknown" not in all_leagues:
+            all_leagues = np.append(all_leagues, "unknown")
+        le_league.fit(all_leagues)
+        
+        self.encoders = {
+            "team": le_team,
+            "league": le_league
+        }
+        
+        # Encode categorical features
+        # We process them for the whole DF first to keep logic simple
+        # For prediction, we handle unseen labels via 'unknown' mapping
+        
+        # Note: LabelEncoder transforms to 0..N-1
+        # We'll use these directly
+        
+        # Helper for robust transform
+        def safe_transform(le, series):
+            # Create a map
+            mapping = dict(zip(le.classes_, le.transform(le.classes_)))
+            # Default to 'unknown' index
+            unknown_idx = mapping.get("unknown", 0)
+            return series.map(mapping).fillna(unknown_idx).astype(int)
+
+        cat_home = safe_transform(le_team, df["HomeTeam"]).values
+        cat_away = safe_transform(le_team, df["AwayTeam"]).values
+        cat_league = safe_transform(le_league, df["League"]).values
+        
+        X_cat = np.stack([cat_home, cat_away, cat_league], axis=1) # [N, 3]
+        
         # Create targets
         df["target_1x2"] = self._create_1x2_target(df)
         df["target_ou"] = ((df["FTHG"] + df["FTAG"]) > 2.5).astype(int)
         df["target_btts"] = ((df["FTHG"] > 0) & (df["FTAG"] > 0)).astype(int)
         
-        # Drop rows with missing targets
-        df = df.dropna(subset=["target_1x2", "target_ou", "target_btts"])
+        # Drop rows with missing targets (align X_cat as well)
+        mask = df[["target_1x2", "target_ou", "target_btts"]].notna().all(axis=1)
+        df = df[mask]
+        X_cat = X_cat[mask.values]
         
         # Split
         n = len(df)
@@ -282,15 +365,13 @@ class MultiTaskModel(BaseModel):
         train_df = df.iloc[:split_idx]
         eval_df = df.iloc[split_idx:]
         
-        # Normalize features
-        X_train = train_df[available].fillna(0).values
-        X_eval = eval_df[available].fillna(0).values
+        X_cat_train = X_cat[:split_idx]
+        X_cat_eval = X_cat[split_idx:]
         
-        self.feature_means = X_train.mean(axis=0)
-        self.feature_stds = X_train.std(axis=0) + 1e-8
-        
-        X_train = (X_train - self.feature_means) / self.feature_stds
-        X_eval = (X_eval - self.feature_means) / self.feature_stds
+        # Normalize numeric features
+        self.scaler = StandardScaler()
+        X_num_train = self.scaler.fit_transform(train_df[available].fillna(0).replace([np.inf, -np.inf], 0).values)
+        X_num_eval = self.scaler.transform(eval_df[available].fillna(0).replace([np.inf, -np.inf], 0).values)
         
         # Targets
         y_1x2_train = train_df["target_1x2"].values.astype(int)
@@ -301,9 +382,21 @@ class MultiTaskModel(BaseModel):
         y_ou_eval = eval_df["target_ou"].values.astype(int)
         y_btts_eval = eval_df["target_btts"].values.astype(int)
         
+        # Determine embedding dimensions
+        n_teams = len(le_team.classes_)
+        n_leagues = len(le_league.classes_)
+        
+        # Rule of thumb: min(50, (N+1)//2)
+        dim_team = min(50, (n_teams + 1) // 2)
+        dim_league = min(20, (n_leagues + 1) // 2)
+        
+        logger.info(f"Embeddings: Teams={n_teams} (dim={dim_team}), Leagues={n_leagues} (dim={dim_league})")
+        
         # Create network
         self.network = MultiTaskNetwork(
             input_dim=len(available),
+            cat_dims=[n_teams, n_leagues],
+            emb_dims=[dim_team, dim_league],
             hidden_dim=self.hidden_dim,
             n_blocks=self.n_blocks,
             dropout=self.dropout,
@@ -331,14 +424,16 @@ class MultiTaskModel(BaseModel):
         
         # DataLoaders
         train_dataset = TensorDataset(
-            torch.FloatTensor(X_train),
+            torch.FloatTensor(X_num_train),
+            torch.LongTensor(X_cat_train),
             torch.LongTensor(y_1x2_train),
             torch.LongTensor(y_ou_train),
             torch.LongTensor(y_btts_train),
         )
         train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
         
-        X_eval_t = torch.FloatTensor(X_eval).to(self.device)
+        X_num_eval_t = torch.FloatTensor(X_num_eval).to(self.device)
+        X_cat_eval_t = torch.LongTensor(X_cat_eval).to(self.device)
         y_1x2_eval_t = torch.LongTensor(y_1x2_eval).to(self.device)
         y_ou_eval_t = torch.LongTensor(y_ou_eval).to(self.device)
         y_btts_eval_t = torch.LongTensor(y_btts_eval).to(self.device)
@@ -353,11 +448,11 @@ class MultiTaskModel(BaseModel):
             train_loss = 0.0
             
             for batch in train_loader:
-                x, y1, y2, y3 = [b.to(self.device) for b in batch]
+                x_num, x_cat, y1, y2, y3 = [b.to(self.device) for b in batch]
                 
                 optimizer.zero_grad()
                 
-                logits = self.network(x)
+                logits = self.network(x_num, x_cat)
                 
                 # Combined loss
                 l1 = loss_1x2(logits["1x2"], y1)
@@ -375,7 +470,7 @@ class MultiTaskModel(BaseModel):
             # Eval
             self.network.eval()
             with torch.no_grad():
-                logits = self.network(X_eval_t)
+                logits = self.network(X_num_eval_t, X_cat_eval_t)
                 eval_l1 = loss_1x2(logits["1x2"], y_1x2_eval_t)
                 eval_l2 = loss_ou(logits["ou"], y_ou_eval_t)
                 eval_l3 = loss_btts(logits["btts"], y_btts_eval_t)
@@ -393,6 +488,11 @@ class MultiTaskModel(BaseModel):
                 if patience_counter >= patience:
                     logger.info(f"Early stopping at epoch {epoch}")
                     break
+            
+            # Log progress
+            if (epoch + 1) % 1 == 0:
+                logger.info(f"Epoch {epoch+1}/{self.n_epochs} | Loss: {train_loss:.4f} | Eval: {eval_loss:.4f}")
+
         
         # Restore best model
         if best_state:
@@ -401,7 +501,7 @@ class MultiTaskModel(BaseModel):
         # Compute final metrics
         self.network.eval()
         with torch.no_grad():
-            probs = self.network.predict_proba(X_eval_t)
+            probs = self.network.predict_proba(X_num_eval_t, X_cat_eval_t)
             
             acc_1x2 = (probs["1x2"].argmax(dim=1) == y_1x2_eval_t).float().mean().item()
             acc_ou = (probs["ou"].argmax(dim=1) == y_ou_eval_t).float().mean().item()
@@ -432,24 +532,78 @@ class MultiTaskModel(BaseModel):
             raise RuntimeError("Model not fitted")
         
         features = self.metadata.get("features", [])
-        available = [f for f in features if f in data.columns]
         
-        X = data[available].fillna(0).values
-        X = (X - self.feature_means) / self.feature_stds
-        X_t = torch.FloatTensor(X).to(self.device)
+        # Align features: ensure all training features exist, fill with 0
+        if features:
+            # fast alignment using reindex
+            X_aligned = data.reindex(columns=features, fill_value=0.0)
+            X_aligned = X_aligned.fillna(0.0)
+            X_vals = X_aligned.values
+        else:
+            # Legacy fallback
+            available = [f for f in features if f in data.columns]
+            X_vals = data[available].fillna(0).values
+        
+        # Numeric Preprocessing
+        try:
+            X_num = self.scaler.transform(X_vals)
+        except Exception as e:
+            logger.error(f"Scaling failed (input shape {X_vals.shape}): {e}")
+            return []
+            
+        X_num_t = torch.FloatTensor(X_num).to(self.device)
+        
+        # Categorical Preprocessing
+        def safe_transform(le, series):
+            # Create a map
+            mapping = dict(zip(le.classes_, le.transform(le.classes_)))
+            # Default to 'unknown' index
+            unknown_idx = mapping.get("unknown", 0)
+            return series.map(mapping).fillna(unknown_idx).astype(int)
+        
+        le_team = self.encoders["team"]
+        le_league = self.encoders["league"]
+        
+        cat_home = safe_transform(le_team, data["HomeTeam"]).values
+        cat_away = safe_transform(le_team, data["AwayTeam"]).values
+        cat_league = safe_transform(le_league, data["League"]).values
+        
+        X_cat = np.stack([cat_home, cat_away, cat_league], axis=1) # [N, 3]
+        X_cat_t = torch.LongTensor(X_cat).to(self.device)
         
         self.network.eval()
         predictions = []
         
         with torch.no_grad():
-            probs = self.network.predict_proba(X_t)
+            probs = self.network.predict_proba(X_num_t, X_cat_t)
             
-            for idx, row in data.iterrows():
-                i = data.index.get_loc(idx)
-                match_id = row.get("match_id", f"{row.get('HomeTeam', 'home')}_vs_{row.get('AwayTeam', 'away')}")
+            # Convert all to numpy at once
+            p1x2_all = probs["1x2"].cpu().numpy()
+            pou_all = probs["ou"].cpu().numpy()
+            pbtts_all = probs["btts"].cpu().numpy()
+            
+            matches = data.to_dict('records')
+            
+            from stavki.utils import generate_match_id
+            
+            for i, row in enumerate(matches):
+                match_id = row.get("match_id")
+                if not match_id:
+                    match_id = generate_match_id(
+                        row.get("HomeTeam", "home"), 
+                        row.get("AwayTeam", "away"), 
+                        row.get("Date")
+                    )
                 
                 # 1X2 prediction
-                p1x2 = probs["1x2"][i].cpu().numpy()
+                p1x2 = p1x2_all[i]
+                # Confidence: max - 2nd_max
+                # np.partition is fast but for size 3 sorting is trivial
+                # sort indices? or just partition
+                # For 3 elements, sorting is very fast
+                sorted_p = np.sort(p1x2)
+                conf_1x2 = float(sorted_p[-1] - sorted_p[-2])
+                
                 predictions.append(Prediction(
                     match_id=match_id,
                     market=Market.MATCH_WINNER,
@@ -458,12 +612,12 @@ class MultiTaskModel(BaseModel):
                         "draw": float(p1x2[1]),
                         "away": float(p1x2[2]),
                     },
-                    confidence=float(p1x2.max() - np.partition(p1x2, -2)[-2]),
+                    confidence=conf_1x2,
                     model_name=self.name,
                 ))
                 
                 # O/U prediction
-                pou = probs["ou"][i].cpu().numpy()
+                pou = pou_all[i]
                 predictions.append(Prediction(
                     match_id=match_id,
                     market=Market.OVER_UNDER,
@@ -476,7 +630,7 @@ class MultiTaskModel(BaseModel):
                 ))
                 
                 # BTTS prediction
-                pbtts = probs["btts"][i].cpu().numpy()
+                pbtts = pbtts_all[i]
                 predictions.append(Prediction(
                     match_id=match_id,
                     market=Market.BTTS,
@@ -490,8 +644,47 @@ class MultiTaskModel(BaseModel):
         
         return predictions
     
-    def _get_state(self) -> Dict[str, Any]:
-        return {
+    def save(self, path: str) -> None:
+        """
+        Save model to disk using professional split-file strategy.
+        
+        - weights.pth: PyTorch state dict
+        - config.json: Model hyperparameters and metadata
+        - preprocessors.joblib: Scikit-learn scalers and encoders
+        """
+        import json
+        import joblib
+        import torch
+        from pathlib import Path
+        
+        base_path = Path(path)
+        # Create directory if saving to a 'file' path that doesn't have an extension, 
+        # or treat 'path' as the base stem.
+        # Standard convention: path is a file path like 'models/neural_v1.pt'
+        # We will strip extension and use it as a directory or prefix.
+        
+        # Actually, let's just append suffixes to the given path stem
+        parent = base_path.parent
+        parent.mkdir(parents=True, exist_ok=True)
+        stem = base_path.stem
+        
+        # 1. Save Weights
+        weights_path = parent / f"{stem}_weights.pth"
+        if self.network:
+            torch.save(self.network.state_dict(), weights_path)
+        
+        # 2. Save Preprocessors
+        preproc_path = parent / f"{stem}_preproc.joblib"
+        joblib.dump({
+            "encoders": self.encoders,
+            "scaler": self.scaler
+        }, preproc_path)
+        
+        # 3. Save Config
+        config_path = parent / f"{stem}_config.json"
+        
+        config = {
+            "name": self.name,
             "params": {
                 "hidden_dim": self.hidden_dim,
                 "n_blocks": self.n_blocks,
@@ -505,29 +698,137 @@ class MultiTaskModel(BaseModel):
                 "focal_gamma": self.focal_gamma,
             },
             "features": self.features,
-            "network_state": self.network.state_dict() if self.network else None,
-            "network_config": {
+            "metadata": self.metadata,
+            "network_dims": {
                 "input_dim": len(self.metadata.get("features", [])),
-                "hidden_dim": self.hidden_dim,
-                "n_blocks": self.n_blocks,
-                "dropout": self.dropout,
-            },
-            "feature_means": self.feature_means,
-            "feature_stds": self.feature_stds,
+                "cat_dims": [
+                    len(self.encoders["team"].classes_) if "team" in self.encoders else 0,
+                    len(self.encoders["league"].classes_) if "league" in self.encoders else 0,
+                ],
+                "emb_dims": [
+                    self.network.home_emb.embedding_dim if self.network else 0,
+                    self.network.league_emb.embedding_dim if self.network else 0,
+                ]
+            }
         }
-    
+        
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+            
+        logger.info(f"Saved Neural model to {parent}/{stem}* [.pth, .json, .joblib]")
+
+    @classmethod
+    def load(cls, path: str) -> 'MultiTaskModel':
+        """Load model from split files."""
+        import json
+        import joblib
+        import torch
+        from pathlib import Path
+        
+        base_path = Path(path)
+        parent = base_path.parent
+        stem = base_path.stem
+        
+        # 1. Load Config
+        config_path = parent / f"{stem}_config.json"
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config not found: {config_path}")
+            
+        with open(config_path) as f:
+            config = json.load(f)
+            
+        # Initialize
+        instance = cls(**config["params"])
+        instance.features = config.get("features", [])
+        instance.metadata = config.get("metadata", {})
+        instance.is_fitted = True
+        
+        # 2. Load Preprocessors
+        preproc_path = parent / f"{stem}_preproc.joblib"
+        if preproc_path.exists():
+            preproc = joblib.load(preproc_path)
+            instance.encoders = preproc["encoders"]
+            instance.scaler = preproc["scaler"]
+        
+        # 3. Load Weights and Build Network
+        weights_path = parent / f"{stem}_weights.pth"
+        if weights_path.exists():
+            dims = config["network_dims"]
+            
+            instance.network = MultiTaskNetwork(
+                input_dim=dims["input_dim"],
+                cat_dims=dims["cat_dims"],
+                emb_dims=dims["emb_dims"],
+                hidden_dim=config["params"]["hidden_dim"],
+                n_blocks=config["params"]["n_blocks"],
+                dropout=config["params"]["dropout"]
+            ).to(instance.device)
+            
+            instance.network.load_state_dict(torch.load(weights_path, map_location=instance.device))
+            instance.network.eval()
+            
+        return instance
+
+    def _get_state(self) -> Dict[str, Any]:
+        """Legacy state getter - maintained for interface compatibility but discouraged."""
+        return {}
+
     def _set_state(self, state: Dict[str, Any]):
-        params = state["params"]
-        for key, value in params.items():
-            setattr(self, key, value)
+        """Legacy state setter - used when loading old pickle files."""
+        if "params" in state:
+            params = state["params"]
+            for key, value in params.items():
+                setattr(self, key, value)
         
-        self.features = state["features"]
-        self.feature_means = state["feature_means"]
-        self.feature_stds = state["feature_stds"]
+        if "features" in state:
+            self.features = state["features"]
         
-        # Rebuild network
-        config = state["network_config"]
-        self.network = MultiTaskNetwork(**config).to(self.device)
+        if "encoders" in state:
+            import pickle
+            import base64
+            try:
+                # Attempt to decode if it looks like base64-encoded pickle
+                if isinstance(state["encoders"], str):
+                    self.encoders = pickle.loads(base64.b64decode(state["encoders"]))
+                else:
+                    self.encoders = state["encoders"]
+                    
+                if "scaler" in state:
+                    if isinstance(state["scaler"], str):
+                        self.scaler = pickle.loads(base64.b64decode(state["scaler"]))
+                    else:
+                        self.scaler = state["scaler"]
+            except Exception as e:
+                logger.warning(f"Failed to load encoders/scaler in _set_state: {e}")
         
-        if state["network_state"]:
-            self.network.load_state_dict(state["network_state"])
+        # Load network weights if present (and network exists)
+        if "network_state" in state and self.network:
+            try:
+                self.network.load_state_dict(state["network_state"])
+            except Exception as e:
+                logger.warning(f"Failed to load network state dict: {e}")
+        
+        # Re-initialize network if config is present and network is missing
+        if "network_config" in state and not self.network:
+            try:
+                config = state["network_config"]
+                # Safety check for keys
+                if "input_dim" in config:
+                    # Initialize network
+                    self.network = MultiTaskNetwork(
+                        input_dim=config["input_dim"],
+                        cat_dims=config["cat_dims"],
+                        emb_dims=config["emb_dims"],
+                        hidden_dim=config["hidden_dim"],
+                        n_blocks=config["n_blocks"],
+                        dropout=config["dropout"]
+                    ).to(self.device)
+                    
+                    if "network_state" in state:
+                        self.network.load_state_dict(state["network_state"])
+                        self.network.eval()
+                else:
+                    logger.warning("Legacy network config missing required keys 'input_dim'")
+                    
+            except Exception as e:
+                logger.error(f"Failed to rebuild network from state: {e}", exc_info=True)

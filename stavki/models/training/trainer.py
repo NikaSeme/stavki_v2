@@ -160,6 +160,12 @@ class ModelTrainer:
                 
                 logger.info(f"  ✓ {name} trained in {elapsed:.1f}s")
                 
+                # Save immediately
+                if self.models_dir:
+                    model_path = self.models_dir / f"{name}.pkl"
+                    model.save(model_path)
+
+                
             except Exception as e:
                 logger.error(f"  ✗ {name} failed: {e}")
                 results["models"][name] = {
@@ -187,7 +193,12 @@ class ModelTrainer:
         # Build actuals dict
         actuals = {}
         for idx, row in cal_df.iterrows():
-            match_id = row.get("match_id", f"{row.get('HomeTeam', '')}_{row.get('AwayTeam', '')}_{idx}")
+            from stavki.utils import generate_match_id
+            match_id = row.get("match_id", generate_match_id(
+                row.get('HomeTeam', ''), 
+                row.get('AwayTeam', ''), 
+                row.get('Date')
+            ))
             
             # 1X2 actual
             if row["FTHG"] > row["FTAG"]:

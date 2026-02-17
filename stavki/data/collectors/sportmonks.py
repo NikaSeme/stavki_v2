@@ -19,6 +19,9 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from functools import lru_cache
 import json
+from pathlib import Path
+from stavki.config import PROJECT_ROOT
+
 
 logger = logging.getLogger(__name__)
 
@@ -101,23 +104,7 @@ class SportMonksClient:
     """
     
     BASE_URL = "https://api.sportmonks.com/v3/football"
-    
-    # European Advanced league IDs
-    LEAGUE_IDS = {
-        "EPL": 8,
-        "LA_LIGA": 564,
-        "BUNDESLIGA": 82,
-        "SERIE_A": 384,
-        "LIGUE_1": 301,
-        "CHAMPIONSHIP": 9,
-        "EREDIVISIE": 72,
-        "PRIMEIRA": 462,
-        "SCOTTISH": 501,
-        "BELGIAN": 208,
-    }
-    
-    # Reverse mapping for display
-    LEAGUE_NAMES = {v: k for k, v in LEAGUE_IDS.items()}
+
     
     def __init__(
         self,
@@ -130,6 +117,45 @@ class SportMonksClient:
         self.rate_limit = rate_limit
         self.timeout = timeout
         self.cache_ttl = cache_ttl
+        
+        # Load leagues from config
+        self.league_ids = {}
+        try:
+            # Try loading from league_config.json first (source of truth)
+            config_path = PROJECT_ROOT / "models" / "league_config.json"
+            if config_path.exists():
+                with open(config_path) as f:
+                    full_config = json.load(f)
+                    per_league = full_config.get("per_league", {})
+                    
+                    # Extract sportmonks_id from detailed config
+                    # Structure: "soccer_epl": { "sportmonks_id": 8, ... }
+                    for league_key, league_data in per_league.items():
+                        if "sportmonks_id" in league_data:
+                            # Map internal key (soccer_epl) to ID
+                            # Ideally we map Enum name (EPL) to ID
+                            # But legacy used strings. We'll map config keys to IDs.
+                            self.league_ids[league_key] = league_data["sportmonks_id"]
+                            
+                            # Also map simple names if possible (e.g. "EPL" if key is "soccer_epl")
+                            simple_name = league_key.replace("soccer_", "").upper()
+                            self.league_ids[simple_name] = league_data["sportmonks_id"]
+            
+            if not self.league_ids: 
+                logger.warning("No league IDs found in config, falling back to legacy defaults")
+                self.league_ids = {
+                    "EPL": 8, "LA_LIGA": 564, "BUNDESLIGA": 82,
+                    "SERIE_A": 384, "LIGUE_1": 301, "CHAMPIONSHIP": 9,
+                }
+        except Exception as e:
+            logger.error(f"Failed to load leagues config: {e}")
+            self.league_ids = {
+                "EPL": 8, "LA_LIGA": 564, "BUNDESLIGA": 82,
+                "SERIE_A": 384, "LIGUE_1": 301, "CHAMPIONSHIP": 9,
+            }
+            
+        # Reverse mapping for display
+        self.league_names = {v: k for k, v in self.league_ids.items()}
         
         # Rate limiting
         self._request_times: List[float] = []
@@ -144,6 +170,7 @@ class SportMonksClient:
         })
         
         logger.info("SportMonks client initialized")
+
     
     def _rate_limit_wait(self):
         """Enforce rate limiting with per-request throttle."""
@@ -937,12 +964,12 @@ class SportMonksCollector:
         
         # Map our League enum to SportMonks ID
         sm_league_id = None
-        if league == League.EPL: sm_league_id = SportMonksClient.LEAGUE_IDS["EPL"]
-        elif league == League.LA_LIGA: sm_league_id = SportMonksClient.LEAGUE_IDS["LA_LIGA"]
-        elif league == League.BUNDESLIGA: sm_league_id = SportMonksClient.LEAGUE_IDS["BUNDESLIGA"]
-        elif league == League.SERIE_A: sm_league_id = SportMonksClient.LEAGUE_IDS["SERIE_A"]
-        elif league == League.LIGUE_1: sm_league_id = SportMonksClient.LEAGUE_IDS["LIGUE_1"]
-        elif league == League.CHAMPIONSHIP: sm_league_id = SportMonksClient.LEAGUE_IDS["CHAMPIONSHIP"]
+        if league == League.EPL: sm_league_id = self.client.league_ids.get("EPL")
+        elif league == League.LA_LIGA: sm_league_id = self.client.league_ids.get("LA_LIGA")
+        elif league == League.BUNDESLIGA: sm_league_id = self.client.league_ids.get("BUNDESLIGA")
+        elif league == League.SERIE_A: sm_league_id = self.client.league_ids.get("SERIE_A")
+        elif league == League.LIGUE_1: sm_league_id = self.client.league_ids.get("LIGUE_1")
+        elif league == League.CHAMPIONSHIP: sm_league_id = self.client.league_ids.get("CHAMPIONSHIP")
         
         if not sm_league_id:
             logger.warning(f"SportMonks ID not found for league: {league}")

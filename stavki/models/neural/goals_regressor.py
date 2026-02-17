@@ -111,10 +111,12 @@ class GoalsRegressor(BaseModel):
         self.batch_size = batch_size
         
         self.features = features or [
-            "HomeEloBefore", "AwayEloBefore", "EloDiff",
-            "Home_GF_L5", "Home_GA_L5", "Away_GF_L5", "Away_GA_L5",
-            "xG_Home_L5", "xGA_Home_L5", "xG_Away_L5", "xGA_Away_L5",
-            "League_Goals_Avg",
+            "elo_home", "elo_away", "elo_diff",
+            "form_home_gf", "form_home_pts", 
+            "form_away_gf", "form_away_pts",
+            "synth_xg_home", "synth_xg_away",
+            "avg_rating_home", "avg_rating_away",
+            "rating_delta",
         ]
         
         self.network: Optional[GoalsNetwork] = None
@@ -147,7 +149,7 @@ class GoalsRegressor(BaseModel):
         n = len(df)
         split_idx = int(n * 0.85)
         
-        X = df[available].fillna(0).values
+        X = df[available].fillna(0).replace([np.inf, -np.inf], 0).values
         
         # Normalize
         self.feature_means = X[:split_idx].mean(axis=0)
@@ -246,8 +248,8 @@ class GoalsRegressor(BaseModel):
             "mean_pred_away": pred_a.mean().item(),
         }
     
-    def predict_lambdas(self, data: pd.DataFrame) -> List[Tuple[float, float]]:
-        """Predict λ_home, λ_away for each match."""
+    def predict_lambdas(self, data: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+        """Predict λ_home, λ_away for each match as arrays."""
         if not self.is_fitted:
             raise RuntimeError("Model not fitted")
         
@@ -255,6 +257,11 @@ class GoalsRegressor(BaseModel):
         available = [f for f in features if f in data.columns]
         
         X = data[available].fillna(0).values
+        # Handle case where self.feature_means is None (should be set in fit)
+        if self.feature_means is None:
+             self.feature_means = np.zeros(X.shape[1])
+             self.feature_stds = np.ones(X.shape[1])
+
         X = (X - self.feature_means) / self.feature_stds
         X_t = torch.FloatTensor(X).to(self.device)
         
@@ -262,42 +269,75 @@ class GoalsRegressor(BaseModel):
         with torch.no_grad():
             pred_h, pred_a = self.network(X_t)
         
-        return list(zip(pred_h.cpu().numpy(), pred_a.cpu().numpy()))
+        return pred_h.cpu().numpy(), pred_a.cpu().numpy()
     
     def predict(self, data: pd.DataFrame) -> List[Prediction]:
         """Generate predictions for goals-based markets."""
-        lambdas = self.predict_lambdas(data)
+        lh_arr, la_arr = self.predict_lambdas(data)
+        
+        # Vectorized probability calculations
+        # O/U 2.5: P(goals > 2.5) = 1 - CDF(2, lambda_total)
+        lambda_total = lh_arr + la_arr
+        over_probs = 1 - poisson.cdf(2, lambda_total)
+        under_probs = 1 - over_probs
+        
+        # BTTS: P(h>0) * P(a>0) = (1 - P(0, lh)) * (1 - P(0, la))
+        # PMF(0, lambda) = exp(-lambda)
+        # So P(>0) = 1 - exp(-lambda)
+        btts_yes = (1 - np.exp(-lh_arr)) * (1 - np.exp(-la_arr))
+        btts_no = 1 - btts_yes
+        
         predictions = []
         
-        for idx, row in data.iterrows():
-            i = data.index.get_loc(idx)
-            lh, la = lambdas[i]
-            match_id = row.get("match_id", f"{row.get('HomeTeam', 'home')}_vs_{row.get('AwayTeam', 'away')}")
+        # Pre-generate match IDs if needed (vectorized if possible, but strict dependency on row values)
+        # We'll stick to iteration for object creation but use pre-computed arrays
+        
+        from stavki.utils import generate_match_id
+        
+        # Optimization: Generate match IDs in bulk if possible, but iterating is fine for object creation.
+        
+        matches = data.to_dict('records')
+        
+        for i, row in enumerate(matches):
+            lh, la = float(lh_arr[i]), float(la_arr[i])
+            
+            match_id = row.get("match_id")
+            if not match_id:
+                # Fallback
+                match_id = generate_match_id(
+                     row.get("HomeTeam", "home"), 
+                     row.get("AwayTeam", "away"), 
+                     row.get("Date")
+                )
             
             # O/U 2.5
-            over_prob = 1 - poisson.cdf(2, lh + la)
+            p_over = float(over_probs[i])
+            p_under = float(under_probs[i])
+            
             predictions.append(Prediction(
                 match_id=match_id,
                 market=Market.OVER_UNDER,
                 probabilities={
-                    "over_2.5": float(over_prob),
-                    "under_2.5": float(1 - over_prob),
+                    "over_2.5": p_over,
+                    "under_2.5": p_under,
                 },
-                confidence=abs(over_prob - 0.5) * 2,
+                confidence=abs(p_over - 0.5) * 2,
                 model_name=self.name,
-                features_used={"lambda_home": float(lh), "lambda_away": float(la)},
+                features_used={"lambda_home": lh, "lambda_away": la},
             ))
             
-            # BTTS (both score at least 1)
-            btts_yes = (1 - poisson.pmf(0, lh)) * (1 - poisson.pmf(0, la))
+            # BTTS
+            p_yes = float(btts_yes[i])
+            p_no = float(btts_no[i])
+            
             predictions.append(Prediction(
                 match_id=match_id,
                 market=Market.BTTS,
                 probabilities={
-                    "yes": float(btts_yes),
-                    "no": float(1 - btts_yes),
+                    "yes": p_yes,
+                    "no": p_no,
                 },
-                confidence=abs(btts_yes - 0.5) * 2,
+                confidence=abs(p_yes - 0.5) * 2,
                 model_name=self.name,
             ))
         

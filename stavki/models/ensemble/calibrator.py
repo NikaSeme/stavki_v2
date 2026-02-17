@@ -92,26 +92,43 @@ class EnsembleCalibrator:
     def fit(
         self, 
         predictions: List[Prediction],
-        actuals: Dict[str, str],  # match_id -> actual outcome
+        actuals: Dict[str, Any],  # match_id -> {market_value: outcome} or match_id -> outcome (legacy)
     ):
         """
         Fit calibrators on validation data.
         
         Args:
             predictions: Model predictions
-            actuals: Dict mapping match_id to actual outcome
+            actuals: Dict mapping match_id to actual outcomes.
+                Modern format: {match_id: {"1x2": "home", "btts": "yes", "over_under": "over_2.5"}}
+                Legacy format: {match_id: "home"}  (treated as 1X2 only)
         """
+        # Normalize actuals to per-market format
+        normalized: Dict[str, Dict[str, str]] = {}
+        for match_id, val in actuals.items():
+            if isinstance(val, dict):
+                normalized[match_id] = val
+            else:
+                # Legacy: assume 1X2
+                normalized[match_id] = {"1x2": val}
+        
         # Group by market and outcome
         data: Dict[str, Dict[str, List[float]]] = {}  # market_outcome -> {probs, actuals}
         
         for pred in predictions:
-            if pred.match_id not in actuals:
+            if pred.match_id not in normalized:
                 continue
             
-            actual = actuals[pred.match_id]
+            market_key = pred.market.value if hasattr(pred.market, 'value') else str(pred.market)
+            match_actuals = normalized[pred.match_id]
+            
+            # Get the actual outcome for this prediction's market
+            actual = match_actuals.get(market_key)
+            if actual is None:
+                continue
             
             for outcome, prob in pred.probabilities.items():
-                key = f"{pred.market.value}_{outcome}"
+                key = f"{market_key}_{outcome}"
                 
                 if key not in data:
                     data[key] = {"probs": [], "actuals": []}
@@ -125,6 +142,7 @@ class EnsembleCalibrator:
             labels = np.array(values["actuals"])
             
             if len(probs) < 20:  # Minimum samples
+                logger.info(f"  Skipping {key}: only {len(probs)} samples (need 20)")
                 continue
             
             if self.method == "isotonic":
@@ -194,7 +212,7 @@ class EnsembleCalibrator:
     def get_calibration_error(
         self,
         predictions: List[Prediction],
-        actuals: Dict[str, str],
+        actuals: Dict[str, Any],  # match_id -> {market_value: outcome} or match_id -> outcome
         n_bins: int = 10,
     ) -> Dict[str, float]:
         """
@@ -205,17 +223,29 @@ class EnsembleCalibrator:
         """
         ece = {}
         
+        # Normalize actuals to per-market format
+        normalized: Dict[str, Dict[str, str]] = {}
+        for match_id, val in actuals.items():
+            if isinstance(val, dict):
+                normalized[match_id] = val
+            else:
+                normalized[match_id] = {"1x2": val}
+        
         # Group by market and outcome
         data: Dict[str, Dict[str, List[float]]] = {}
         
         for pred in predictions:
-            if pred.match_id not in actuals:
+            if pred.match_id not in normalized:
                 continue
             
-            actual = actuals[pred.match_id]
+            market_key = pred.market.value if hasattr(pred.market, 'value') else str(pred.market)
+            match_actuals = normalized[pred.match_id]
+            actual = match_actuals.get(market_key)
+            if actual is None:
+                continue
             
             for outcome, prob in pred.probabilities.items():
-                key = f"{pred.market.value}_{outcome}"
+                key = f"{market_key}_{outcome}"
                 
                 if key not in data:
                     data[key] = {"probs": [], "actuals": []}

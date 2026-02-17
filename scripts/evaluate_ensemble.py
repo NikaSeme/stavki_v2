@@ -326,6 +326,66 @@ def train_lightgbm(data):
         return np.full((n, 3), 1/3), np.zeros(n, dtype=int), 0, None
 
 
+def train_neural(data):
+    """Train Neural Network model."""
+    logger.info("  Training Neural Network...")
+    start = time.time()
+    
+    try:
+        from stavki.models.neural.multitask import MultiTaskModel
+        from stavki.models.base import Market
+        
+        # Check if torch is available
+        try:
+            import torch
+        except ImportError:
+            logger.warning("  PyTorch not installed, skipping Neural model")
+            n = len(data["y_test"])
+            return np.full((n, 3), 1/3), np.zeros(n, dtype=int), 0, None
+        
+        model = MultiTaskModel(n_epochs=20) # Lower epochs for evaluation speed
+        
+        if "df_val" not in data:
+             logger.error("df_val missing from data split")
+             raise KeyError("df_val")
+        
+        # Reconstruct Train + Val
+        train_val_df = pd.concat([data["df_train"], data["df_val"]])
+        
+        total_len = len(train_val_df)
+        val_len = len(data["df_val"])
+        eval_ratio = val_len / total_len if total_len > 0 else 0.1
+        
+        model.fit(
+            train_val_df,
+            eval_ratio=eval_ratio,
+        )
+        
+        all_predictions = model.predict(data["df_test"])
+        
+        # Filter for 1x2 market
+        predictions_1x2 = [p for p in all_predictions if p.market == Market.MATCH_WINNER]
+        
+        probs_list = []
+        for p in predictions_1x2:
+            probs = p.probabilities
+            probs_list.append([probs.get("home", 0.33), probs.get("draw", 0.33), probs.get("away", 0.33)])
+            
+        y_pred_proba = np.array(probs_list)
+        y_pred_class = y_pred_proba.argmax(axis=1)
+        
+        elapsed = time.time() - start
+        logger.info(f"  Neural trained in {elapsed:.1f}s")
+        return y_pred_proba, y_pred_class, elapsed, model
+        
+    except Exception as e:
+        logger.error(f"  Neural failed: {e}")
+        import traceback
+        traceback.print_exc()
+        n = len(data["y_test"])
+        return np.full((n, 3), 1/3), np.zeros(n, dtype=int), 0, None
+
+
 def build_ensemble(model_outputs, weights=None):
     """Build weighted ensemble from individual model predictions."""
     names = list(model_outputs.keys())
@@ -435,6 +495,7 @@ def main():
         "Poisson": train_poisson,
         "CatBoost": train_catboost,
         "LightGBM": train_lightgbm,
+        "Neural": train_neural,
     }
     
     for name, trainer in trainers.items():

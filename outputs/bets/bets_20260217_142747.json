@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-02-17T14:27:47.233856",
+  "bankroll": 1000.0,
+  "total_bets": 2,
+  "total_stake": 15.85,
+  "bets": [
+    {
+      "match_id": "19427718",
+      "match": "Wolverhampton Wanderers vs Arsenal",
+      "league": "soccer_epl",
+      "kickoff": null,
+      "market": "1x2",
+      "selection": "home",
+      "odds": 7.2,
+      "bookmaker": "1xbet",
+      "model_prob": 0.2418,
+      "market_prob": 0.1297,
+      "ev": 0.1762,
+      "edge": 0.0245,
+      "stake_pct": 0.0071,
+      "stake_amount": 7.1,
+      "confidence": 0.1121,
+      "justified_score": 70
+    },
+    {
+      "match_id": "19427718",
+      "match": "Wolverhampton Wanderers vs Arsenal",
+      "league": "soccer_epl",
+      "kickoff": null,
+      "market": "1x2",
+      "selection": "draw",
+      "odds": 5.94,
+      "bookmaker": "1xbet",
+      "model_prob": 0.2913,
+      "market_prob": 0.1572,
+      "ev": 0.1729,
+      "edge": 0.0291,
+      "stake_pct": 0.0087,
+      "stake_amount": 8.75,
+      "confidence": 0.134,
+      "justified_score": 80
+    }
+  ]
+}

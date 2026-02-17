@@ -114,9 +114,9 @@ class H2HBuilder:
             recent_home_wins=recent_home_wins,
             recent_draws=recent_draws,
             recent_away_wins=recent_away_wins,
-            avg_total_goals=(total_home_goals + total_away_goals) / total if total > 0 else 2.5,
-            avg_home_goals=total_home_goals / total if total > 0 else 1.0,
-            avg_away_goals=total_away_goals / total if total > 0 else 1.0,
+            avg_total_goals=(total_home_goals + total_away_goals) / total if total > 0 else 0.0,
+            avg_home_goals=total_home_goals / total if total > 0 else 0.0,
+            avg_away_goals=total_away_goals / total if total > 0 else 0.0,
             home_winning_trend=recent_home_wins > (home_wins / 2 if home_wins > 0 else 0),
             away_winning_trend=recent_away_wins > (away_wins / 2 if away_wins > 0 else 0),
         )
@@ -139,6 +139,6 @@ class H2HBuilder:
             "h2h_home_win_rate": h2h.home_win_rate,
             "h2h_draw_rate": h2h.draw_rate,
             "h2h_avg_goals": h2h.avg_total_goals,
-            "h2h_home_advantage": 1 if h2h.home_wins > h2h.away_wins else 0,
+            "h2h_home_advantage": (h2h.home_wins - h2h.away_wins) / max(h2h.total_matches, 1),
             "h2h_recent_momentum": h2h.recent_home_wins - h2h.recent_away_wins,
         }

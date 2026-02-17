@@ -126,6 +126,7 @@ class DailyPipeline:
         self._filters = None
         self._blender = None
         self._router = None
+        self._calibrator = None
     
     def _init_components(self):
         """Initialize all pipeline components."""
@@ -153,12 +154,15 @@ class DailyPipeline:
             })
         
         self._ev_calc = EVCalculator()
+        
+        # Load calibrator if available
+        self._load_calibrator()
     
     def run(
         self,
         odds_df: Optional[pd.DataFrame] = None,
         matches_df: Optional[pd.DataFrame] = None,
-        model_probs: Optional[Dict[str, Dict[str, float]]] = None,
+        model_probs: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None,
     ) -> List[BetCandidate]:
         """
         Execute the full daily pipeline.
@@ -550,9 +554,33 @@ class DailyPipeline:
             
             # 6. Ensure index alignment
             if features.empty:
-                return matches_df.copy()
+                features = pd.DataFrame(index=[m.id for m in current_matches])
             
-            features = features.reset_index()
+            features = features.reset_index().rename(columns={"index": "match_id"})
+            
+            # --- Inject Odds Features ---
+            # We need to map available odds from odds_df to the features models expect.
+            # odds_df has "event_id", "home_odds", "draw_odds", "away_odds"
+            if not odds_df.empty:
+                # Deduplicate odds per event_id (take first/best)
+                unique_odds = odds_df.drop_duplicates("event_id")[["event_id", "home_odds", "draw_odds", "away_odds"]]
+                unique_odds = unique_odds.rename(columns={
+                    "event_id": "match_id",
+                    "home_odds": "AvgH", # Map to generic Avg/Max placeholders
+                    "draw_odds": "AvgD",
+                    "away_odds": "AvgA"
+                })
+                # Synthesize other common columns if missing
+                unique_odds["MaxH"] = unique_odds["AvgH"]
+                unique_odds["MaxD"] = unique_odds["AvgD"]
+                unique_odds["MaxA"] = unique_odds["AvgA"]
+                
+                # Ensure match_id type consistency (str)
+                features["match_id"] = features["match_id"].astype(str)
+                unique_odds["match_id"] = unique_odds["match_id"].astype(str)
+                
+                # Merge into features
+                features = pd.merge(features, unique_odds, on="match_id", how="left")
             
             # 7. Map features to model expectations (Backwards Compatibility)
             features = self._map_features_to_model_inputs(features)
@@ -573,7 +601,24 @@ class DailyPipeline:
                 how="left"
             )
             
-            # Drop duplicate match_id column if needed
+            # --- Validation ---
+            # Check for critical features
+            critical_cols = ["elo_home", "elo_away", "form_home_pts", "form_away_pts"]
+            missing_stats = {}
+            for col in critical_cols:
+                if col in merged.columns:
+                    missing = merged[col].isna().mean()
+                    if missing > 0.20:
+                        missing_stats[col] = missing
+            
+            if missing_stats:
+                msg = f"Critical features missing > 20%: {missing_stats}"
+                logger.error(msg)
+                # We raise error to prevent garbage-in-garbage-out
+                # But only if we have enough rows to matter
+                if len(merged) > 5:
+                    raise ValueError(msg)
+            
             if "match_id_y" in merged.columns:
                 merged = merged.drop(columns=["match_id_y"]).rename(columns={"match_id_x": "match_id"})
             
@@ -603,6 +648,8 @@ class DailyPipeline:
             "roster_experience_away": "xi_experience_away",
             "advanced_xg_for_home": "synth_xg_home",
             "advanced_xg_for_away": "synth_xg_away",
+            "advanced_xg_against_home": "advanced_xg_against_home", # Explicit pass-through or rename if needed
+            "advanced_xg_against_away": "advanced_xg_against_away",
             "advanced_shots_for_home": "HS", # Approximation if HS missing
             "advanced_shots_for_away": "AS",
         }
@@ -623,11 +670,17 @@ class DailyPipeline:
              
         # 3. Fill specific missing columns expected by models (defaults)
         # Load the master feature list from JSON if possible, else use hardcoded defaults
+        # Load the master feature list from JSON if possible, else use hardcoded defaults
         try:
+            # json and Path already imported or available
             import json
             from pathlib import Path
-            p = Path("models/feature_columns.json")
+            # Resolve path relative to this file
+            root_dir = Path(__file__).parent.parent.parent
+            p = root_dir / "models" / "feature_columns.json"
+            
             if p.exists():
+                logger.debug(f"Loading feature schema from {p}")
                 with open(p) as f:
                     master_cols = json.load(f)
                 
@@ -636,10 +689,22 @@ class DailyPipeline:
                 for col in master_cols:
                     if col not in df.columns:
                         # Use smart defaults where possible
-                        if "rolling" in col or "imp" in col:
-                            missing_cols[col] = 0.5 # Neutral
+                        # Use smart defaults where possible
+                        if "rolling" in col or "imp" in col or "prob" in col:
+                            missing_cols[col] = 0.5 # Neutral probability/importance
                         elif "ref" in col:
                             missing_cols[col] = 0.0 
+                        # Fill specific odds columns with available generic odds if present
+                        elif col in ["B365H", "BWH", "IWH", "PSH", "WHH", "VCH"] and "AvgH" in df.columns:
+                            missing_cols[col] = df["AvgH"]
+                        elif col in ["B365D", "BWD", "IWD", "PSD", "WHD", "VCD"] and "AvgD" in df.columns:
+                            missing_cols[col] = df["AvgD"]
+                        elif col in ["B365A", "BWA", "IWA", "PSA", "WHA", "VCA"] and "AvgA" in df.columns:
+                            missing_cols[col] = df["AvgA"]
+                        elif ">2.5" in col and "Avg>2.5" in df.columns:
+                            missing_cols[col] = df["Avg>2.5"]
+                        elif "<2.5" in col and "Avg<2.5" in df.columns:
+                            missing_cols[col] = df["Avg<2.5"]
                         else:
                             missing_cols[col] = 0.0
                 
@@ -773,43 +838,80 @@ class DailyPipeline:
                 
         return matches
     
+    def _load_calibrator(self):
+        """Load fitted calibrator from models directory if available."""
+        try:
+            import joblib
+            calibrator_path = Path(__file__).resolve().parent.parent.parent / "models" / "calibrator.joblib"
+            if calibrator_path.exists():
+                self._calibrator = joblib.load(calibrator_path)
+                if hasattr(self._calibrator, 'is_fitted') and self._calibrator.is_fitted:
+                    n = len(getattr(self._calibrator, 'calibrators', {}))
+                    logger.info(f"  Loaded calibrator ({n} outcome calibrators)")
+                else:
+                    logger.info("  Calibrator found but not fitted, skipping")
+                    self._calibrator = None
+            else:
+                logger.debug("  No calibrator.joblib found, using raw probabilities")
+        except Exception as e:
+            logger.warning(f"  Failed to load calibrator: {e}")
+            self._calibrator = None
+    
     def _get_predictions(
         self,
         matches_df: pd.DataFrame,
         features_df: pd.DataFrame,
-    ) -> Dict[str, Dict[str, float]]:
+    ) -> Dict[str, Dict[str, Dict[str, float]]]:
         """Get ensemble predictions for all matches.
         
-        Loads trained models from disk and runs the ensemble predictor.
-        Falls back to model_probs if provided to run(), or returns empty
-        if no models are available.
+        Returns:
+            Nested dict: {match_id: {market: {outcome: prob}}}
+            Example: {"19427718": {"1x2": {"home": 0.3, "draw": 0.3, "away": 0.4}, ...}}
         """
-        predictions = {}
+        predictions: Dict[str, Dict[str, Dict[str, float]]] = {}
         
         try:
+            import sys, os
+            root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+            if root_path not in sys.path:
+                sys.path.insert(0, root_path)
+
             from stavki.models.ensemble.predictor import EnsemblePredictor
-            from stavki.models.base import Market
+            from stavki.models.base import Market, Prediction, MatchPredictions
             
             ensemble = self._load_ensemble()
             
             if ensemble and ensemble.models:
                 logger.info(f"  Using ensemble with {len(ensemble.models)} models")
                 
-                # Run ensemble prediction
                 preds = ensemble.predict(features_df)
+                
+                # Apply calibration if calibrator is available
+                if self._calibrator is not None:
+                    preds = self._calibrator.calibrate(preds)
+                    logger.info("  Applied probability calibration")
                 
                 for pred in preds:
                     event_id = pred.match_id
-                    predictions[event_id] = pred.probabilities
+                    market_key = pred.market.value if hasattr(pred.market, 'value') else str(pred.market)
+                    
+                    if event_id not in predictions:
+                        predictions[event_id] = {}
+                    if market_key not in predictions[event_id]:
+                        predictions[event_id][market_key] = {}
+                    
+                    predictions[event_id][market_key].update(pred.probabilities)
                 
                 if predictions:
-                    logger.info(f"  → {len(predictions)} matches predicted by ensemble")
+                    n_markets = sum(len(mkts) for mkts in predictions.values())
+                    logger.info(f"  → {len(predictions)} matches predicted ({n_markets} market slots)")
                     return predictions
             
         except Exception as e:
             logger.warning(f"Ensemble prediction failed: {e}")
+            import traceback
+            traceback.print_exc()
         
-        # Fallback: no models available
         if not predictions:
             logger.error(
                 "No predictions available — models not trained or not loadable. "
@@ -829,18 +931,18 @@ class DailyPipeline:
         
         ensemble = EnsemblePredictor()
         
-        # Load weights from league_config.json if available
-        weights_path = models_dir / "league_config.json"
-        if weights_path.exists():
+        # 1. Load configuration from league_weights.json (preferred) or league_config.json (legacy)
+        config_path = models_dir / "league_weights.json"
+        if not config_path.exists():
+            config_path = models_dir / "league_config.json"
+            
+        if config_path.exists():
             try:
-                import json
-                with open(weights_path) as f:
-                    config = json.load(f)
-                default_weights = config.get("default", {}).get("weights", {})
-                if default_weights:
-                    logger.info(f"  Loaded weights from {weights_path}")
+                ensemble.load_weights(config_path)
             except Exception as e:
-                logger.warning(f"  Failed to load weights: {e}")
+                logger.warning(f"  Failed to load {config_path.name}: {e}")
+        else:
+            logger.warning(f"  Config not found at {config_path}, using defaults.")
         
         # Try to load saved model files
         model_files = list(models_dir.glob("*.pkl")) + list(models_dir.glob("*.joblib"))
@@ -940,14 +1042,30 @@ class DailyPipeline:
         
         return market_probs
     
+    # Map outcome names to their Market enum .value for structured lookups.
+    # Must align with Market.MATCH_WINNER.value="1x2", Market.OVER_UNDER.value="over_under", etc.
+    OUTCOME_TO_MARKET = {
+        "home": "1x2", "draw": "1x2", "away": "1x2",
+        "over_2.5": "over_under", "under_2.5": "over_under",
+        "yes": "btts", "no": "btts",
+    }
+
     def _find_value_bets(
         self,
         matches_df: pd.DataFrame,
-        model_probs: Dict[str, Dict[str, float]],
+        model_probs: Dict[str, Dict[str, Dict[str, float]]],
         market_probs: Dict[str, Dict[str, float]],
         best_prices: pd.DataFrame,
     ) -> List[BetCandidate]:
-        """Find all value betting opportunities."""
+        """Find all value betting opportunities.
+        
+        Args:
+            model_probs: {match_id: {market: {outcome: prob}}}
+            market_probs: {match_id: {outcome: no_vig_prob}}
+            best_prices: DataFrame with event_id, outcome_name, outcome_price
+        """
+        from stavki.strategy import check_model_market_divergence, calculate_justified_score
+        
         candidates = []
         
         for _, match in matches_df.iterrows():
@@ -959,7 +1077,7 @@ class DailyPipeline:
             if event_id not in model_probs:
                 continue
             
-            event_model_probs = model_probs[event_id]
+            event_markets = model_probs[event_id]  # {market: {outcome: prob}}
             event_market_probs = market_probs.get(event_id, {})
             
             # Get best prices for this event
@@ -968,44 +1086,60 @@ class DailyPipeline:
             for _, price_row in event_prices.iterrows():
                 outcome = price_row.get("outcome_name")
                 odds = price_row.get("outcome_price", 2.0)
-                bookmaker = price_row.get("bookmaker_title", price_row.get("bookmaker_key", "Unknown"))
+                bookmaker = price_row.get(
+                    "bookmaker_title",
+                    price_row.get("bookmaker_key", "Unknown"),
+                )
                 
-                # Get probabilities
-                p_model = event_model_probs.get(outcome)
+                if outcome is None or odds <= 1.0:
+                    continue
+                
+                # Resolve which market this outcome belongs to
+                market_key = self.OUTCOME_TO_MARKET.get(
+                    outcome.lower(), price_row.get("market_key")
+                )
+                if not market_key:
+                    continue
+                
+                # Look up model probability from the correct market
+                market_probs_dict = event_markets.get(market_key, {})
+                p_model = market_probs_dict.get(outcome)
                 
                 # Robust key matching (handle case differences)
                 if p_model is None:
-                    p_model = event_model_probs.get(outcome.lower()) or event_model_probs.get(outcome.title())
+                    p_model = (
+                        market_probs_dict.get(outcome.lower())
+                        or market_probs_dict.get(outcome.title())
+                    )
                 
                 if p_model is None:
                     continue
                 
                 p_market = event_market_probs.get(outcome, 1.0 / odds)
                 
-                # Blend probabilities
+                # Blend model and market probabilities
                 p_blended = self._blender.blend(p_model, p_market, league)
                 
-                # Calculate EV
-                ev = p_blended * odds - 1
+                # EV = p * odds - 1
+                ev = p_blended * odds - 1.0
                 edge = p_blended - (1.0 / odds)
                 
                 if ev < self.config.min_ev:
                     continue
                 
                 # Quality checks
-                from stavki.strategy import check_model_market_divergence, calculate_justified_score
-                
-                _, divergence, div_level = check_model_market_divergence(p_model, p_market)
+                _, divergence, div_level = check_model_market_divergence(
+                    p_model, p_market,
+                )
                 justified = calculate_justified_score(p_model, p_market, odds, ev)
                 
-                # Create candidate
-                candidate = BetCandidate(
+                candidates.append(BetCandidate(
                     match_id=event_id,
                     home_team=home,
                     away_team=away,
                     league=league,
-                    kickoff=None,  # Add from match data if available
-                    market=price_row.get("market_key", "1x2"),
+                    kickoff=None,
+                    market=market_key,
                     selection=outcome,
                     odds=odds,
                     bookmaker=bookmaker,
@@ -1014,19 +1148,14 @@ class DailyPipeline:
                     blended_prob=p_blended,
                     ev=ev,
                     edge=edge,
-                    stake_pct=0.0,  # Calculated later
+                    stake_pct=0.0,
                     stake_amount=0.0,
-                    confidence=abs(p_model - p_market),  # Simple confidence
+                    confidence=abs(p_model - p_market),
                     justified_score=justified,
                     divergence_level=div_level,
-                )
-                
-                candidates.append(candidate)
+                ))
         
-        # Sort by EV
-        # Sort by best EV
         candidates.sort(key=lambda x: -x.ev)
-        
         return candidates
     
     def _apply_filters(self, candidates: List[BetCandidate]) -> List[BetCandidate]:

@@ -38,10 +38,15 @@ class RefereeFeatureBuilder:
         self.window = window  # Consider last N matches per referee
         self._referee_history: Dict[str, list] = defaultdict(list)
         self._is_fitted = False
+        # Global averages computed from actual data during fit()
+        self._global_avg: Dict[str, float] = {}
     
     def fit(self, matches: List[Match]) -> None:
         """Build referee profiles from historical matches."""
         self._referee_history.clear()
+        
+        # Collect ALL records first for global average computation
+        all_records = []
         
         for m in sorted(matches, key=lambda x: x.commence_time):
             ref_name = None
@@ -51,7 +56,6 @@ class RefereeFeatureBuilder:
             if not ref_name:
                 continue
             
-            # Build record even without full stats (goals always available)
             home_score = m.home_score or 0
             away_score = m.away_score or 0
             total_goals = home_score + away_score
@@ -79,9 +83,69 @@ class RefereeFeatureBuilder:
                 record["fouls_away"] = m.stats.fouls_away or 0
             
             self._referee_history[ref_name].append(record)
+            all_records.append(record)
+        
+        # Compute global averages from ACTUAL fitted data
+        if all_records:
+            n = len(all_records)
+            total_cards = sum(
+                r["yellow_home"] + r["yellow_away"] + r["red_home"] + r["red_away"]
+                for r in all_records
+            )
+            total_fouls = sum(r["fouls_home"] + r["fouls_away"] for r in all_records)
+            total_goals = sum(r["goals"] for r in all_records)
+            
+            avg_cards = total_cards / n
+            avg_fouls = total_fouls / n
+            avg_goals = total_goals / n
+            over25_rate = sum(r["over25"] for r in all_records) / n
+            home_win_rate = sum(r["home_win"] for r in all_records) / n
+            
+            # Compute actual std of cards/game across referees (for strictness z-score)
+            ref_cards_rates = []
+            for ref_records in self._referee_history.values():
+                if len(ref_records) >= self.min_matches:
+                    ref_n = len(ref_records)
+                    ref_total = sum(
+                        r["yellow_home"] + r["yellow_away"] + r["red_home"] + r["red_away"]
+                        for r in ref_records
+                    )
+                    ref_cards_rates.append(ref_total / ref_n)
+            
+            cards_std = float(np.std(ref_cards_rates)) if len(ref_cards_rates) > 1 else 1.0
+            
+            self._global_avg = {
+                "cards_per_game": round(avg_cards, 3),
+                "fouls_per_game": round(avg_fouls, 3),
+                "goals_per_game": round(avg_goals, 3),
+                "over25_rate": round(over25_rate, 3),
+                "home_win_rate": round(home_win_rate, 3),
+                "cards_std": round(max(cards_std, 0.1), 3),  # Floor at 0.1 to avoid div by 0
+            }
+            logger.info(
+                f"RefereeFeatureBuilder: {len(self._referee_history)} referees profiled | "
+                f"global avg: {avg_cards:.2f} cards/g, {avg_fouls:.1f} fouls/g, "
+                f"{avg_goals:.2f} goals/g, {over25_rate:.1%} O2.5, {home_win_rate:.1%} home win"
+            )
+        else:
+            self._global_avg = {}
+            logger.info("RefereeFeatureBuilder: 0 referees profiled (no referee data)")
         
         self._is_fitted = True
-        logger.info(f"RefereeFeatureBuilder: {len(self._referee_history)} referees profiled")
+    
+    def _get_defaults(self) -> Dict[str, float]:
+        """Return defaults from computed global averages, not hardcoded values."""
+        ga = self._global_avg
+        return {
+            "ref_cards_per_game": ga.get("cards_per_game", 0.0),
+            "ref_fouls_per_game": ga.get("fouls_per_game", 0.0),
+            "ref_home_card_ratio": 0.5,   # Balanced is a valid default
+            "ref_strictness": 0.0,        # Neutral z-score
+            "ref_goals_per_game": ga.get("goals_per_game", 0.0),
+            "ref_over25_rate": ga.get("over25_rate", 0.0),
+            "ref_home_win_rate": ga.get("home_win_rate", 0.0),
+            "ref_experience": 0.0,
+        }
     
     def get_features(
         self,
@@ -92,18 +156,9 @@ class RefereeFeatureBuilder:
         """
         Get referee tendency features for a match.
         
-        Returns defaults (league averages) if referee not found.
+        Returns dataset-computed averages if referee not found.
         """
-        defaults = {
-            "ref_cards_per_game": 3.5,    # Typical league avg
-            "ref_fouls_per_game": 22.0,   # Typical league avg
-            "ref_home_card_ratio": 0.5,   # Balanced
-            "ref_strictness": 0.0,        # Neutral
-            "ref_goals_per_game": 2.7,    # League avg
-            "ref_over25_rate": 0.55,      # League avg
-            "ref_home_win_rate": 0.45,    # League avg
-            "ref_experience": 0.0,        # Unknown
-        }
+        defaults = self._get_defaults()
         
         # Get referee name
         ref = referee_name
@@ -133,8 +188,10 @@ class RefereeFeatureBuilder:
         fouls_pg = total_fouls / n
         home_ratio = home_cards / max(all_cards, 1)
         
-        # Strictness: z-score vs defaults
-        strictness = (cards_pg - defaults["ref_cards_per_game"]) / 1.5  # ~1.5 std
+        # Strictness: z-score vs ACTUAL global average (not hardcoded)
+        global_cards_avg = self._global_avg.get("cards_per_game", cards_pg)
+        cards_std = self._global_avg.get("cards_std", 1.0)
+        strictness = (cards_pg - global_cards_avg) / cards_std
         
         # Goals per game
         total_goals = sum(h["goals"] for h in recent)
@@ -154,6 +211,7 @@ class RefereeFeatureBuilder:
         
         return {
             "ref_cards_per_game": round(cards_pg, 2),
+            "ref_total_cards_per_game": round((total_yellows + total_reds) / n, 2),
             "ref_fouls_per_game": round(fouls_pg, 2),
             "ref_home_card_ratio": round(home_ratio, 3),
             "ref_strictness": round(strictness, 3),
@@ -162,3 +220,4 @@ class RefereeFeatureBuilder:
             "ref_home_win_rate": round(home_win_rate, 3),
             "ref_experience": experience,
         }
+

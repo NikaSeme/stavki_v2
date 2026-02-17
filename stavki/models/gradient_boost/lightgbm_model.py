@@ -121,7 +121,7 @@ class LightGBMModel(CalibratedModel):
         self.bagging_freq = bagging_freq
         self.random_state = random_state
         
-        self.features = features or DEFAULT_FEATURES
+        self.features = features # If None, will auto-detect
         self.model: Optional[lgb.LGBMClassifier] = None
         self.label_encoder = LabelEncoder()
         self.feature_importance_: Optional[Dict[str, float]] = None
@@ -155,8 +155,24 @@ class LightGBMModel(CalibratedModel):
             df = df.sort_values("Date")
         
         # Create target
-        df["target"] = self._create_target(df)
+        if "target" not in df.columns:
+             df["target"] = self._create_target(df)
         
+        # Auto-detect features if not specified
+        if self.features is None:
+             # Exclude non-feature columns and match stats (LEAKAGE)
+             exclude = {
+                 "target", "Date", "FTHG", "FTAG", "FTR", "match_id", "id", 
+                 "HomeTeam", "AwayTeam", "home_team", "away_team", "league", "season",
+                 "Referee", "Time", "Div", "Season",
+                 # Match stats (Leakage)
+                 "HTHG", "HTAG", "HTR", 
+                 "HS", "AS", "HST", "AST", 
+                 "HC", "AC", "HF", "AF",
+                 "HY", "AY", "HR", "AR",
+             }
+             self.features = [c for c in df.columns if c not in exclude and df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
+             
         # Get available features
         available_features = [f for f in self.features if f in df.columns]
         if len(available_features) < 5:
@@ -276,20 +292,45 @@ class LightGBMModel(CalibratedModel):
             self.calibrators[class_idx] = calibrator
  
     def predict(self, data: pd.DataFrame) -> List[Prediction]:
-        """Generate calibrated 1X2 predictions."""
+        """Generate calibrated 1X2 predictions using vectorized operations."""
         if not self.is_fitted:
             raise RuntimeError("Model not fitted. Call fit() first.")
         
-        # Get available features
-        available_features = self.metadata.get("features", self.features)
-        available_features = [f for f in available_features if f in data.columns]
+        # Get expected features from Booster if available (Source of Truth)
+        try:
+             # LightGBM sklearn API stores booster in booster_
+             if hasattr(self.model, "booster_"):
+                 expected_features = self.model.booster_.feature_name()
+             else:
+                 # Fallback
+                 expected_features = self.metadata.get("features", self.features)
+        except Exception as e:
+             logger.warning(f"Failed to get features from booster: {e}")
+             expected_features = self.metadata.get("features", self.features)
+
+        if not expected_features:
+             # Should not happen if model is fitted
+             logger.warning("No expected features found in metadata or booster")
+             expected_features = []
+
+        # Check for missing features
+        missing = [f for f in expected_features if f not in data.columns]
+        if missing:
+             logger.warning(f"LightGBM missing {len(missing)} features: {missing[:5]}... (Total expected: {len(expected_features)})")
+             # logger.debug(f"Missing list: {missing}")
         
-        X = data[available_features].fillna(0)
+        # Strict selection: Use exact features model expects
+        # Note: LightGBM is robust to missing cols if using Pandas, but here we construct X manually.
+        # We must ensure X has exactly 'expected_features' in order.
         
-        # Raw predictions
+        # Create X with all expected features, filling missing with 0
+        # This is safer than just selecting what's available
+        X = data.reindex(columns=expected_features, fill_value=0)
+        
+        # Raw predictions (Vectorized)
         raw_probs = self.model.predict_proba(X)
         
-        # Calibrate
+        # Calibrate (Vectorized)
         if self.is_calibrated:
             calibrated = np.zeros_like(raw_probs)
             for class_idx in range(raw_probs.shape[1]):
@@ -302,38 +343,62 @@ class LightGBMModel(CalibratedModel):
             
             # Renormalize
             row_sums = calibrated.sum(axis=1, keepdims=True)
-            calibrated = calibrated / row_sums
+            # Avoid div by zero
+            calibrated = np.divide(calibrated, row_sums, where=row_sums!=0)
             probs = calibrated
         else:
             probs = raw_probs
         
-        # Create predictions
-        predictions = []
-        classes = self.label_encoder.classes_  # ['A', 'D', 'H']
+        # Vectorized Match ID Generation
+        from stavki.utils import generate_match_id
+        # Safe vectorized generation
+        temp_id = data.copy()
+        # Use apply for robustness with existing util
+        match_ids = temp_id.apply(
+            lambda x: x.get("match_id", generate_match_id(
+                x.get("HomeTeam", "home"), 
+                x.get("AwayTeam", "away"), 
+                x.get("Date")
+            )), 
+            axis=1
+        ).values
         
-        for idx, row in data.iterrows():
-            i = data.index.get_loc(idx)
-            match_id = row.get("match_id", f"{row.get('HomeTeam', 'home')}_vs_{row.get('AwayTeam', 'away')}_{idx}")
+        # Vectorized Confidence Calculation
+        # Sort probabilities for each row
+        sorted_probs = np.sort(probs, axis=1)
+        # Confidence = best - second_best (last - second_last)
+        if probs.shape[1] > 1:
+            confidences = sorted_probs[:, -1] - sorted_probs[:, -2]
+        else:
+            confidences = sorted_probs[:, -1]
             
-            # Map to standard names
-            prob_dict = {}
-            for j, cls in enumerate(classes):
-                if cls == "H":
-                    prob_dict["home"] = float(probs[i, j])
-                elif cls == "D":
-                    prob_dict["draw"] = float(probs[i, j])
-                elif cls == "A":
-                    prob_dict["away"] = float(probs[i, j])
+        # Create Predictions
+        predictions = []
+        classes = self.label_encoder.classes_  # ['A', 'D', 'H'] (Check alphabetical order usually)
+        
+        # Optimization: indices for H, D, A
+        # LabelEncoder sorts classes alphabetically: 'A', 'D', 'H' typically?
+        # Or 'A', 'D', 'H' -> Away, Draw, Home
+        # Let's verify mapping dynamically
+        map_indices = {}
+        for idx, cls in enumerate(classes):
+            if cls == "H": map_indices["home"] = idx
+            elif cls == "D": map_indices["draw"] = idx
+            elif cls == "A": map_indices["away"] = idx
             
-            # Confidence = gap between best and second best
-            sorted_probs = sorted(prob_dict.values(), reverse=True)
-            confidence = sorted_probs[0] - sorted_probs[1]
+        # Fast iteration
+        for i in range(len(data)):
+            p_vec = probs[i]
+            
+            prob_dict = {
+                k: float(p_vec[v]) for k, v in map_indices.items()
+            }
             
             predictions.append(Prediction(
-                match_id=match_id,
+                match_id=match_ids[i],
                 market=Market.MATCH_WINNER,
                 probabilities=prob_dict,
-                confidence=confidence,
+                confidence=float(confidences[i]),
                 model_name=self.name,
             ))
         

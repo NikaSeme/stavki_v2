@@ -79,8 +79,10 @@ class DixonColesModel(BaseModel):
     
     def fit(self, data: pd.DataFrame, **kwargs) -> Dict[str, float]:
         """
-        Fit team attack/defense parameters using Scipy minimize (L-BFGS-B).
-        Much faster than iterative updates for large datasets.
+        Fit team attack/defense parameters + ρ using Scipy minimize (L-BFGS-B).
+        
+        Now includes the Dixon-Coles ρ correction in the log-likelihood,
+        which adjusts probabilities for low-scoring matches (0-0, 1-0, 0-1, 1-1).
         """
         required_cols = ["HomeTeam", "AwayTeam", "FTHG", "FTAG", "Date"]
         for col in required_cols:
@@ -101,27 +103,54 @@ class DixonColesModel(BaseModel):
         n_teams = len(teams)
         team_to_idx = {team: i for i, team in enumerate(teams)}
         
+        # Identify leagues if available
+        has_leagues = "League" in df.columns
+        if has_leagues:
+            leagues = sorted(df["League"].unique())
+            n_leagues = len(leagues)
+            league_to_idx = {l: i for i, l in enumerate(leagues)}
+            league_indices = df["League"].map(league_to_idx).values
+            logger.info(f"  Fitting with per-league Home Advantage for {n_leagues} leagues")
+        else:
+            leagues = []
+            n_leagues = 1 # Global HA
+            league_indices = np.zeros(len(df), dtype=int)
+            logger.info("  Fitting with global Home Advantage (no League column)")
+
         # Map data to indices for vectorization
         home_idx = df["HomeTeam"].map(team_to_idx).values
         away_idx = df["AwayTeam"].map(team_to_idx).values
-        home_goals = df["FTHG"].values
-        away_goals = df["FTAG"].values
+        home_goals = df["FTHG"].values.astype(int)
+        away_goals = df["FTAG"].values.astype(int)
         weights = df["Weight"].values
         
-        # Initial guess: all 1.0 (log(1.0) = 0.0)
-        # Params structure: [attack_0...attack_n, defense_0...defense_n, home_adv]
-        # We solve for log-parameters to enforce positivity
-        n_params = 2 * n_teams + 1
+        # Params structure:
+        # [0:n_teams] -> Attack
+        # [n_teams:2*n_teams] -> Defense
+        # [2*n_teams:2*n_teams+n_leagues] -> Home Advantage (1 or many)
+        # [-1] -> Rho
+        n_params = 2 * n_teams + n_leagues + 1
         x0 = np.zeros(n_params)
-        x0[-1] = self.home_advantage  # Initial home advantage
+        
+        # Initialize HA params with current self.home_advantage
+        x0[2*n_teams : 2*n_teams+n_leagues] = self.home_advantage
+        x0[-1] = self.rho
         
         logger.info(f"Fitting Dixon-Coles (Scipy) on {len(df)} matches, {n_teams} teams")
         
-        # Negative Log Likelihood Function
+        # Pre-compute low-score masks for the Dixon-Coles τ correction
+        mask_00 = (home_goals == 0) & (away_goals == 0)
+        mask_10 = (home_goals == 1) & (away_goals == 0)
+        mask_01 = (home_goals == 0) & (away_goals == 1)
+        mask_11 = (home_goals == 1) & (away_goals == 1)
+        
+        avg_goals = self.avg_goals
+        
         def neg_log_likelihood(params):
             log_att = params[:n_teams]
             log_def = params[n_teams:2*n_teams]
-            home_adv = params[-1]
+            ha_params = params[2*n_teams : 2*n_teams+n_leagues]
+            rho = params[-1]
             
             # Att/Def for each match
             att_home = log_att[home_idx]
@@ -129,45 +158,65 @@ class DixonColesModel(BaseModel):
             att_away = log_att[away_idx]
             def_away = log_def[away_idx]
             
+            # Home Advantage for each match
+            match_ha = ha_params[league_indices]
+            
             # Log-Expected Goals
-            # log(lambda) = log(avg) + log(att) + log(def) + [home_adv]
-            # We treat params as log-values directly for stability
-            log_mu_home = np.log(self.avg_goals) + att_home + def_away + home_adv
-            log_mu_away = np.log(self.avg_goals) + att_away + def_home
+            log_mu_home = np.log(avg_goals) + att_home + def_away + match_ha
+            log_mu_away = np.log(avg_goals) + att_away + def_home
             
             mu_home = np.exp(log_mu_home)
             mu_away = np.exp(log_mu_away)
             
-            # Poisson Log-Likelihood: k*log(mu) - mu - log(k!)
-            # We ignore log(k!) as it's constant w.r.t params
+            # Poisson Log-Likelihood
             ll_home = home_goals * log_mu_home - mu_home
             ll_away = away_goals * log_mu_away - mu_away
             
-            # Rho Correction (approximate for speed, or ignore in fit step)
-            # Dixon-Coles rho only affects 0-0, 0-1, 1-0, 1-1. 
-            # Often omitted in primary strength fitting for speed/convexity.
+            base_ll = ll_home + ll_away
             
-            return -np.sum(weights * (ll_home + ll_away))
-
-        # Constraints: Sum(attack) = n_teams, Sum(defense) = n_teams
-        # In log space: Sum(exp(log_att)) = n_teams
-        # We'll use L-BFGS-B unconstrained for speed and normalize after
+            # Dixon-Coles τ (tau) correction
+            tau = np.ones(len(home_goals))
+            tau[mask_00] = 1 - mu_home[mask_00] * mu_away[mask_00] * rho
+            tau[mask_10] = 1 + mu_away[mask_10] * rho
+            tau[mask_01] = 1 + mu_home[mask_01] * rho
+            tau[mask_11] = 1 - rho
+            
+            tau = np.maximum(tau, 1e-10)
+            
+            total_ll = base_ll + np.log(tau)
+            
+            return -np.sum(weights * total_ll)
+        
+        # Bounds
+        bounds = [(None, None)] * (2 * n_teams)  # attack/defense
+        bounds.extend([(None, None)] * n_leagues) # home advantages
+        bounds.append((-0.5, 0.5))    # rho
         
         try:
             res = minimize(
                 neg_log_likelihood, 
                 x0, 
                 method='L-BFGS-B',
-                options={'maxiter': 100, 'disp': False}
+                bounds=bounds,
+                options={'maxiter': 150, 'disp': False}
             )
             
             # Extract parameters
             final_params = res.x
             log_att = final_params[:n_teams]
             log_def = final_params[n_teams:2*n_teams]
-            self.home_advantage = final_params[-1]
+            final_ha = final_params[2*n_teams : 2*n_teams+n_leagues]
+            self.rho = final_params[-1]
             
-            # Convert back to multiplicative scale
+            # Update Home Advantage
+            if has_leagues:
+                self.league_home_adv = {l: float(final_ha[i]) for i, l in enumerate(leagues)}
+                self.home_advantage = float(np.mean(final_ha)) # Set global as mean
+            else:
+                self.home_advantage = float(final_ha[0])
+                self.league_home_adv = {}
+
+            # Convert team strength back to multiplicative scale
             att = np.exp(log_att)
             defn = np.exp(log_def)
             
@@ -179,7 +228,10 @@ class DixonColesModel(BaseModel):
             self.attack = defaultdict(lambda: 1.0, dict(zip(teams, att)))
             self.defense = defaultdict(lambda: 1.0, dict(zip(teams, defn)))
             
-            logger.info("Dixon-Coles optimization converged.")
+            logger.info(
+                f"Dixon-Coles optimization converged: "
+                f"ρ={self.rho:.4f}, avg_ha={self.home_advantage:.4f}"
+            )
             
         except Exception as e:
             logger.error(f"Optimization failed: {e}. Falling back to defaults.")
@@ -192,7 +244,7 @@ class DixonColesModel(BaseModel):
             
         # Basic metrics
         self.is_fitted = True
-        return {"n_matches": len(df), "success": True}
+        return {"n_matches": len(df), "success": True, "rho": float(self.rho), "n_teams": n_teams}
     
     def update_match(
         self,
@@ -227,227 +279,199 @@ class DixonColesModel(BaseModel):
         self.team_matches[home_team] += 1
         self.team_matches[away_team] += 1
     
-    def predict_match(
-        self,
-        home_team: str,
-        away_team: str,
-        league: Optional[str] = None
-    ) -> Optional[List[float]]:
-        """
-        Predict match outcome probabilities.
-        
-        Returns:
-            [home_prob, draw_prob, away_prob] or None if teams unknown
-        """
-        # Check if teams are known
-        if home_team not in self.attack or away_team not in self.attack:
-            return None
-        
-        probs = self._predict_1x2(home_team, away_team, league)
-        return probs.tolist()
+
     
     def predict(self, data: pd.DataFrame) -> List[Prediction]:
-        """Generate predictions for all supported markets."""
+        """Generate predictions for all supported markets using vectorized operations."""
+        if not self.is_fitted:
+            # Fallback or error?
+            pass
+        
         predictions = []
         
-        for idx, row in data.iterrows():
-            home = row["HomeTeam"]
-            away = row["AwayTeam"]
-            league = row.get("League")
-            match_id = row.get("match_id", f"{home}_vs_{away}_{idx}")
-            
-            # Get expected goals
-            lambda_home, lambda_away = self._get_lambdas(home, away, league)
-            
-            # Generate score matrix
-            score_matrix = self._score_matrix(lambda_home, lambda_away)
-            
-            # 1X2 prediction
-            pred_1x2 = self._matrix_to_1x2(score_matrix, match_id)
-            predictions.append(pred_1x2)
-            
-            # Over/Under prediction
-            pred_ou = self._matrix_to_ou(score_matrix, match_id)
-            predictions.append(pred_ou)
-            
-            # BTTS prediction
-            pred_btts = self._matrix_to_btts(score_matrix, match_id)
-            predictions.append(pred_btts)
+        # Vectorized generation of IDs
+        from stavki.utils import generate_match_id
+        temp_data = data.copy()
+        match_ids = temp_data.apply(
+            lambda x: x.get("match_id", generate_match_id(x.get("HomeTeam", ""), x.get("AwayTeam", ""), x.get("Date"))),
+            axis=1
+        ).values
         
+        # 1. Get Lambdas (Vectorized)
+        lambda_home, lambda_away = self._get_lambdas_vectorized(data)
+        
+        # 2. Generate Score Matrices (Vectorized Broadcast)
+        # We need PMF for 0..max_goals
+        # shape: (N, max_goals+1)
+        max_g = self.max_goals + 1
+        k = np.arange(max_g)
+        
+        # scipy.stats.poisson.pmf works with arrays
+        # pmf(k, mu) -> if mu is (N,1), k is (1, G), result is (N, G)
+        pmf_home = poisson.pmf(k[np.newaxis, :], lambda_home[:, np.newaxis])
+        pmf_away = poisson.pmf(k[np.newaxis, :], lambda_away[:, np.newaxis])
+        
+        # Outer product: (N, G, 1) * (N, 1, G) -> (N, G, G)
+        matrices = pmf_home[:, :, np.newaxis] * pmf_away[:, np.newaxis, :]
+        
+        # 3. Apply Rho Adjustment (Vectorized)
+        # Adjust indices (0,0), (0,1), (1,0), (1,1)
+        # Matrices shape: (N, 11, 11)
+        
+        # Pre-compute corrections
+        # 0-0
+        matrices[:, 0, 0] *= (1 - lambda_home * lambda_away * self.rho)
+        # 0-1 (Home=0, Away=1)
+        matrices[:, 0, 1] *= (1 + lambda_home * self.rho)
+        # 1-0 (Home=1, Away=0)
+        matrices[:, 1, 0] *= (1 + lambda_away * self.rho)
+        # 1-1
+        matrices[:, 1, 1] *= (1 - self.rho)
+        
+        # Clamp negative probs (though rare with valid rho)
+        matrices = np.maximum(matrices, 0)
+        
+        # Normalize
+        sums = matrices.sum(axis=(1, 2), keepdims=True)
+        matrices = np.divide(matrices, sums, where=sums!=0)
+        
+        # 4. Compute Probabilities (Vectorized slicing)
+        # 1X2
+        # tril(k=-1) is Home Win (i > j)
+        # triu(k=1) is Away Win (j > i)
+        # diag is Draw
+        
+        # We can use np.tril/triu but they work on the last 2 axes?
+        # No, np.tril is for 2D. For 3D we need a mask or loop?
+        # A uniform mask (11,11) works for all
+        mask_home = np.tril(np.ones((max_g, max_g)), k=-1).astype(bool)
+        mask_away = np.triu(np.ones((max_g, max_g)), k=1).astype(bool)
+        mask_draw = np.eye(max_g).astype(bool)
+        
+        prob_home = np.sum(matrices[:, mask_home], axis=1) # This flattens the last 2 dims selection?
+        # Actually matrices[:, mask] returns (N, count). Sum over axis 1.
+        
+        # Let's verify sum dimensions.
+        # matrices is (N, 11, 11). mask is (11, 11).
+        # matrices[:, mask_home] selects elements where mask is true. Result is (N, NumberOfTrue).
+        # Summing gives (N,)
+        p_home = matrices[:, mask_home].sum(axis=1)
+        p_away = matrices[:, mask_away].sum(axis=1)
+        p_draw = matrices[:, mask_draw].sum(axis=1)
+        
+        # O/U 2.5
+        # Mask for sum(i+j) > 2.5
+        idx = np.arange(max_g)
+        i_idx, j_idx = np.meshgrid(idx, idx, indexing='ij')
+        mask_over = (i_idx + j_idx) > 2.5
+        p_over = matrices[:, mask_over].sum(axis=1)
+        p_under = 1.0 - p_over
+        
+        # BTTS
+        # Mask for i>0 and j>0
+        mask_btts = (i_idx > 0) & (j_idx > 0)
+        p_btts_yes = matrices[:, mask_btts].sum(axis=1)
+        p_btts_no = 1.0 - p_btts_yes
+        
+        # 5. Build Prediction Objects (Loop over results)
+        # This loop is unavoidable but fast (no math)
+        for i in range(len(data)):
+            mid = match_ids[i]
+            
+            # 1X2
+            # Confidence
+            probs_1x2 = np.array([p_home[i], p_draw[i], p_away[i]])
+            # Normalize just in case of minor float errors
+            probs_1x2 /= probs_1x2.sum()
+            
+            sorted_1x2 = np.sort(probs_1x2)
+            conf_1x2 = sorted_1x2[-1] - sorted_1x2[-2]
+            
+            predictions.append(Prediction(
+                match_id=mid,
+                market=Market.MATCH_WINNER,
+                probabilities={
+                    "home": float(probs_1x2[0]),
+                    "draw": float(probs_1x2[1]),
+                    "away": float(probs_1x2[2])
+                },
+                confidence=float(conf_1x2),
+                model_name=self.name
+            ))
+            
+            # OU
+            conf_ou = abs(p_over[i] - 0.5) * 2
+            predictions.append(Prediction(
+                match_id=mid,
+                market=Market.OVER_UNDER,
+                probabilities={
+                    "over_2.5": float(p_over[i]),
+                    "under_2.5": float(p_under[i])
+                },
+                confidence=float(conf_ou),
+                model_name=self.name
+            ))
+            
+            # BTTS
+            conf_btts = abs(p_btts_yes[i] - 0.5) * 2
+            predictions.append(Prediction(
+                match_id=mid,
+                market=Market.BTTS,
+                probabilities={
+                    "yes": float(p_btts_yes[i]),
+                    "no": float(p_btts_no[i])
+                },
+                confidence=float(conf_btts),
+                model_name=self.name
+            ))
+            
         return predictions
-    
-    def _get_lambdas(
-        self, 
-        home_team: str, 
-        away_team: str,
-        league: Optional[str] = None
-    ) -> Tuple[float, float]:
-        """Calculate expected goals for each team."""
-        # Get home advantage (league-specific if available)
-        ha = self.league_home_adv.get(league, self.home_advantage)
+
+    def _get_lambdas_vectorized(self, data: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+        """Vectorized lambda calculation."""
+        # 1. Map teams to parameters
+        # Default to 1.0 if not found (using .get on dict is slow in loop)
+        # Convert dicts to lookups?
+        # Or faster: just iterate for mapping (linear in N, fast enough compared to matrix math)
         
-        # Expected goals
-        lambda_home = (
-            self.avg_goals * 
-            self.attack[home_team] * 
-            self.defense[away_team] * 
-            np.exp(ha)
-        )
+        # Optimization:
+        # Create a function that maps series to series
+        # or use map()
         
-        lambda_away = (
-            self.avg_goals * 
-            self.attack[away_team] * 
-            self.defense[home_team]
-        )
+        # Attack/Defense maps
+        # self.attack is a defaultdict.
+        # data["HomeTeam"].map(self.attack) might fail for missing keys if not careful?
+        # map() with defaultdict usually returns NaN for missing if using dict access?
+        # Actually series.map(dict) returns NaN for missing.
+        # We need to fillna(1.0).
         
-        # Clamp to reasonable values
+        att_h = data["HomeTeam"].map(self.attack).fillna(1.0).values
+        def_a = data["AwayTeam"].map(self.defense).fillna(1.0).values
+        
+        att_a = data["AwayTeam"].map(self.attack).fillna(1.0).values
+        def_h = data["HomeTeam"].map(self.defense).fillna(1.0).values
+        
+        # League Home Advantage
+        # if League column exists
+        if "League" in data.columns:
+            # Map league to HA, fillna with self.home_advantage
+            ha = data["League"].map(self.league_home_adv).fillna(self.home_advantage).values
+        else:
+            ha = np.full(len(data), self.home_advantage)
+            
+        # Compute Lambdas
+        # lambda_home = avg * att_h * def_a * exp(ha)
+        lambda_home = self.avg_goals * att_h * def_a * np.exp(ha)
+        
+        # lambda_away = avg * att_a * def_h
+        lambda_away = self.avg_goals * att_a * def_h
+        
+        # Clamp
         lambda_home = np.clip(lambda_home, 0.2, 5.0)
         lambda_away = np.clip(lambda_away, 0.2, 5.0)
         
         return lambda_home, lambda_away
     
-    def _predict_1x2(
-        self, 
-        home_team: str, 
-        away_team: str,
-        league: Optional[str] = None
-    ) -> np.ndarray:
-        """Return [home_prob, draw_prob, away_prob]."""
-        lh, la = self._get_lambdas(home_team, away_team, league)
-        matrix = self._score_matrix(lh, la)
-        
-        home_prob = np.triu(matrix, k=1).sum()  # Home wins
-        away_prob = np.tril(matrix, k=-1).sum()  # Away wins
-        draw_prob = np.trace(matrix)  # Draws
-        
-        return np.array([home_prob, draw_prob, away_prob])
-    
-    def _score_matrix(self, lambda_home: float, lambda_away: float) -> np.ndarray:
-        """
-        Generate score probability matrix with Dixon-Coles adjustment.
-        
-        Returns:
-            (max_goals+1, max_goals+1) matrix where M[i,j] = P(home=i, away=j)
-        """
-        max_g = self.max_goals + 1
-        matrix = np.zeros((max_g, max_g))
-        
-        for i in range(max_g):
-            for j in range(max_g):
-                # Base Poisson probability
-                prob = poisson.pmf(i, lambda_home) * poisson.pmf(j, lambda_away)
-                
-                # Dixon-Coles low-score adjustment
-                if i == 0 and j == 0:
-                    prob *= 1 - lambda_home * lambda_away * self.rho
-                elif i == 0 and j == 1:
-                    prob *= 1 + lambda_home * self.rho
-                elif i == 1 and j == 0:
-                    prob *= 1 + lambda_away * self.rho
-                elif i == 1 and j == 1:
-                    prob *= 1 - self.rho
-                
-                matrix[i, j] = max(prob, 0)
-        
-        # Normalize to ensure sum = 1
-        matrix /= matrix.sum()
-        
-        return matrix
-    
-    def _matrix_to_1x2(self, matrix: np.ndarray, match_id: str) -> Prediction:
-        """Convert score matrix to 1X2 prediction."""
-        # Matrix M[i,j] = P(home=i, away=j)
-        # i > j (Lower Triangle) -> Home Win
-        # i < j (Upper Triangle) -> Away Win
-        home_prob = float(np.tril(matrix, k=-1).sum())
-        draw_prob = float(np.trace(matrix))
-        away_prob = float(np.triu(matrix, k=1).sum())
-        
-        # Normalize
-        total = home_prob + draw_prob + away_prob
-        return Prediction(
-            match_id=match_id,
-            market=Market.MATCH_WINNER,
-            probabilities={
-                "home": home_prob / total,
-                "draw": draw_prob / total,
-                "away": away_prob / total,
-            },
-            confidence=self._calc_confidence(home_prob, draw_prob, away_prob),
-            model_name=self.name,
-        )
-    
-    def _matrix_to_ou(
-        self, 
-        matrix: np.ndarray, 
-        match_id: str,
-        line: float = 2.5
-    ) -> Prediction:
-        """Convert score matrix to Over/Under prediction."""
-        over_prob = 0.0
-        under_prob = 0.0
-        
-        for i in range(matrix.shape[0]):
-            for j in range(matrix.shape[1]):
-                total_goals = i + j
-                if total_goals > line:
-                    over_prob += matrix[i, j]
-                else:
-                    under_prob += matrix[i, j]
-        
-        return Prediction(
-            match_id=match_id,
-            market=Market.OVER_UNDER,
-            probabilities={
-                f"over_{line}": float(over_prob),
-                f"under_{line}": float(under_prob),
-            },
-            confidence=abs(over_prob - 0.5) * 2,  # Max when 0 or 1, min at 0.5
-            model_name=self.name,
-        )
-    
-    def _matrix_to_btts(self, matrix: np.ndarray, match_id: str) -> Prediction:
-        """Convert score matrix to BTTS prediction."""
-        # BTTS Yes = both score at least 1
-        btts_yes = matrix[1:, 1:].sum()
-        btts_no = 1 - btts_yes
-        
-        return Prediction(
-            match_id=match_id,
-            market=Market.BTTS,
-            probabilities={
-                "yes": float(btts_yes),
-                "no": float(btts_no),
-            },
-            confidence=abs(btts_yes - 0.5) * 2,
-            model_name=self.name,
-        )
-    
-    def get_correct_score_probs(
-        self,
-        home_team: str,
-        away_team: str,
-        league: Optional[str] = None,
-        top_n: int = 20
-    ) -> Dict[str, float]:
-        """Return top N most likely correct scores."""
-        lh, la = self._get_lambdas(home_team, away_team, league)
-        matrix = self._score_matrix(lh, la)
-        
-        scores = []
-        for i in range(matrix.shape[0]):
-            for j in range(matrix.shape[1]):
-                scores.append((f"{i}-{j}", matrix[i, j]))
-        
-        scores.sort(key=lambda x: -x[1])
-        return dict(scores[:top_n])
-    
-    def _calc_confidence(self, *probs) -> float:
-        """Calculate confidence based on probability distribution."""
-        probs = np.array(probs)
-        max_prob = probs.max()
-        second_max = np.partition(probs, -2)[-2]
-        return max_prob - second_max  # Gap to second best
     
     def _get_state(self) -> Dict[str, Any]:
         return {
