@@ -41,7 +41,11 @@ class UserSettingsManager:
     
     def __init__(self, storage_path: str = "config/user_settings.json"):
         # Resolve path relative to project root if needed, or absolute
-        self.storage_path = Path(storage_path)
+        # Resolve path relative to project root
+        # This file is in stavki/config/user_settings.py
+        # Root is 3 levels up: ../../..
+        root_dir = Path(__file__).resolve().parent.parent.parent
+        self.storage_path = root_dir / storage_path if not Path(storage_path).is_absolute() else Path(storage_path)
         self.settings: Dict[str, UserConfig] = {}
         self._load()
 

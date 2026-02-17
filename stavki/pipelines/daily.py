@@ -34,6 +34,7 @@ class PipelineConfig:
     # Data
     leagues: List[str] = field(default_factory=lambda: ["soccer_epl"])
     max_matches: int = 50
+    scan_window_hours: int = 72  # Lookahead window (3 days)
     
     # Model
     use_ensemble: bool = True
@@ -324,14 +325,14 @@ class DailyPipeline:
                 # A. Get Fixtures (Prefer SportMonks -> OddsAPI)
                 if sm_collector:
                     try:
-                        matches = sm_collector.fetch_matches(league)
-                        logger.info(f"Fetched {len(matches)} fixtures from SportMonks for {league.name}")
+                        matches = sm_collector.fetch_matches(league, max_hours_ahead=self.config.scan_window_hours)
+                        logger.info(f"Fetched {len(matches)} fixtures from SportMonks for {league.name} (next {self.config.scan_window_hours}h)")
                     except Exception as e:
                         logger.error(f"SportMonks fixture fetch failed: {e}")
                 
                 if not matches and oa_collector:
                     logger.info("Falling back to OddsAPI for fixtures...")
-                    matches = oa_collector.fetch_matches(league, include_odds=True)
+                    matches = oa_collector.fetch_matches(league, include_odds=True, max_hours_ahead=self.config.scan_window_hours)
                 
                 if not matches:
                     continue
@@ -1226,7 +1227,29 @@ class DailyPipeline:
         with open(filepath, "w") as f:
             json.dump(output, f, indent=2)
         
-        logger.info(f"Saved {len(bets)} bets to {filepath}")
+        
+        # Also save as optimized CSV for users
+        csv_filepath = output_dir / f"bets_{timestamp}.csv"
+        
+        # Sort by EV descending
+        sorted_bets = sorted(bets, key=lambda x: x.ev, reverse=True)
+        
+        csv_rows = []
+        for b in sorted_bets:
+            csv_rows.append({
+                "Match": f"{b.home_team} vs {b.away_team}",
+                "Time": b.kickoff.strftime("%Y-%m-%d %H:%M") if b.kickoff else "TBD",
+                "League": str(b.league).split(".")[-1] if hasattr(b.league, "name") else str(b.league),
+                "Selection": b.selection,
+                "Odds": round(b.odds, 2),
+                "Bookmaker": b.bookmaker,
+                "EV (%)": round(b.ev * 100, 1),
+                "Stake ($)": round(b.stake_amount, 2),
+                "Confidence": round(b.confidence, 2),
+            })
+            
+        pd.DataFrame(csv_rows).to_csv(csv_filepath, index=False)
+        logger.info(f"Saved {len(bets)} bets to {filepath} and {csv_filepath}")
 
 
 def run_daily_pipeline(

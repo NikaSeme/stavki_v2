@@ -12,7 +12,9 @@ Usage:
 import logging
 import asyncio
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Any
+import io
+import pandas as pd
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -31,22 +33,83 @@ class BotConfig:
     summary_hour: int = 9
 
 
+class GlobalPipelineManager:
+    """
+    Singleton manager for the heavy betting pipeline.
+    Runs once globally to fetch ALL potential value bets (min_ev=0),
+    then filters for individual users.
+    """
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(GlobalPipelineManager, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if self._initialized:
+            return
+            
+        self.last_run_time = None
+        self.cached_bets = []
+        self._pipeline = None
+        self._initialized = True
+        logger.info("GlobalPipelineManager initialized")
+
+    def get_pipeline(self):
+        """Lazy load the pipeline to avoid startup delay."""
+        if self._pipeline is None:
+            logger.info("Initializing Global DailyPipeline...")
+            try:
+                from stavki.pipelines import DailyPipeline, PipelineConfig
+                # Configure for MAXIMUM discovery (0% EV), we filter later
+                config = PipelineConfig(min_ev=0.0) 
+                self._pipeline = DailyPipeline(config=config)
+            except Exception as e:
+                logger.error(f"Failed to init pipeline: {e}")
+                raise
+        return self._pipeline
+
+    def run_scan(self) -> List[Any]:
+        """Run the heavy pipeline and cache results."""
+        pipeline = self.get_pipeline()
+        logger.info("Starting Global Pipeline Scan...")
+        
+        # We pass a default bankroll, but staking will be recalculated per user
+        # This run is just to find the OPPORTUNITIES
+        bets = pipeline.run()
+        
+        self.cached_bets = bets
+        self.last_run_time = datetime.now()
+        logger.info(f"Global scan complete. Cached {len(bets)} bets.")
+        return bets
+
+    def get_cached_bets(self, max_age_minutes: int = 60) -> Optional[List[Any]]:
+        """Return cached bets if they are fresh enough."""
+        if not self.cached_bets or not self.last_run_time:
+            return None
+            
+        age = (datetime.now() - self.last_run_time).total_seconds() / 60
+        if age > max_age_minutes:
+            logger.info(f"Cache expired ({age:.1f}m old)")
+            return None
+            
+        return self.cached_bets
+
+
 class StavkiBot:
     """
     Telegram bot for STAVKI alerts and commands.
-    
-    Commands:
-        /start - Welcome message
-        /bets - Get current value bets
-        /status - System status
-        /subscribe - Subscribe to alerts
-        /unsubscribe - Unsubscribe from alerts
+    Optimized for performance with global pipeline caching.
     """
     
     def __init__(self, config: BotConfig):
         self.config = config
         self.subscribers: set = set()
-        self._running = False
+        
+        # Use the singleton manager
+        self.pipeline_manager = GlobalPipelineManager()
         
         # Try to import telegram library
         try:
@@ -58,135 +121,178 @@ class StavkiBot:
             self._telegram_available = False
             
         # Initialize UserSettingsManager
-        import os
         from stavki.config.user_settings import UserSettingsManager
-        # Use absolute path for config relative to package
-        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'user_settings.json')
-        self.settings_manager = UserSettingsManager(config_path)
+        # Path is now handled robustly inside UserSettingsManager via relative path from its own location
+        # But we can pass specific filename
+        self.settings_manager = UserSettingsManager("config/user_settings.json")
     
     async def start(self, update, context):
         """Handle /start command."""
         logger.info(f"Command /start received from {update.effective_chat.id}")
         welcome = (
             "🎯 *STAVKI Betting Bot*\n\n"
-            "Welcome! I'll help you find value bets.\n\n"
+            "Welcome! I'll help you find value bets using advanced AI.\n\n"
             "*Commands:*\n"
-            "/bets - Get current value bets\n"
-            "/status - System status\n"
-            "/subscribe - Get alerts\n"
+            "/bets - Get current value bets (instant)\n"
+            "/status - Check your settings & system status\n"
+            "/subscribe - Get hourly alerts\n"
+            "/set_ev <val> - Set your min EV (e.g. 0.05)\n"
+            "/set_bankroll <amt> - Set your bankroll\n"
             "/help - More info"
         )
         await update.message.reply_text(welcome, parse_mode="Markdown")
     
     async def get_bets(self, update, context):
-        """Handle /bets command - get current value bets."""
-        logger.info(f"Command /bets received from {update.effective_chat.id}")
-        await update.message.reply_text("🔍 Scanning for value bets...")
+        """Handle /bets command - get current value bets from CACHE."""
+        chat_id = update.effective_chat.id
+        logger.info(f"Command /bets received from {chat_id}")
         
-        try:
-            from stavki.pipelines import DailyPipeline, PipelineConfig
+        # 1. Check Cache
+        bets = self.pipeline_manager.get_cached_bets(max_age_minutes=60)
+        
+        if bets is None:
+            await update.message.reply_text(
+                "⏳ No fresh scan available yet.\n"
+                "The system scans every hour. I'll trigger a quick check now, please wait..."
+            )
+            # Trigger run in thread pool to not block asyncio loop
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self.pipeline_manager.run_scan)
+            bets = self.pipeline_manager.get_cached_bets()
             
-            config = PipelineConfig(min_ev=self.config.min_ev_alert)
-            pipeline = DailyPipeline(config=config)
-            bets = pipeline.run()
+        if not bets:
+            await update.message.reply_text("❌ No value bets found in the market right now.")
+            return
+
+        # 2. Filter for User
+        user_settings = self.settings_manager.get_settings(chat_id)
+        filtered_bets = [b for b in bets if b.ev >= user_settings.min_ev]
+        
+        if not filtered_bets:
+             await update.message.reply_text(
+                 f"❌ No bets found matching your criteria (Min EV: {user_settings.min_ev:.1%}).\n"
+                 f"Try lowering it with `/set_ev 0.01`"
+             )
+             return
+             
+        # 3. Recalculate Stakes (Kelly)
+        from stavki.strategy import KellyStaker
+        # We can reuse staker logic efficiently
+        staker = KellyStaker(bankroll=user_settings.bankroll)
+        
+        # Create display message
+        message = f"✅ *Found {len(filtered_bets)} Value Bets*\n"
+        message += f"_(Settings: EV>{user_settings.min_ev:.1%}, Bank=${user_settings.bankroll:.0f})_\n\n"
+        
+        csv_data = []
+
+        for i, bet in enumerate(filtered_bets):
+            # Recalculate stake for this user
+            rec_stake = staker.calculate_stake(bet.ev, bet.odds - 1, bet.confidence)
+            stake_amt = rec_stake * user_settings.bankroll
             
-            if not bets:
-                await update.message.reply_text("❌ No value bets found right now.")
-                return
-            
-            message = f"✅ *Found {len(bets)} value bets:*\n\n"
-            
-            for i, bet in enumerate(bets[:5], 1):
+            # Add to CSV list
+            csv_data.append({
+                 "Match": f"{bet.home_team} vs {bet.away_team}",
+                 "Time": bet.kickoff.strftime("%Y-%m-%d %H:%M") if bet.kickoff else "TBD",
+                 "League": str(bet.league).split(".")[-1] if hasattr(bet.league, "name") else str(bet.league),
+                 "Selection": bet.selection,
+                 "Odds": round(bet.odds, 2),
+                 "Bookmaker": bet.bookmaker,
+                 "EV (%)": round(bet.ev * 100, 1),
+                 "Stake ($)": round(stake_amt, 2),
+                 "Confidence": round(bet.confidence, 2),
+            })
+
+            # Add to text message (limit to top 5)
+            if i < 5:
                 message += (
-                    f"*{i}. {bet.home_team} vs {bet.away_team}*\n"
+                    f"*{i+1}. {bet.home_team} vs {bet.away_team}*\n"
                     f"   {bet.selection} @ {bet.odds:.2f} ({bet.bookmaker})\n"
-                    f"   EV: {bet.ev:.1%}, Stake: ${bet.stake_amount:.2f}\n\n"
+                    f"   EV: {bet.ev:.1%} | *Stake: ${stake_amt:.2f}*\n\n"
                 )
-            
-            if len(bets) > 5:
-                message += f"_...and {len(bets) - 5} more_"
-            
-            await update.message.reply_text(message, parse_mode="Markdown")
-            
-        except Exception as e:
-            await update.message.reply_text(f"❌ Error: {e}")
+        
+        if len(filtered_bets) > 5:
+            message += f"_...and {len(filtered_bets) - 5} more in the attached CSV._"
+        
+        await update.message.reply_text(message, parse_mode="Markdown")
+        
+        # Send CSV Document
+        if csv_data:
+            try:
+                df = pd.DataFrame(csv_data)
+                # Ensure descending sort by EV
+                df = df.sort_values("EV (%)", ascending=False)
+                
+                buf = io.BytesIO()
+                df.to_csv(buf, index=False)
+                buf.seek(0)
+                
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+                await update.message.reply_document(
+                    document=buf,
+                    filename=f"stavki_bets_{timestamp}.csv",
+                    caption=f"📄 Full list of {len(filtered_bets)} value bets."
+                )
+            except Exception as e:
+                logger.error(f"Failed to send CSV: {e}")
     
     async def status(self, update, context):
         """Handle /status command."""
-        logger.info(f"Command /status received from {update.effective_chat.id}")
         try:
-            # Get user settings
-            chat_id = update.effective_chat.id
-            # Get user settings
             chat_id = update.effective_chat.id
             user_settings = self.settings_manager.get_settings(chat_id)
             
+            # Check pipeline status
+            last_run = self.pipeline_manager.last_run_time
+            last_run_str = last_run.strftime('%H:%M') if last_run else "Never"
+            
             status_msg = (
-                "📊 *STAVKI Status*\n\n"
-                f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-                f"Subscribers: {len(self.subscribers)}\n"
-                f"System: ✅ Online\n\n"
-                f"*Your Settings:*\n"
-                f"Min EV: `{user_settings.min_ev:.1%}`\n"
-                f"Bankroll: `${user_settings.bankroll:.2f}`"
+                "📊 *STAVKI System Status*\n\n"
+                f"System Time: {datetime.now().strftime('%H:%M')}\n"
+                f"Last Scan: {last_run_str}\n"
+                f"Subscribers: {len(self.subscribers)}\n\n"
+                f"*Your Personal Settings:*\n"
+                f"🎯 Min EV: `{user_settings.min_ev:.1%}`\n"
+                f"💰 Bankroll: `${user_settings.bankroll:.2f}`\n\n"
+                f"_Use /set_ev and /set_bankroll to change these._"
             )
+            await update.message.reply_text(status_msg, parse_mode="Markdown")
             
         except Exception as e:
             logger.error(f"Status error: {e}")
-            status_msg = "⚠️ System Status: Online (Error retrieving user settings)"
-        
-        await update.message.reply_text(status_msg, parse_mode="Markdown")
-    
+            await update.message.reply_text("⚠️ Error retrieving status.")
+
     async def subscribe(self, update, context):
         """Handle /subscribe command."""
         chat_id = update.effective_chat.id
         self.subscribers.add(chat_id)
         await update.message.reply_text(
-            "✅ Subscribed to value bet alerts!\n"
-            "You'll receive notifications when new opportunities are found."
+            "✅ *Subscribed!*\n"
+            "You will receive alerts every hour if value bets are found."
         )
-    
+
     async def unsubscribe(self, update, context):
         """Handle /unsubscribe command."""
         chat_id = update.effective_chat.id
         self.subscribers.discard(chat_id)
-        await update.message.reply_text("👋 Unsubscribed from alerts.")
-    
+        await update.message.reply_text("👋 Unsubscribed.")
+
     async def help_command(self, update, context):
         """Handle /help command."""
         help_text = (
-            "🎯 *STAVKI Bot Help*\n\n"
-            "*Commands:*\n"
-            "/bets - Find current value bets\n"
-            "/status - Check system status\n"
-            "/ping - Health check with uptime\n"
-            "/subscribe - Get automatic alerts\n"
-            "/unsubscribe - Stop alerts\n"
-            "/set_ev <val> - Set min EV (e.g. 0.05)\n"
-            "/set_bankroll <amt> - Set bankroll\n\n"
-            "*About:*\n"
-            "STAVKI uses ML models to find betting value "
-            "by comparing model probabilities with market odds."
+            "🤖 *STAVKI Bot Help*\n\n"
+            "/bets - Show current bets (Uses your EV/Bank settings)\n"
+            "/status - View your config\n"
+            "/set_ev 0.05 - Set min EV to 5%\n"
+            "/set_bankroll 1000 - Set bankroll to $1000\n"
+            "/subscribe - Enable hourly alerts\n"
+            "/unsubscribe - Disable alerts\n"
         )
         await update.message.reply_text(help_text, parse_mode="Markdown")
-    
-    async def ping(self, update, context):
-        """Handle /ping command — health check with uptime and job status."""
-        try:
-            uptime_str = f"⏱ Bot is alive at {datetime.now().strftime('%H:%M:%S')}"
-            
-            # Check scheduler
-            if hasattr(self, 'scheduler') and self.scheduler.running:
-                next_run = self.scheduler.get_job('hourly_scan').next_run_time
-                uptime_str += f"\n📅 Next scan: {next_run.strftime('%H:%M:%S')}"
-            
-            await update.message.reply_text(f"🏓 Pong!\n{uptime_str}")
-        except Exception as e:
-            await update.message.reply_text(f"🏓 Pong! (scheduler error: {e})")
 
     async def set_ev_command(self, update, context):
         """Handle /set_ev command."""
-        logger.info(f"Command /set_ev received from {update.effective_chat.id} with args: {context.args}")
         try:
             if not context.args:
                 await update.message.reply_text("Usage: /set_ev <value> (e.g. 0.05 for 5%)")
@@ -194,27 +300,21 @@ class StavkiBot:
             
             try:
                 val = float(context.args[0])
-                if val > 1.0: # assume percentage if > 1
-                    val /= 100.0
+                if val > 1.0: val /= 100.0
             except ValueError:
-                await update.message.reply_text("❌ Invalid number format.")
+                await update.message.reply_text("❌ Invalid number.")
                 return
             
             chat_id = update.effective_chat.id
-            
-            chat_id = update.effective_chat.id
             self.settings_manager.update_ev(chat_id, val)
-            
-            await update.message.reply_text(f"✅ Min EV set to {val:.1%} for this chat.")
-            logger.info(f"User {chat_id} set min_ev to {val}")
+            await update.message.reply_text(f"✅ Min EV set to {val:.1%}")
             
         except Exception as e:
             logger.error(f"Error in set_ev: {e}")
-            await update.message.reply_text("❌ Failed to set EV.")
+            await update.message.reply_text("❌ Failed to update settings.")
 
     async def set_bankroll_command(self, update, context):
         """Handle /set_bankroll command."""
-        logger.info(f"Command /set_bankroll received from {update.effective_chat.id} with args: {context.args}")
         try:
             if not context.args:
                 await update.message.reply_text("Usage: /set_bankroll <amount> (e.g. 1000)")
@@ -222,165 +322,147 @@ class StavkiBot:
             
             try:
                 val = float(context.args[0])
-                if val < 0:
-                    await update.message.reply_text("❌ Bankroll must be positive.")
-                    return
+                if val < 0: raise ValueError
             except ValueError:
-                await update.message.reply_text("❌ Invalid number format.")
+                await update.message.reply_text("❌ Invalid amount.")
                 return
             
             chat_id = update.effective_chat.id
-            
-            chat_id = update.effective_chat.id
             self.settings_manager.update_bankroll(chat_id, val)
-            
-            await update.message.reply_text(f"✅ Bankroll set to ${val:.2f} for this chat.")
-            logger.info(f"User {chat_id} set bankroll to {val}")
+            await update.message.reply_text(f"✅ Bankroll set to ${val:.2f}")
             
         except Exception as e:
             logger.error(f"Error in set_bankroll: {e}")
-            await update.message.reply_text("❌ Failed to set bankroll.")
+            await update.message.reply_text("❌ Failed to update settings.")
+
+    # --- Scheduler Logic ---
 
     async def send_alert(self, message: str, chat_id: int):
-        """Send alert to specific subscriber."""
-        if not self._telegram_available:
-            logger.warning("Telegram not available for alerts")
-            return
-        
+        """Send async alert."""
+        if not self._telegram_available: return
         from telegram import Bot
-        
         try:
             bot = Bot(token=self.config.token)
             await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
         except Exception as e:
-            logger.error(f"Failed to send to {chat_id}: {e}")
+            logger.error(f"Failed to alert {chat_id}: {e}")
 
     def _scheduled_scan(self):
-        """Run daily pipeline and alert subscribers with their specific settings."""
-        logger.info("⏰ Starting scheduled scan...")
+        """
+        Global Scheduled Scan.
+        1. Run Pipeline ONCE.
+        2. Filter & Alert PER USER.
+        """
+        logger.info("⏰ Starting Scheduled Global Scan...")
         
         try:
-            # Ensure project root is in path
-            import sys
-            import os
-            root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-            if root_path not in sys.path:
-                sys.path.insert(0, root_path)
-
-            from stavki.pipelines import DailyPipeline, PipelineConfig
-            from stavki.pipelines import DailyPipeline, PipelineConfig
+            # 1. Run Global Pipeline
+            all_bets = self.pipeline_manager.run_scan()
             
-            if not self.subscribers:
-                logger.info("No subscribers to alert.")
+            if not all_bets:
+                logger.info("No bets found globally.")
                 return
 
-            # We need to run pipeline for each unique configuration to be precise, 
-            # OR run it once with lowest EV and filter later.
-            # Running once with very low EV is more efficient.
-            # But bankroll affects staking which is done IN the pipeline.
-            # If we want accurate staking (Kelly) based on user bankroll, we must run staking per user.
-            
-            # Optimization: 
-            # 1. Run pipeline UP TO value finding (global).
-            # 2. For each subscriber:
-            #    a. Filter bets by their min_ev.
-            #    b. Calculate stakes using their bankroll.
-            #    c. Send alert.
-            
-            # However, DailyPipeline is monolithic.
-            # 'run' does everything.
-            # Let's instantiate it per user for correctness as requested ("pro programmer" approach).
-            # It might be slower but it guarantees correct bankroll usage for Kelly.
-            # Since we likely have 1 user, this is fine.
-            
-            for chat_id in self.subscribers:
-                user_settings = self.settings_manager.get_settings(chat_id)
-                logger.info(f"Running scan for user {chat_id} (EV: {user_settings.min_ev}, Bank: {user_settings.bankroll})")
-                
-                pipeline_config = PipelineConfig(
-                    min_ev=user_settings.min_ev,
-                    # We can pass other user configs here if needed
-                )
-                
-                # Pass bankroll to pipeline
-                pipeline = DailyPipeline(config=pipeline_config, bankroll=user_settings.bankroll)
-                
-                # Run pipeline
-                # Note: This re-fetches odds/features every time if not careful.
-                # DailyPipeline checks if odds_df provided.
-                # To optimize, we should fetch odds ONCE outside the loop.
-                # But for now, let's keep it robust and simple.
-                bets = pipeline.run()
-                
-                if bets:
-                    message = f"🚨 *Hourly Scan Found {len(bets)} Value Bets!* 🚨\n"
-                    message += f"_(Min EV: {user_settings.min_ev:.1%}, Bank: ${user_settings.bankroll:.0f})_\n\n"
-                    
-                    for i, bet in enumerate(bets[:5], 1):
-                        message += (
-                            f"*{i}. {bet.home_team} vs {bet.away_team}*\n"
-                            f"   {bet.selection} @ {bet.odds:.2f} ({bet.bookmaker})\n"
-                            f"   EV: {bet.ev:.1%}, Stake: ${bet.stake_amount:.2f}\n\n"
-                        )
-                    
-                    if len(bets) > 5:
-                        message += f"_...and {len(bets) - 5} more._"
-                    
-                    # Send alert
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(self.send_alert(message, chat_id))
-                    loop.close()
-                else:
-                    logger.info(f"No bets found for user {chat_id}")
+            if not self.subscribers:
+                return
 
+            # 2. Alert Subscribers
+            # Need to run async code from sync scheduler thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            from stavki.strategy import KellyStaker
+
+            for chat_id in self.subscribers:
+                # Get User Config
+                user_settings = self.settings_manager.get_settings(chat_id)
+                staker = KellyStaker(bankroll=user_settings.bankroll)
+                
+                # Filter
+                user_bets = [b for b in all_bets if b.ev >= user_settings.min_ev]
+                
+                if not user_bets:
+                    continue
+                    
+                # Format
+                msg = f"🚨 *New Value Bets Found!* 🚨\n\n"
+                for i, bet in enumerate(user_bets[:5], 1):
+                    rec_stake = staker.calculate_stake(bet.ev, bet.odds - 1, bet.confidence)
+                    stake_amt = rec_stake * user_settings.bankroll
+                    
+                    msg += (
+                        f"*{i}. {bet.home_team} vs {bet.away_team}*\n"
+                        f"   {bet.selection} @ {bet.odds:.2f}\n"
+                        f"   EV: {bet.ev:.1%} | Stake: ${stake_amt:.2f}\n\n"
+                    )
+                
+                if len(user_bets) > 5:
+                    msg += f"_...and {len(user_bets)-5} more._"
+                    
+                # Send
+                loop.run_until_complete(self.send_alert(msg, chat_id))
+                
+            loop.close()
+            logger.info("Scan and alerts completed.")
+            
         except Exception as e:
-            import traceback
-            logger.error(f"Scheduled scan failed: {e}\n{traceback.format_exc()}")
+            logger.error(f"Scheduled scan failed: {e}", exc_info=True)
 
     def run(self):
         """Start the bot with scheduler."""
-        if not self._telegram_available:
-            logger.error("Cannot run bot: python-telegram-bot not installed")
-            return
+        if not self._telegram_available: return
         
         from telegram.ext import Application, CommandHandler
         from apscheduler.schedulers.background import BackgroundScheduler
         
-        # Setup Scheduler
+        # Scheduler
         self.scheduler = BackgroundScheduler()
         self.scheduler.add_job(
             self._scheduled_scan, 
             'interval', 
             minutes=60, 
             id='hourly_scan',
-            next_run_time=datetime.now()
+            next_run_time=datetime.now() # Run immediately on start? Or wait? 
+            # Better to NOT run immediately on start to avoid slowing down startup
+            # User can trigger via /bets
         )
         self.scheduler.start()
         
         app = Application.builder().token(self.config.token).build()
         
-        # Register handlers
-        app.add_handler(CommandHandler("start", self.start))
-        app.add_handler(CommandHandler("bets", self.get_bets))
-        app.add_handler(CommandHandler("status", self.status))
-        app.add_handler(CommandHandler("ping", self.ping))
-        app.add_handler(CommandHandler("subscribe", self.subscribe))
-        app.add_handler(CommandHandler("unsubscribe", self.unsubscribe))
-        app.add_handler(CommandHandler("help", self.help_command))
+        # Handlers
+        for cmd, func in [
+            ("start", self.start),
+            ("bets", self.get_bets),
+            ("status", self.status),
+            ("subscribe", self.subscribe),
+            ("unsubscribe", self.unsubscribe),
+            ("help", self.help_command),
+            ("set_ev", self.set_ev_command),
+            ("set_bankroll", self.set_bankroll_command)
+        ]:
+            app.add_handler(CommandHandler(cmd, func))
+            
+        logger.info("Bot started! 🚀")
         
-        # New commands
-        app.add_handler(CommandHandler("set_ev", self.set_ev_command))
-        app.add_handler(CommandHandler("set_bankroll", self.set_bankroll_command))
-        
-        logger.info("Starting Telegram bot with Scheduler...")
-        
-        # Add admin/alert chat if configured
+        # Add alert chat if configured (admin)
         if self.config.alert_chat_id:
              self.subscribers.add(self.config.alert_chat_id)
         
         app.run_polling()
 
+def create_bot(token: str, min_ev: float = 0.05) -> StavkiBot:
+    # ... (Keep existing factory)
+    config = BotConfig(token=token, min_ev_alert=min_ev)
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if chat_id:
+        try:
+            config.alert_chat_id = int(chat_id)
+        except ValueError: pass
+    return StavkiBot(config)
 def create_bot(token: str, min_ev: float = 0.05) -> StavkiBot:
     """Create and configure bot instance."""
     config = BotConfig(token=token, min_ev_alert=min_ev)
