@@ -1,17 +1,6 @@
 {
-  "EPL": 8,
-  "LA_LIGA": 564,
-  "BUNDESLIGA": 82,
-  "SERIE_A": 384,
-  "LIGUE_1": 301,
-  "CHAMPIONSHIP": 9,
-  "EREDIVISIE": 72,
-  "PRIMEIRA": 462,
-  "SCOTTISH": 501,
-  "BELGIAN": 208,
   "epl": {
-    "min_ev": 0.02,
-    "weights": {
+    "1x2": {
       "DixonColes": 0.0,
       "LightGBM_1X2": 0.0,
       "CatBoost_1X2": 0.75,
@@ -19,17 +8,15 @@
     }
   },
   "seriea": {
-    "min_ev": 0.02,
-    "weights": {
+    "1x2": {
       "DixonColes": 0.0,
       "LightGBM_1X2": 0.05,
-      "CatBoost_1X2": 0.8500000000000001,
+      "CatBoost_1X2": 0.85,
       "NeuralMultiTask": 0.1
     }
   },
   "laliga": {
-    "min_ev": 0.02,
-    "weights": {
+    "1x2": {
       "DixonColes": 0.0,
       "LightGBM_1X2": 0.0,
       "CatBoost_1X2": 0.8,
@@ -37,8 +24,7 @@
     }
   },
   "bundesliga": {
-    "min_ev": 0.02,
-    "weights": {
+    "1x2": {
       "DixonColes": 0.0,
       "LightGBM_1X2": 0.0,
       "CatBoost_1X2": 0.9,
@@ -46,21 +32,19 @@
     }
   },
   "ligue1": {
-    "min_ev": 0.02,
-    "weights": {
+    "1x2": {
       "DixonColes": 0.0,
       "LightGBM_1X2": 0.0,
       "CatBoost_1X2": 0.65,
-      "NeuralMultiTask": 0.35000000000000003
+      "NeuralMultiTask": 0.35
     }
   },
   "championship": {
-    "min_ev": 0.03,
-    "weights": {
+    "1x2": {
       "DixonColes": 0.0,
-      "LightGBM_1X2": 0.15000000000000002,
-      "CatBoost_1X2": 0.7000000000000001,
-      "NeuralMultiTask": 0.15000000000000002
+      "LightGBM_1X2": 0.15,
+      "CatBoost_1X2": 0.70,
+      "NeuralMultiTask": 0.15
     }
   }
 }
