@@ -446,9 +446,7 @@ class KellyStaker:
         fractions: List[float] = None,
     ) -> Tuple[float, Dict[str, float]]:
         """
-        Optimize Kelly fraction on historical data.
-        
-        THIS IS THE KEY FUNCTION - weights are not hardcoded but optimized.
+        Optimize Kelly fraction on historical data using vectorized simulation.
         
         Args:
             historical_bets: List of historical bets with prob, odds, result
@@ -457,67 +455,94 @@ class KellyStaker:
         Returns:
             (optimal_fraction, {fraction: final_roi})
         """
+        if not historical_bets:
+            return 0.25, {}
+            
         if fractions is None:
             fractions = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50]
         
-        results = {}
+        # 1. Convert to arrays for vectorization
+        probs = np.array([b.get("model_prob", 0) for b in historical_bets])
+        odds = np.array([b.get("odds", 0) for b in historical_bets])
+        
+        # Outcome: 1 for win, 0 for loss/void (voids should ideally be handled)
+        # Assuming simple win/loss for now or status check
+        results = np.array([1.0 if b.get("result") == "win" or b.get("status") == "win" else 0.0 for b in historical_bets])
+        
+        # 2. Pre-calculate Full Kelly for all bets
+        # Kelly = (b*p - q) / b
+        b_odds = odds - 1
+        q_probs = 1 - probs
+        kelly_full = np.divide(
+            (b_odds * probs - q_probs), 
+            b_odds, 
+            out=np.zeros_like(probs), 
+            where=b_odds!=0
+        )
+        kelly_full = np.maximum(kelly_full, 0)
+        
+        results_map = {}
+        bankroll_start = 1000.0
         
         for fraction in fractions:
-            # Simulate with this fraction
-            bankroll = 1000.0
-            peak = bankroll
-            max_drawdown = 0.0
+            # 3. Apply fraction and limits
+            stake_pct = kelly_full * fraction
+            stake_pct = np.minimum(stake_pct, self.config["max_stake_pct"])
             
-            for bet in historical_bets:
-                prob = bet.get("model_prob", bet.get("prob"))
-                odds = bet.get("odds")
-                result = bet.get("result")
-                
-                if not all([prob, odds, result]):
-                    continue
-                
-                # Calculate stake
-                kelly = self.kelly_formula(prob, odds)
-                stake_pct = min(kelly * fraction, self.config["max_stake_pct"])
-                stake = bankroll * stake_pct
-                
-                # Settle
-                if result == "win":
-                    profit = stake * (odds - 1)
-                elif result == "loss":
-                    profit = -stake
-                else:
-                    profit = 0
-                
-                bankroll += profit
-                
-                # Update peak and drawdown
-                if bankroll > peak:
-                    peak = bankroll
-                
-                current_dd = (peak - bankroll) / peak if peak > 0 else 0
-                max_drawdown = max(max_drawdown, current_dd)
+            # 4. Calculate returns
+            # If win: growth = 1 + stake_pct * (odds - 1)
+            # If loss: growth = 1 - stake_pct
             
-            # Calculate ROI
-            roi = (bankroll - 1000.0) / 1000.0 if 1000.0 > 0 else 0
+            # Vectorized profit multiplier per bet
+            # profit_mult = (odds - 1) * results - (1 - results) * 1
+            # But simpler:
+            match_return = np.where(results == 1, (odds - 1), -1.0)
             
-            results[fraction] = {
-                "final_bankroll": bankroll,
+            # Bankroll multipliers: (1 + stake_pct * match_return)
+            growth_factors = 1 + stake_pct * match_return
+            
+            # 5. Simulate trajectory (Cumulative Product)
+            # Clip growth to 0 to represent bankruptcy (avoid negative bankroll math)
+            growth_factors = np.maximum(growth_factors, 0)
+            
+            trajectory = bankroll_start * np.cumprod(growth_factors)
+            
+            if len(trajectory) == 0:
+                continue
+                
+            final_bankroll = trajectory[-1]
+            profit = final_bankroll - bankroll_start
+            roi = profit / bankroll_start  # Simple ROI relative to starting bankroll
+            
+            # 6. Calculate Drawdown vectorized
+            # Running max bankroll
+            running_max = np.maximum.accumulate(trajectory)
+            # Current drawdown at each step
+            drawdowns = (running_max - trajectory) / running_max
+            # Handle division by zero if running_max is 0 (bankruptcy)
+            drawdowns = np.nan_to_num(drawdowns, 0.0)
+            
+            max_drawdown = np.max(drawdowns) if len(drawdowns) > 0 else 0.0
+            
+            results_map[fraction] = {
+                "final_bankroll": final_bankroll,
                 "roi": roi,
                 "max_drawdown": max_drawdown,
-                # Sharpe-like metric: ROI / drawdown
                 "risk_adjusted": roi / max(max_drawdown, 0.01),
             }
-        
-        # Find best fraction (by risk-adjusted return)
-        best_fraction = max(results.keys(), key=lambda f: results[f]["risk_adjusted"])
+            
+        # Find best fraction
+        if not results_map:
+            return 0.25, {}
+            
+        best_fraction = max(results_map.keys(), key=lambda f: results_map[f]["risk_adjusted"])
         
         logger.info(
             f"Optimal Kelly fraction: {best_fraction:.2f} "
-            f"(ROI: {results[best_fraction]['roi']:.2%})"
+            f"(ROI: {results_map[best_fraction]['roi']:.2%})"
         )
         
-        return best_fraction, results
+        return best_fraction, results_map
     
     def _save_state(self):
         """Save state to file."""

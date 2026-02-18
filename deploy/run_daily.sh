@@ -20,7 +20,15 @@ echo "Starting Daily Pipeline at $(date)" >> "$LOG_FILE"
 echo "==================================================" >> "$LOG_FILE"
 
 # Run pipeline
-$PYTHON_BIN -m stavki.interfaces.cli_app --verbose predict --league soccer_spain_la_liga >> "$LOG_FILE" 2>&1
+# Run pipeline
+$PYTHON_BIN -m stavki.interfaces.cli_app --verbose predict \
+    --league soccer_epl \
+    --league soccer_spain_la_liga \
+    --league soccer_germany_bundesliga \
+    --league soccer_italy_serie_a \
+    --league soccer_france_ligue_one \
+    --league soccer_efl_champ \
+    >> "$LOG_FILE" 2>&1
 
 EXIT_CODE=$?
 

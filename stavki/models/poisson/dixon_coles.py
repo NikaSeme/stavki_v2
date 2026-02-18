@@ -426,7 +426,107 @@ class DixonColesModel(BaseModel):
             ))
             
         return predictions
-
+    
+    def predict_rolling(self, data: pd.DataFrame, update: bool = True) -> List[Prediction]:
+        """
+        Generate predictions while dynamically updating team strengths after each match.
+        This simulates a real production setting where the model learns from every new result.
+        
+        Args:
+            data: Chronologically sorted DataFrame of matches
+            update: Whether to update model parameters after each prediction
+        """
+        if not self.is_fitted:
+            # If not fitted, maybe fit on nothing or require fit?
+            # ideally should be fitted on training set first
+            pass
+            
+        predictions = []
+        
+        
+        # Ensure sorting - Actually, let's assume caller provides sorted data to preserve index alignment!
+        # If we sort here, we might scramble the order relative to the input DataFrame, causing validation mismatch.
+        # if "Date" in data.columns:
+        #    data = data.sort_values("Date")
+        
+        for idx, row in data.iterrows():
+            # 1. Predict CURRENT match using EXISTING state
+            # Create single-row DF for vectorized prediction (reusing predict mostly for ease)
+            # Or just manually predict to be faster?
+            # Manual prediction is faster than DF creation overhead
+            
+            home = row["HomeTeam"]
+            away = row["AwayTeam"]
+            match_id = str(row.get("match_id", f"{home}_{away}_{row.get('Date')}"))
+            
+            # Get current params
+            att_h = self.attack[home]
+            def_h = self.defense[home]
+            att_a = self.attack[away]
+            def_a = self.defense[away]
+            
+            # League HA
+            league = row.get("League")
+            ha = self.league_home_adv.get(league, self.home_advantage)
+            
+            # Lambdas
+            lam_h = max(0.2, self.avg_goals * att_h * def_a * np.exp(ha))
+            lam_a = max(0.2, self.avg_goals * att_a * def_h)
+            
+            # Score matrix
+            max_g = self.max_goals + 1
+            k = np.arange(max_g)
+            pmf_h = poisson.pmf(k, lam_h)
+            pmf_a = poisson.pmf(k, lam_a)
+            matrix = np.outer(pmf_h, pmf_a)
+            
+            # Rho correction
+            matrix[0, 0] *= (1 - lam_h * lam_a * self.rho)
+            matrix[0, 1] *= (1 + lam_h * self.rho)
+            matrix[1, 0] *= (1 + lam_a * self.rho)
+            matrix[1, 1] *= (1 - self.rho)
+            
+            matrix = np.maximum(matrix, 0)
+            matrix /= matrix.sum()
+            
+            # Sum probs
+            p_home = np.tril(matrix, -1).sum()
+            p_draw = np.diag(matrix).sum()
+            p_away = np.triu(matrix, 1).sum()
+            
+            # O/U 2.5
+            # Fast index math
+            i_idx, j_idx = np.indices((max_g, max_g))
+            p_over = matrix[i_idx + j_idx > 2.5].sum()
+            p_under = 1.0 - p_over
+            
+            # BTTS
+            p_btts = matrix[1:, 1:].sum()
+            
+            # 1X2 Prediction
+            conf_1x2 = max(p_home, p_away) - max(min(p_home, p_away), p_draw) # simplified
+            # Better: sort
+            sorted_p = np.sort([p_home, p_draw, p_away])
+            conf_1x2 = sorted_p[-1] - sorted_p[-2]
+            
+            predictions.append(Prediction(
+                match_id=match_id,
+                market=Market.MATCH_WINNER,
+                probabilities={"home": float(p_home), "draw": float(p_draw), "away": float(p_away)},
+                confidence=float(conf_1x2),
+                model_name=self.name
+            ))
+            
+            # Add other markets if needed...
+            
+            # 2. Update model state using ACTUAL result (if known)
+            if update and "FTHG" in row and "FTAG" in row:
+                fthg = row["FTHG"]
+                ftag = row["FTAG"]
+                if pd.notna(fthg) and pd.notna(ftag):
+                    self.update_match(home, away, int(fthg), int(ftag))
+                    
+        return predictions
     def _get_lambdas_vectorized(self, data: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         """Vectorized lambda calculation."""
         # 1. Map teams to parameters

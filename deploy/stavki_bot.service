@@ -1,16 +1,17 @@
 [Unit]
-Description=STAVKI v2 Telegram Bot
+Description=STAVKI Telegram Bot Service
 After=network.target
 
 [Service]
-User=root
-# Adjust paths as needed for actual user
-WorkingDirectory=/home/ubuntu/stavki_v2
-ExecStart=/home/ubuntu/stavki_v2/venv/bin/python3 scripts/run_bot.py
-Environment="PYTHONPATH=/home/ubuntu/stavki_v2"
-Environment="STAVKI_ENV=production"
+Type=simple
+User=serni13678
+WorkingDirectory=/home/serni13678/stavki_v2
+ExecStart=/usr/bin/python3 /home/serni13678/stavki_v2/scripts/start_bot.py
 Restart=always
 RestartSec=10
+EnvironmentFile=/home/serni13678/stavki_v2/.env
+StandardOutput=append:/home/serni13678/stavki_v2/logs/bot_service.log
+StandardError=append:/home/serni13678/stavki_v2/logs/bot_error.log
 
 [Install]
 WantedBy=multi-user.target

@@ -271,7 +271,13 @@ class MultiTaskModel(BaseModel):
         self.features = features or NEURAL_FEATURES
         
         self.network: Optional[MultiTaskNetwork] = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
+        logger.info(f"Using device: {self.device}")
         
         # Preprocessing
         self.encoders: Dict[str, LabelEncoder] = {}
@@ -282,6 +288,9 @@ class MultiTaskModel(BaseModel):
         data: pd.DataFrame,
         eval_ratio: float = 0.15,
         patience: int = 10,
+        accumulation_steps: int = 1,
+        num_workers: int = 0,
+        pin_memory: bool = False,
         **kwargs
     ) -> Dict[str, float]:
         """Train multi-task model with embeddings."""
@@ -430,7 +439,14 @@ class MultiTaskModel(BaseModel):
             torch.LongTensor(y_ou_train),
             torch.LongTensor(y_btts_train),
         )
-        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
+        train_loader = DataLoader(
+            train_dataset, 
+            batch_size=self.batch_size, 
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            persistent_workers=(num_workers > 0)
+        )
         
         X_num_eval_t = torch.FloatTensor(X_num_eval).to(self.device)
         X_cat_eval_t = torch.LongTensor(X_cat_eval).to(self.device)
@@ -443,14 +459,14 @@ class MultiTaskModel(BaseModel):
         patience_counter = 0
         best_state = None
         
+        optimizer.zero_grad() # Initialize gradients
+
         for epoch in range(self.n_epochs):
             self.network.train()
             train_loss = 0.0
             
-            for batch in train_loader:
+            for i, batch in enumerate(train_loader):
                 x_num, x_cat, y1, y2, y3 = [b.to(self.device) for b in batch]
-                
-                optimizer.zero_grad()
                 
                 logits = self.network(x_num, x_cat)
                 
@@ -460,12 +476,17 @@ class MultiTaskModel(BaseModel):
                 l3 = loss_btts(logits["btts"], y3)
                 
                 loss = l1 + l2 + l3
+                
+                # Gradient Accumulation: Normalize loss
+                loss = loss / accumulation_steps
                 loss.backward()
                 
-                torch.nn.utils.clip_grad_norm_(self.network.parameters(), 1.0)
-                optimizer.step()
+                if (i + 1) % accumulation_steps == 0 or (i + 1) == len(train_loader):
+                    torch.nn.utils.clip_grad_norm_(self.network.parameters(), 1.0)
+                    optimizer.step()
+                    optimizer.zero_grad()
                 
-                train_loss += loss.item()
+                train_loss += loss.item() * accumulation_steps # Scale back for logging
             
             # Eval
             self.network.eval()

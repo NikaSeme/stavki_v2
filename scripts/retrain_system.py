@@ -2,15 +2,33 @@
 import logging
 import sys
 import pandas as pd
+import numpy as np
 from pathlib import Path
+import gc
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
+import random
+import numpy as np
+
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.append(str(PROJECT_ROOT))
+
+def set_seed(seed: int = 42):
+    """Set random seeds for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    # torch will be imported inside implementation or we can import it here if safe
+    try:
+        import torch
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except ImportError:
+        pass
 
 # Imports
 from stavki.models.poisson.dixon_coles import DixonColesModel
@@ -23,6 +41,7 @@ from stavki.strategy.optimizer import WeightOptimizer
 from stavki.models.ensemble.predictor import EnsemblePredictor
 
 def main():
+    set_seed(42) # Ensure reproducibility
     logger.info("🚀 Starting Full System Retraining...")
     
     # 1. Load Data
@@ -41,6 +60,11 @@ def main():
         df["Date"] = pd.to_datetime(df["Date"])
         df = df.sort_values("Date").reset_index(drop=True)
     
+    # OPTIMIZATION: Downcast float64 to float32 to save 50% RAM
+    fcols = df.select_dtypes('float').columns
+    df[fcols] = df[fcols].astype(np.float32)
+    gc.collect()
+    
     # 2. Split Data (Temporal)
     # 60% Train, 20% Val (Early Stopping), 20% Test (Calibration)
     train_ratio = 0.60
@@ -54,6 +78,10 @@ def main():
     train_df = df.iloc[:train_end].copy().reset_index(drop=True)
     val_df = df.iloc[train_end:val_end].copy().reset_index(drop=True)
     test_df = df.iloc[val_end:].copy().reset_index(drop=True)
+    
+    # OPTIMIZATION: Free original dataframe immediately
+    del df
+    gc.collect()
     
     logger.info(f"Split: Train={len(train_df)}, Val={len(val_df)}, Test={len(test_df)}")
     
@@ -100,15 +128,16 @@ def main():
     
     # Neural MultiTask (Feature Fixed)
     logger.info("\n🧠 Training Neural MultiTask...")
-    nn = MultiTaskModel(n_epochs=20, batch_size=64) # Reduced epochs for speed/stability
-    nn.fit(train_df, eval_ratio=0.2)
+    # OPTIMIZATION: Gradient Accumulation (16 * 4 = 64 Effective Batch)
+    nn = MultiTaskModel(n_epochs=25, batch_size=16) 
+    nn.fit(train_df, eval_ratio=0.2, accumulation_steps=4, num_workers=0, pin_memory=False)
     nn.save(models_dir / "neural_multitask.pkl")
     models["neural"] = nn
     
     # Goals Regressor (Feature Fixed)
     logger.info("\n⚽ Training Goals Regressor...")
-    gr = GoalsRegressor(n_epochs=30) # Reduced epochs
-    gr.fit(train_df)
+    gr = GoalsRegressor(n_epochs=30, batch_size=16) 
+    gr.fit(train_df, accumulation_steps=4, num_workers=0, pin_memory=False)
     gr.save(models_dir / "goals_regressor.pkl")
     models["goals"] = gr
     
@@ -168,7 +197,7 @@ def main():
             actual_outcomes=actuals,
             odds_data=val_df,
             leagues=leagues,
-            metric="roi" 
+            metric="log_loss" 
         )
         
         # Save optimized weights

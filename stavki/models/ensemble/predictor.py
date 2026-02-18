@@ -77,6 +77,9 @@ class EnsemblePredictor(BaseModel):
         self.league_weights = league_weights or {}  # league -> market -> model -> weight
         self.use_disagreement = use_disagreement
         
+        # Shadow models (Watcher Only) - Not used in weighted average
+        self.shadow_models: Dict[str, BaseModel] = {}
+        
         # Track model performance for adaptive weighting
         self.model_performance: Dict[str, Dict[str, float]] = defaultdict(dict)
     
@@ -84,6 +87,11 @@ class EnsemblePredictor(BaseModel):
         """Add a model to the ensemble."""
         self.models[model.name] = model
         logger.info(f"Added model: {model.name}")
+
+    def add_shadow_model(self, model: BaseModel):
+        """Add a shadow (watcher) model."""
+        self.shadow_models[model.name] = model
+        logger.info(f"Added shadow model: {model.name}")
     
     def remove_model(self, name: str):
         """Remove a model from the ensemble."""
@@ -195,6 +203,18 @@ class EnsemblePredictor(BaseModel):
                         logger.warning(f"Model {name} prediction for {market.value} failed: {e}")
             else:
                 logger.debug(f"Model {name} is not fitted, skipping")
+
+        # --- Shadow Models Execution ---
+        for name, model in self.shadow_models.items():
+            if model.is_fitted:
+                 for market in self.markets:
+                    if not model.supports_market(market): continue
+                    try:
+                        logger.info(f"Running shadow prediction: {name} ({market.value})")
+                        # Shadow models handle their own logging/persistence
+                        _ = model.predict(df) 
+                    except Exception as e:
+                        logger.warning(f"Shadow model {name} failed: {e}")
 
         
         # 2. Build League Lookup Vectorized

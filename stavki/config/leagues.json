@@ -13,48 +13,48 @@
     "weights": {
       "poisson": 0.0,
       "lightgbm": 0.0,
-      "catboost": 0.0,
-      "neural": 1.0
+      "catboost": 0.7000000000000001,
+      "neural": 0.30000000000000004
     }
   },
   "seriea": {
     "weights": {
       "poisson": 0.0,
-      "lightgbm": 0.0,
-      "catboost": 0.0,
-      "neural": 1.0
+      "lightgbm": 0.1,
+      "catboost": 0.7000000000000001,
+      "neural": 0.2
     }
   },
   "laliga": {
     "weights": {
       "poisson": 0.0,
       "lightgbm": 0.0,
-      "catboost": 0.0,
-      "neural": 1.0
+      "catboost": 0.7000000000000001,
+      "neural": 0.30000000000000004
     }
   },
   "bundesliga": {
     "weights": {
       "poisson": 0.0,
       "lightgbm": 0.0,
-      "catboost": 0.0,
-      "neural": 1.0
+      "catboost": 0.75,
+      "neural": 0.25
     }
   },
   "ligue1": {
     "weights": {
       "poisson": 0.0,
       "lightgbm": 0.0,
-      "catboost": 0.0,
-      "neural": 1.0
+      "catboost": 0.45,
+      "neural": 0.55
     }
   },
   "championship": {
     "weights": {
       "poisson": 0.0,
       "lightgbm": 0.0,
-      "catboost": 0.0,
-      "neural": 1.0
+      "catboost": 0.7000000000000001,
+      "neural": 0.30000000000000004
     }
   }
 }

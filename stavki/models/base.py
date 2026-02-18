@@ -231,6 +231,9 @@ class BaseModel(ABC):
             elif "Poisson" in name or "Dixon" in name:
                 from stavki.models.poisson.dixon_coles import DixonColesModel
                 model_cls = DixonColesModel
+            elif "GoalsRegressor" in name:
+                from stavki.models.neural.goals_regressor import GoalsRegressor
+                model_cls = GoalsRegressor
             else:
                 # Fallback: try to guess or use base if possible (though base is abstract)
                 logger.warning(f"Unknown model type for {name}, trying to load as is.")

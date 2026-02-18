@@ -91,7 +91,12 @@ class UnifiedDataLoader:
                 with open(leagues_path) as f:
                     leagues_config = json.load(f)
                     # Config is Name -> ID, we need ID -> Name (lowercase)
-                    self.leagues_map = {v: k.lower().replace("_", "") for k, v in leagues_config.items()}
+                    # Filter out non-int values (like league weights dicts)
+                    self.leagues_map = {
+                        v: k.lower().replace("_", "") 
+                        for k, v in leagues_config.items() 
+                        if isinstance(v, int)
+                    }
             else:
                 logger.warning(f"Leagues config not found at {leagues_path}, using defaults")
                 self.leagues_map = {
@@ -112,7 +117,254 @@ class UnifiedDataLoader:
         
         logger.info(f"UnifiedDataLoader initialized (API: {'✓' if api_key else '✗'})")
 
-    # ... (normalize_team_name, _get_cache_path, _get_cached, _set_cache unchanged) ...
+    def normalize_team_name(self, name: str) -> str:
+        """
+        Normalize team name to standard format.
+        
+        Args:
+            name: Raw team name
+            
+        Returns:
+            Normalized name
+        """
+        if not name:
+            return "unknown"
+            
+        name = name.strip()
+        
+        # Mapping for common variations
+        # This could be loaded from a file
+        mapping = {
+            "Man City": "Manchester City",
+            "Man Utd": "Manchester United",
+            "Man United": "Manchester United",
+            "Spurs": "Tottenham Hotspur",
+            "Tottenham": "Tottenham Hotspur",
+            "Wolves": "Wolverhampton Wanderers",
+            "Nott'm Forest": "Nottingham Forest",
+            "Sheff Utd": "Sheffield United",
+            "Newcastle": "Newcastle United",
+            "West Ham": "West Ham United",
+            "Brighton": "Brighton & Hove Albion",
+            "Leeds": "Leeds United",
+            "Leicester": "Leicester City",
+            "Norwich": "Norwich City",
+            "Watford": "Watford FC",
+            "Bournemouth": "AFC Bournemouth",
+            # Bundesliga
+            "Bayern Munich": "Bayern München",
+            "Dortmund": "Borussia Dortmund",
+            "Leverkusen": "Bayer 04 Leverkusen",
+            "Frankfurt": "Eintracht Frankfurt",
+            "Gladbach": "Borussia Mönchengladbach",
+            "RB Leipzig": "RB Leipzig",
+            # La Liga
+            "Real Madrid": "Real Madrid",
+            "Barcelona": "FC Barcelona",
+            "Atletico Madrid": "Atlético Madrid",
+            "Sevilla": "Sevilla FC",
+            "Sociedad": "Real Sociedad",
+            "Bilbao": "Athletic Club",
+            # Serie A
+            "Inter Milan": "Inter",
+            "AC Milan": "Milan",
+            "Juventus": "Juventus",
+            "Napoli": "Napoli",
+            "Roma": "AS Roma",
+            "Lazio": "Lazio",
+            "Atalanta": "Atalanta",
+        }
+        
+        return mapping.get(name, name)
+
+    def _get_cache_path(self, key: str) -> Path:
+        """Get path for cache key."""
+        # Sanitize key
+        safe_key = hashlib.md5(key.encode()).hexdigest()
+        return self.cache_dir / f"{safe_key}.json"
+
+    def _get_cached(self, key: str) -> Optional[List]:
+        """Get data from cache if valid."""
+        path = self._get_cache_path(key)
+        if not path.exists():
+            return None
+            
+        try:
+            # Check TTL
+            mtime = datetime.fromtimestamp(path.stat().st_mtime)
+            age = datetime.now() - mtime
+            if age.total_seconds() > self.cache_ttl_hours * 3600:
+                return None
+                
+            with open(path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Cache read error: {e}")
+            return None
+
+    def _set_cache(self, key: str, data: List) -> None:
+        """Save data to cache."""
+        path = self._get_cache_path(key)
+        try:
+            with open(path, 'w') as f:
+                json.dump(data, f)
+        except Exception as e:
+            logger.warning(f"Cache write error: {e}")
+
+    def get_historical_data(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        leagues: Optional[List[str]] = None,
+        include_recent_from_api: bool = False,
+        force_reload: bool = False
+    ) -> pd.DataFrame:
+        """
+        Load historical match data from local Parquet cache or raw CSVs.
+        
+        Args:
+            start_date: Filter start date (YYYY-MM-DD)
+            end_date: Filter end date (YYYY-MM-DD)
+            leagues: List of league names (e.g. ['epl', 'laliga'])
+            include_recent_from_api: If True, fetches recent data from API and merges
+            force_reload: If True, rebuilds cache from raw CSVs
+            
+        Returns:
+            DataFrame with standardized columns
+        """
+        parquet_path = self.cache_dir.parent / "historical_matches.parquet"
+        
+        # 1. Try Load Parquet
+        df = pd.DataFrame()
+        if parquet_path.exists() and not force_reload:
+            try:
+                df = pd.read_parquet(parquet_path)
+                logger.info(f"Loaded {len(df)} matches from Parquet cache")
+            except Exception as e:
+                logger.warning(f"Failed to read Parquet cache: {e}")
+        
+        # 2. If no data, build from Raw CSVs
+        if df.empty:
+            logger.info("Building historical data from raw CSVs...")
+            dfs = []
+            raw_dir = PROJECT_ROOT / "data" / "raw"
+            
+            # Map of internal league names to CSV folder names if different
+            # Assuming they match for now (epl -> epl, bundesliga -> bundesliga)
+            
+            target_leagues = leagues or self.SPORTMONKS_LEAGUES.values()
+            
+            for league in target_leagues:
+                league_path = raw_dir / league
+                if not league_path.exists():
+                    continue
+                
+                for csv_file in league_path.glob("*.csv"):
+                    try:
+                        # Read CSV (handle encoding/errors)
+                        # football-data.co.uk often uses ISO-8859-1
+                        temp_df = pd.read_csv(csv_file, encoding='cp1252')
+                        
+                        # Normalize columns
+                        # Standard keys: Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR, B365H...
+                        if 'Date' not in temp_df.columns:
+                            continue
+                            
+                        # Parse dates (handle dd/mm/yy and dd/mm/yyyy)
+                        # Coerce errors to NaT then drop
+                        temp_df['Date'] = pd.to_datetime(temp_df['Date'], dayfirst=True, errors='coerce')
+                        temp_df = temp_df.dropna(subset=['Date'])
+                        
+                        # Rename standard columns
+                        rename_map = {
+                            'HomeTeam': 'HomeTeam',
+                            'AwayTeam': 'AwayTeam',
+                            'FTHG': 'home_score',
+                            'FTAG': 'away_score',
+                            'FTR': 'result',
+                            'B365H': 'home_odds',
+                            'B365D': 'draw_odds',
+                            'B365A': 'away_odds'
+                        }
+                        
+                        # Keep only available columns
+                        cols_to_keep = [c for c in rename_map.keys() if c in temp_df.columns] + ['Date']
+                        temp_df = temp_df[cols_to_keep].rename(columns=rename_map)
+                        
+                        # Add metadata
+                        temp_df['League'] = league
+                        temp_df['source'] = 'csv'
+                        
+                        # Extract season from filename if possible 'epl_2023_24.csv'
+                        try:
+                            season_part = csv_file.stem.split('_')[-2:] # 2023, 24
+                            if len(season_part) == 2 and season_part[0].isdigit():
+                                temp_df['season'] = f"{season_part[0]}-{season_part[1]}"
+                        except:
+                            pass
+                            
+                        dfs.append(temp_df)
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to process {csv_file}: {e}")
+            
+            if dfs:
+                df = pd.concat(dfs, ignore_index=True)
+                
+                # Normalize Team Names
+                logger.info("Normalizing team names...")
+                df['HomeTeam'] = df['HomeTeam'].apply(self.normalize_team_name)
+                df['AwayTeam'] = df['AwayTeam'].apply(self.normalize_team_name)
+                
+                # Cache to Parquet
+                try:
+                    df.to_parquet(parquet_path)
+                    logger.info(f"Saved {len(df)} matches to Parquet cache")
+                except Exception as e:
+                    logger.warning(f"Failed to save Parquet cache: {e}")
+            else:
+                logger.warning("No historical CSV data found!")
+                
+        # 3. Filter
+        if not df.empty:
+            if start_date:
+                df = df[df['Date'] >= start_date]
+            if end_date:
+                df = df[df['Date'] <= end_date]
+            if leagues:
+                # Filter by normalized or raw league name
+                df = df[df['League'].isin(leagues)]
+        
+        # 4. Integrate API Recent Data
+        if include_recent_from_api:
+            # Load recent from API
+            api_start = df['Date'].max().strftime("%Y-%m-%d") if not df.empty else (start_date or "2023-01-01")
+            
+            # Add 1 day buffer to avoid overlap duplication if possible
+            # But safer to overlap and dedup
+            recent_df = self._fetch_recent_from_api(start_date=api_start, end_date=end_date)
+            
+            if not recent_df.empty:
+                # Merge and Deduplicate
+                # Needs aligning columns first
+                # API returns: Date, HomeTeam, AwayTeam, League, fixture_id, B365H...
+                
+                # Map API columns to Standard
+                mapper = {
+                    'B365H': 'home_odds', 'B365D': 'draw_odds', 'B365A': 'away_odds',
+                    'xG_home': 'xg_home', 'xG_away': 'xg_away'
+                }
+                recent_df = recent_df.rename(columns=mapper)
+                recent_df['source'] = 'api'
+                
+                # TODO: Ensure consistent columns before concat
+                # For now, just concat and let pandas align
+                df = pd.concat([df, recent_df], ignore_index=True)
+                
+                # Deduplicate based on Date + Teams
+                df = df.drop_duplicates(subset=['Date', 'HomeTeam', 'AwayTeam'], keep='last')
+        
+        return df.sort_values('Date').reset_index(drop=True)
 
     def _fetch_recent_from_api(
         self,
@@ -341,7 +593,7 @@ if __name__ == "__main__":
     # Test historical data
     print("\n1. Loading historical data...")
     df = loader.get_historical_data(
-        start="2024-01-01",
+        start_date="2024-01-01",
         leagues=['epl', 'bundesliga'],
         include_recent_from_api=True
     )

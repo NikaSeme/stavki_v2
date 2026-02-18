@@ -88,7 +88,7 @@ class MarketAdjuster(BaseModel):
         Args:
             predictions: Original model predictions
             market_data: DataFrame with odds, CLV, sharp signals
-        
+            
         Returns:
             Adjusted predictions
         """

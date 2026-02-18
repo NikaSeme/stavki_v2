@@ -122,9 +122,13 @@ class GoalsRegressor(BaseModel):
         self.network: Optional[GoalsNetwork] = None
         self.feature_means: Optional[np.ndarray] = None
         self.feature_stds: Optional[np.ndarray] = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        else:
+            self.device = "cpu"
+        logger.info(f"Using device: {self.device}")
     
-    def fit(self, data: pd.DataFrame, **kwargs) -> Dict[str, float]:
+    def fit(self, data: pd.DataFrame, accumulation_steps: int = 1, num_workers: int = 0, pin_memory: bool = False, **kwargs) -> Dict[str, float]:
         """Train goals regressor."""
         df = data.copy()
         
@@ -180,7 +184,14 @@ class GoalsRegressor(BaseModel):
             torch.FloatTensor(y_h_train),
             torch.FloatTensor(y_a_train),
         )
-        train_loader = DataLoader(train_ds, batch_size=self.batch_size, shuffle=True)
+        train_loader = DataLoader(
+            train_ds, 
+            batch_size=self.batch_size, 
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            persistent_workers=(num_workers > 0)
+        )
         
         X_eval_t = torch.FloatTensor(X_eval).to(self.device)
         y_h_eval_t = torch.FloatTensor(y_h_eval).to(self.device)
@@ -191,13 +202,13 @@ class GoalsRegressor(BaseModel):
         patience = 15
         patience_counter = 0
         
+        optimizer.zero_grad() 
+
         for epoch in range(self.n_epochs):
             self.network.train()
             
-            for batch in train_loader:
+            for i, batch in enumerate(train_loader):
                 x, y_h, y_a = [b.to(self.device) for b in batch]
-                
-                optimizer.zero_grad()
                 
                 pred_h, pred_a = self.network(x)
                 
@@ -206,8 +217,13 @@ class GoalsRegressor(BaseModel):
                 loss_a = F.poisson_nll_loss(pred_a, y_a, log_input=False)
                 loss = loss_h + loss_a
                 
+                # Gradient Accumulation
+                loss = loss / accumulation_steps
                 loss.backward()
-                optimizer.step()
+                
+                if (i + 1) % accumulation_steps == 0 or (i + 1) == len(train_loader):
+                    optimizer.step()
+                    optimizer.zero_grad()
             
             # Eval
             self.network.eval()

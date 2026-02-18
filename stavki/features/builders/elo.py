@@ -17,6 +17,8 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from dataclasses import dataclass, field
 import logging
+import pandas as pd
+import bisect
 
 from stavki.data.schemas import Match, Outcome
 
@@ -40,11 +42,21 @@ class EloRating:
     
     def get_rating_at(self, timestamp: datetime) -> float:
         """Get rating as of a specific time (for backtesting)."""
-        # Find most recent rating before timestamp
-        relevant = [r for t, r in self.history if t < timestamp]
-        if relevant:
-            return relevant[-1]
-        return self.initial_rating
+        # Optimized O(log N) lookup using bisect
+        if not self.history:
+            return self.initial_rating
+            
+        # History is list of (time, rating)
+        # We want the last rating where t < timestamp
+        
+        # Keys for bisect
+        times = [r[0] for r in self.history]
+        idx = bisect.bisect_left(times, timestamp)
+        
+        if idx == 0:
+            return self.initial_rating
+        
+        return self.history[idx-1][1]
     
     def recent_momentum(self, n: int = 5) -> float:
         """ELO change over last N matches."""
@@ -352,3 +364,60 @@ class EloBuilder:
     def get_rating(self, team: str, as_of: Optional[datetime] = None) -> float:
         """Get single team's rating."""
         return self.calculator.get_rating(team, as_of)
+
+    def transform_matches(self, matches: List[Match]) -> pd.DataFrame:
+        """
+        Efficiently compute ELO features for a list of matches.
+        
+        Optimized for backtesting:
+        1. Sorts matches by date
+        2. Iterates once to compute ratings
+        3. Records PRE-MATCH ratings for features
+        4. Returns DataFrame aligned with input matches
+        
+        Args:
+            matches: List of Match objects
+            
+        Returns:
+            DataFrame with ELO features (elo_home, elo_away, etc.)
+        """
+        import pandas as pd
+        
+        # Sort matches to ensure correct ELO progression
+        sorted_matches = sorted([m for m in matches if m.is_completed], key=lambda x: x.commence_time)
+        
+        # Reset calculator for this batch to ensure consistency
+        # Or should we continue from current state? 
+        # For a transform pipeline, we usually start from scratch or existing state.
+        # Let's assume we use the current state of the calculator.
+        
+        features = []
+        
+        for match in sorted_matches:
+            # 1. Get current (pre-match) ratings/stats
+            home = match.home_team.normalized_name
+            away = match.away_team.normalized_name
+            
+            home_rating = self.calculator.get_rating(home)
+            away_rating = self.calculator.get_rating(away)
+            
+            home_record = self.calculator.get_elo_record(home)
+            away_record = self.calculator.get_elo_record(away)
+            
+            # 2. Record features
+            feat = {
+                "match_id": match.id,
+                "elo_home": home_rating,
+                "elo_away": away_rating,
+                "elo_diff": home_rating - away_rating,
+                "elo_promoted_home": 1 if home_record and home_record.matches_played < 10 else 0,
+                "elo_promoted_away": 1 if away_record and away_record.matches_played < 10 else 0,
+                "elo_momentum_home": home_record.recent_momentum() if home_record else 0.0,
+                "elo_momentum_away": away_record.recent_momentum() if away_record else 0.0,
+            }
+            features.append(feat)
+            
+            # 3. Update ratings (post-match)
+            self.calculator.process_match(match)
+            
+        return pd.DataFrame(features)

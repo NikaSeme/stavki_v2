@@ -955,6 +955,17 @@ class DailyPipeline:
                 logger.info(f"  Loaded model: {model.name} from {model_path.name}")
             except Exception as e:
                 logger.warning(f"  Could not load {model_path.name}: {e}")
+                
+        # --- Load Shadow Models (V3 Watcher) ---
+        try:
+            from stavki.models.v3_transformer_wrapper import V3WatcherWrapper
+            # Look for v3 weights
+            v3_path = models_dir / "v3_transformer.pth"
+            # Wrapper handles missing file gracefully
+            v3_watcher = V3WatcherWrapper(model_path=v3_path)
+            ensemble.add_shadow_model(v3_watcher)
+        except Exception as e:
+            logger.warning(f"Failed to initialize V3 Watcher: {e}")
         
         return ensemble if ensemble.models else None
     

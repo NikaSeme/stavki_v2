@@ -563,9 +563,9 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
         match_r_h = home_stats.get("avg_rating", None) if home_stats.get("has_ratings") else None
         match_r_a = away_stats.get("avg_rating", None) if away_stats.get("has_ratings") else None
         
-        # Use rolling if available, current match rating if first appearance
-        use_r_h = rolling_r_h if team_rating_history.get(home_team) else (match_r_h if match_r_h else DEFAULT_RATING)
-        use_r_a = rolling_r_a if team_rating_history.get(away_team) else (match_r_a if match_r_a else DEFAULT_RATING)
+        # Use rolling if available, else DEFAULT (prevents leakage from using current match stats)
+        use_r_h = rolling_r_h if team_rating_history.get(home_team) else DEFAULT_RATING
+        use_r_a = rolling_r_a if team_rating_history.get(away_team) else DEFAULT_RATING
         
         new_cols["avg_rating_home"].append(round(use_r_h, 2))
         new_cols["avg_rating_away"].append(round(use_r_a, 2))

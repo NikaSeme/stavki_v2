@@ -186,7 +186,7 @@ class EnsembleCalibrator:
                     calibrator = self.calibrators[key]
                     
                     if self.method == "isotonic":
-                        new_probs[outcome] = float(calibrator.predict([[prob]])[0])
+                        new_probs[outcome] = float(calibrator.predict([prob])[0])
                     elif self.method == "platt":
                         a, b = calibrator[1]
                         new_probs[outcome] = float(1 / (1 + np.exp(a * prob + b)))

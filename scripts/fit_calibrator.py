@@ -43,6 +43,11 @@ def load_historical(csv_path: Path) -> pd.DataFrame:
         raise ValueError(f"Missing required columns: {missing}")
 
     df["match_id"] = df.index.astype(str)
+    
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"])
+        df = df.sort_values("Date").reset_index(drop=True)
+    
     logger.info(f"Loaded {len(df)} historical matches from {csv_path.name}")
     return df
 
