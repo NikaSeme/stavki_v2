@@ -1043,6 +1043,27 @@ class DailyPipeline:
                 if "League" not in features_df.columns and "league" in features_df.columns:
                     features_df["League"] = features_df["league"]
                 
+                # Build match_id → event_id reverse lookup
+                # Models generate match_id from team names + date (a hash string),
+                # but the pipeline uses event_id (SportMonks fixture_id integer).
+                # We need to remap predictions back to event_id for the join in _find_value_bets.
+                from stavki.utils import generate_match_id
+                mid_to_eid = {}
+                eid_col = "event_id" if "event_id" in features_df.columns else None
+                ht_col = "HomeTeam" if "HomeTeam" in features_df.columns else "home_team"
+                at_col = "AwayTeam" if "AwayTeam" in features_df.columns else "away_team"
+                dt_col = "Date" if "Date" in features_df.columns else "commence_time"
+                
+                if eid_col:
+                    for _, row in features_df.iterrows():
+                        mid = generate_match_id(
+                            str(row.get(ht_col, "")),
+                            str(row.get(at_col, "")),
+                            row.get(dt_col),
+                        )
+                        mid_to_eid[mid] = str(row[eid_col])
+                    logger.info(f"  Built match_id→event_id mapping for {len(mid_to_eid)} matches")
+                
                 preds = ensemble.predict(features_df)
                 
                 # Apply calibration if calibrator is available
@@ -1051,7 +1072,8 @@ class DailyPipeline:
                     logger.info("  Applied probability calibration")
                 
                 for pred in preds:
-                    event_id = pred.match_id
+                    # Remap model's match_id to pipeline's event_id
+                    event_id = mid_to_eid.get(pred.match_id, pred.match_id)
                     market_key = pred.market.value if hasattr(pred.market, 'value') else str(pred.market)
                     
                     if event_id not in predictions:
@@ -1237,7 +1259,7 @@ class DailyPipeline:
             # Normalize (remove vig)
             total = sum(implied.values())
             if total > 0:
-                market_probs[event_id] = {k: v / total for k, v in implied.items()}
+                market_probs[str(event_id)] = {k: v / total for k, v in implied.items()}
         
         return market_probs
     
@@ -1276,7 +1298,7 @@ class DailyPipeline:
         candidates = []
         
         for _, match in matches_df.iterrows():
-            event_id = match["event_id"]
+            event_id = str(match["event_id"])
             home = match.get("home_team", "Home")
             away = match.get("away_team", "Away")
             league = match.get("league", match.get("sport_key", "unknown"))
@@ -1287,8 +1309,8 @@ class DailyPipeline:
             event_markets = model_probs[event_id]  # {market: {outcome: prob}}
             event_market_probs = market_probs.get(event_id, {})
             
-            # Get best prices for this event
-            event_prices = best_prices[best_prices["event_id"] == event_id]
+            # Get best prices for this event (handle str/int mismatch)
+            event_prices = best_prices[best_prices["event_id"].astype(str) == event_id]
             
             for _, price_row in event_prices.iterrows():
                 outcome = price_row.get("outcome_name")
