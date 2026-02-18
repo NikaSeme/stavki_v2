@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Default settings
 DEFAULT_MIN_EV = 0.05
-DEFAULT_BANKROLL = 1000.0
+DEFAULT_BANKROLL = 755.0
 
 
 @dataclass

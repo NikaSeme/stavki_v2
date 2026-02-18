@@ -65,7 +65,7 @@ class KellyStaker:
     # Default config - THESE ARE OPTIMIZED through backtesting
     DEFAULT_CONFIG = {
         # Kelly parameters
-        "kelly_fraction": 0.25,           # Fractional Kelly (should be optimized)
+        "kelly_fraction": 0.75,           # BOB'S AGGRESSIVE: 75% Kelly
         
         # Stake limits
         "max_stake_pct": 0.05,            # Max single bet: 5%

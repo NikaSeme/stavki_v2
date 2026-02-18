@@ -210,7 +210,10 @@ class StavkiBot:
             # 3. Recalculate Stakes (Kelly) & Filter Zero Stakes
             from stavki.strategy import KellyStaker
             from stavki.strategy.ev import EVResult
-            staker = KellyStaker(bankroll=user_settings.bankroll)
+            staker = KellyStaker(
+                bankroll=user_settings.bankroll,
+                config={"kelly_fraction": 0.75}
+            )
             
             final_bets = []
             
@@ -268,8 +271,8 @@ class StavkiBot:
                      "Bookmaker": bet.bookmaker,
                      "EV (%)": round(bet.ev * 100, 1),
                      "Stake ($)": round(stake_amt, 2),
-                     "Prob": round(prob_to_use, 3), # Added for transparency
-                     "Confidence": round(bet.confidence, 2),
+                     "Prob (%)": round(prob_to_use * 100, 1),
+                     "Confidence (%)": round(bet.confidence * 100, 1),
                 })
 
                 # Bob's Requirement: Explicit Specificity
@@ -281,6 +284,7 @@ class StavkiBot:
                     message += (
                         f"*{i+1}. {bet.home_team} vs {bet.away_team}*\n"
                         f"   {market_label}{bet.selection} @ {bet.odds:.2f} ({bet.bookmaker})\n"
+                        f"   Prob: {prob_to_use*100:.0f}% | Conf: {bet.confidence*100:.0f}%\n"
                         f"   EV: {bet.ev:.1%} | *Stake: ${stake_amt:.2f}*\n\n"
                     )
             
@@ -444,7 +448,10 @@ class StavkiBot:
                 # Use context.bot to send messages
                 try:
                     user_settings = self.settings_manager.get_settings(chat_id)
-                    staker = KellyStaker(bankroll=user_settings.bankroll)
+                    staker = KellyStaker(
+                        bankroll=user_settings.bankroll,
+                        config={"kelly_fraction": 0.75}
+                    )
                     
                     user_bets = [b for b in all_bets if b.ev >= user_settings.min_ev]
                     
@@ -490,9 +497,11 @@ class StavkiBot:
                         if bet.market not in ["1x2", "match_winner"]:
                             market_label = f"[{bet.market.replace('_', ' ').title()}] "
                         
+                        prob_to_use = getattr(bet, 'blended_prob', bet.model_prob)
                         msg += (
                             f"*{i}. {bet.home_team} vs {bet.away_team}*\n"
                             f"   {market_label}{bet.selection} @ {bet.odds:.2f}\n"
+                            f"   Prob: {prob_to_use*100:.0f}% | Conf: {bet.confidence*100:.0f}%\n"
                             f"   EV: {bet.ev:.1%} | Stake: ${stake_amt:.2f}\n\n"
                         )
                     if len(final_bets) > 5:
