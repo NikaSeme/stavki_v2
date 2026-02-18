@@ -1,0 +1,20 @@
+event_id,fixture_id,source_id,home_team,away_team,league,commence_time,home_odds,draw_odds,away_odds,home_bookmaker,away_bookmaker,source
+19427718,19427718,19427718,Wolverhampton Wanderers,Arsenal,soccer_epl,2026-02-18T20:00:00,12.0,6.0,1.25,MansionBet,MansionBet,sportmonks
+19427146,19427146,19427146,Brentford,Brighton & Hove Albion,soccer_epl,2026-02-21T15:00:00,1.88,3.82,3.58,Marathonbet,Marathonbet,sportmonks
+19427147,19427147,19427147,Chelsea,Burnley,soccer_epl,2026-02-21T15:00:00,1.23,7.0,11.0,bwin,bwin,sportmonks
+19427716,19427716,19427716,Aston Villa,Leeds United,soccer_epl,2026-02-21T15:00:00,1.86,3.72,3.28,Marathonbet,Marathonbet,sportmonks
+19439405,19439405,19439405,Levante,Villarreal,soccer_spain_la_liga,2026-02-18T19:00:00,3.89,3.53,1.86,Sbo,Sbo,sportmonks
+19439490,19439490,19439490,Athletic Club,Elche,soccer_spain_la_liga,2026-02-20T20:00:00,1.63,3.86,5.61,CloudBet,CloudBet,sportmonks
+19439498,19439498,19439498,Real Sociedad,Real Oviedo,soccer_spain_la_liga,2026-02-21T13:00:00,1.26,11.0,7.8,Marathonbet,Marathonbet,sportmonks
+19439497,19439497,19439497,Real Betis,Rayo Vallecano,soccer_spain_la_liga,2026-02-21T15:15:00,1.55,8.0,2.8,Unibet,Unibet,sportmonks
+19433676,19433676,19433676,FSV Mainz 05,Hamburger SV,soccer_germany_bundesliga,2026-02-20T19:30:00,2.14,3.24,3.08,Marathonbet,Marathonbet,sportmonks
+19433674,19433674,19433674,FC Köln,TSG Hoffenheim,soccer_germany_bundesliga,2026-02-21T14:30:00,3.1,3.6,2.12,10Bet,10Bet,sportmonks
+19433675,19433675,19433675,FC Union Berlin,Bayer 04 Leverkusen,soccer_germany_bundesliga,2026-02-21T14:30:00,2.74,3.3,2.48,10Bet,10Bet,sportmonks
+19433677,19433677,19433677,FC Bayern München,Eintracht Frankfurt,soccer_germany_bundesliga,2026-02-21T14:30:00,1.18,8.0,12.0,Coral,Coral,sportmonks
+19433681,19433681,19433681,VfL Wolfsburg,FC Augsburg,soccer_germany_bundesliga,2026-02-21T14:30:00,2.1,3.24,3.72,MelBet,MelBet,sportmonks
+19425118,19425118,19425118,AC Milan,Como,soccer_italy_serie_a,2026-02-18T19:45:00,1.91,3.0,3.0,WilliamHill,WilliamHill,sportmonks
+19425140,19425140,19425140,Sassuolo,Hellas Verona,soccer_italy_serie_a,2026-02-20T19:45:00,1.87,3.46,5.21,1xbet,1xbet,sportmonks
+19425136,19425136,19425136,Juventus,Como,soccer_italy_serie_a,2026-02-21T14:00:00,1.87,6.4,3.38,Marathonbet,Marathonbet,sportmonks
+19425137,19425137,19425137,Lecce,Inter,soccer_italy_serie_a,2026-02-21T17:00:00,8.3,8.2,1.26,1xbet,1xbet,sportmonks
+19467833,19467833,19467833,Brest,Olympique Marseille,soccer_france_ligue_one,2026-02-20T19:45:00,3.4,3.6,1.96,MansionBet,MansionBet,sportmonks
+19467832,19467832,19467832,Lens,Monaco,soccer_france_ligue_one,2026-02-21T16:00:00,1.7,4.2,4.33,bet365,bet365,sportmonks

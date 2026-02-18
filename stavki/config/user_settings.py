@@ -5,11 +5,13 @@ User Settings Management
 Handles persistence of user-specific configuration (EV threshold, bankroll).
 Stores data in a local JSON file.
 Thread-safe and atomic to prevent corruption.
+Includes automatic backup for corrupted files.
 """
 
 import json
 import logging
 import os
+import shutil
 import threading
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -54,6 +56,7 @@ class UserSettingsManager:
         self.settings: Dict[str, UserConfig] = {}
         self.global_config: Dict[str, Any] = {}
         self._lock = threading.RLock()
+        self._load_failed = False
         
         self._load()
 
@@ -70,26 +73,40 @@ class UserSettingsManager:
                     
                 # Handle "users" key structure
                 if "users" in data:
-                    users_data = data["users"]
+                    self.settings = {
+                        str(k): UserConfig.from_dict(v) 
+                        for k, v in data["users"].items()
+                    }
                     self.global_config = {k: v for k, v in data.items() if k != "users"}
                 else:
-                    # Legacy or flat structure check - if keys look like chat IDs (integers)
-                    # For safety, if it's not structured, assume it's flat users
-                    users_data = data
+                    # Legacy or flat structure check
+                    self.settings = {
+                        str(k): UserConfig.from_dict(v) 
+                        for k, v in data.items() 
+                        if isinstance(v, dict)
+                    }
                     self.global_config = {}
 
-                for chat_id, config_data in users_data.items():
-                    if isinstance(config_data, dict):
-                         self.settings[str(chat_id)] = UserConfig.from_dict(config_data)
-                         
                 logger.info(f"Loaded settings for {len(self.settings)} users.")
+                self._load_failed = False
+                
             except Exception as e:
                 logger.error(f"Failed to load user settings: {e}")
-                # Don't crash, just start with empty settings if file is garbage
+                # Backup corrupted file
+                backup_path = self.storage_path.with_suffix(".corrupt")
+                try:
+                    shutil.copy(self.storage_path, backup_path)
+                    logger.warning(f"Backed up corrupted settings to {backup_path}")
+                except Exception as ex:
+                    logger.error(f"Failed to backup corrupted settings: {ex}")
+                
+                # Start fresh but flag it? 
+                # Actually if we backed up, we can safely overwrite on next save.
                 self.settings = {}
+                self._load_failed = True # Just for info
 
     def _save(self):
-        """Save settings to JSON file slightly atomically."""
+        """Save settings to JSON file atomically."""
         with self._lock:
             try:
                 # Ensure directory exists
@@ -104,6 +121,8 @@ class UserSettingsManager:
                 temp_path = self.storage_path.with_suffix(".tmp")
                 with open(temp_path, "w") as f:
                     json.dump(output_data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno()) # Force write to disk
                 
                 os.replace(temp_path, self.storage_path)
                 logger.info("User settings saved.")
@@ -115,8 +134,8 @@ class UserSettingsManager:
         with self._lock:
             chat_str = str(chat_id)
             if chat_str not in self.settings:
-                # Create default entry? No, just return default object.
-                # Only create when they customize.
+                # Implicitly create default config? 
+                # Let's not save yet, only when they modify.
                 return UserConfig()
             return self.settings[chat_str]
 

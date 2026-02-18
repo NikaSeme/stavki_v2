@@ -172,10 +172,12 @@ class LiquidityBlender:
     """
     
     # Default alpha values per tier
+    # Default alpha values per tier
+    # BOB'S AGGRESSIVE STRATEGY: PURE AI (Alpha = 1.0)
     DEFAULT_ALPHAS = {
-        "tier1": 0.30,  # 30% model, 70% market (elite leagues)
-        "tier2": 0.50,  # 50/50 (major leagues)
-        "tier3": 0.70,  # 70% model, 30% market (minor leagues)
+        "tier1": 1.0,  # 100% model
+        "tier2": 1.0,  # 100% model
+        "tier3": 1.0,  # 100% model
     }
     
     def __init__(

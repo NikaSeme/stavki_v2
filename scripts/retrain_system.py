@@ -56,6 +56,22 @@ def main():
         sys.exit(1)
         
     logger.info(f"Loaded {len(df)} matches. Sorting by date...")
+
+    # Compatibility: Alias snake_case columns to CamelCase if missing
+    # NeuralMultiTask and DixonColes expect CamelCase (HomeTeam, League)
+    aliases = {
+        "home_team": "HomeTeam",
+        "away_team": "AwayTeam", 
+        "league": "League",
+        "date": "Date",
+        "home_score": "FTHG",
+        "away_score": "FTAG"
+    }
+    for search_col, target_col in aliases.items():
+        if target_col not in df.columns and search_col in df.columns:
+            logger.info(f"Aliasing column: {search_col} -> {target_col}")
+            df[target_col] = df[search_col]
+
     if "Date" in df.columns:
         df["Date"] = pd.to_datetime(df["Date"])
         df = df.sort_values("Date").reset_index(drop=True)

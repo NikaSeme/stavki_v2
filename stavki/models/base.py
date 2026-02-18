@@ -17,6 +17,13 @@ import pickle
 import json
 import logging
 
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
+    torch = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -177,7 +184,17 @@ class BaseModel(ABC):
         """Load model from file (supporting both pickle and split-file formats)."""
         path = Path(path)
         
-        # 1. Try Split-File Format (JSON Config)
+        # 1. Inject legacy module aliases for unpickling
+        try:
+            import sys
+            import stavki.data.schemas.match
+            # Alias 'team' to 'stavki.data.schemas.match' if not present
+            if 'team' not in sys.modules:
+                sys.modules['team'] = stavki.data.schemas.match
+        except ImportError:
+            pass
+
+        # 2. Try Split-File Format (JSON Config)
         # Check if path is a directory or if path_config.json exists
         # Our save logic uses: parent / f"{stem}_config.json"
         config_path = path.parent / f"{path.stem}_config.json"
@@ -208,8 +225,18 @@ class BaseModel(ABC):
         if not path.exists():
             raise FileNotFoundError(f"Model file not found: {path} (checked .pkl and _config.json)")
             
-        with open(path, "rb") as f:
-            state = pickle.load(f)
+        if HAS_TORCH:
+            try:
+                # torch.load can handle standard pickles and remap devices
+                # SafeToAutoRun: we trust our own model files
+                state = torch.load(path, map_location=torch.device('cpu'), weights_only=False)
+            except Exception:
+                # Fallback to standard pickle if torch fails or not a torch file
+                with open(path, "rb") as f:
+                    state = pickle.load(f)
+        else:
+            with open(path, "rb") as f:
+                state = pickle.load(f)
         
         # If state is a dict (new save format), reconstruct object
         if isinstance(state, dict):

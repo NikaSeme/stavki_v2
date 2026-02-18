@@ -1,0 +1,205 @@
+/Users/macuser/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+stavki.pipelines.daily -   Loaded calibrator (7 outcome calibrators)
+stavki.pipelines.daily - Using fresh cached odds (21m old): odds_20260218_170503.csv
+stavki.data.collectors.sportmonks - No league IDs found in config, falling back to legacy defaults
+stavki.pipelines.daily - Enriching match 1/10 (ID: 19427718, Fixture: 19427718)...
+stavki.pipelines.daily -   Weather fetch failed for 19427718: 'str' object has no attribute 'get'
+stavki.pipelines.daily - Enriching match 2/10 (ID: 19427146, Fixture: 19427146)...
+stavki.pipelines.daily - Enriching match 3/10 (ID: 19427147, Fixture: 19427147)...
+stavki.pipelines.daily - Enriching match 4/10 (ID: 19427716, Fixture: 19427716)...
+stavki.pipelines.daily - Enriching match 5/10 (ID: 19439405, Fixture: 19439405)...
+stavki.pipelines.daily -   Weather fetch failed for 19439405: 'str' object has no attribute 'get'
+stavki.pipelines.daily - Enriching match 6/10 (ID: 19439490, Fixture: 19439490)...
+stavki.pipelines.daily -   Weather fetch failed for 19439490: 'str' object has no attribute 'get'
+stavki.pipelines.daily - Enriching match 7/10 (ID: 19439498, Fixture: 19439498)...
+stavki.pipelines.daily - Enriching match 8/10 (ID: 19439497, Fixture: 19439497)...
+stavki.pipelines.daily - Enriching match 9/10 (ID: 19433676, Fixture: 19433676)...
+stavki.pipelines.daily -   Weather fetch failed for 19433676: 'str' object has no attribute 'get'
+stavki.pipelines.daily - Enriching match 10/10 (ID: 19433674, Fixture: 19433674)...
+stavki.pipelines.daily -   → 10/10 matches enriched
+stavki.pipelines.daily - Loading history from data/training_data.parquet...
+stavki.pipelines.daily -   -> Loaded 23599 rows from training_data.parquet
+stavki.features.builders.form - FormCalculator: pre-indexed 181 teams
+stavki.features.builders.form - FormCalculator: pre-indexed 181 teams
+stavki.features.builders.advanced_stats - AdvancedFeatureBuilder: pre-indexed 181 teams
+stavki.features.builders.corners - CornersFeatureBuilder: 181 teams profiled | global avg corners per side = 5.0
+stavki.features.builders.referee - RefereeFeatureBuilder: 0 referees profiled (no referee data)
+/Users/macuser/Documents/something/stavki_v2/stavki/features/builders/synth_xg.py:172: RuntimeWarning: divide by zero encountered in matmul
+  y_pred = X_bias @ beta
+/Users/macuser/Documents/something/stavki_v2/stavki/features/builders/synth_xg.py:172: RuntimeWarning: overflow encountered in matmul
+  y_pred = X_bias @ beta
+/Users/macuser/Documents/something/stavki_v2/stavki/features/builders/synth_xg.py:172: RuntimeWarning: invalid value encountered in matmul
+  y_pred = X_bias @ beta
+stavki.features.builders.synth_xg - SyntheticXGBuilder: Calibrated on 47182 samples | R²=0.197 | coefs: shots=0.0010, sot=0.3413, bc=0.0010, intercept=0.3240
+stavki.features.builders.synth_xg - SyntheticXGBuilder (calibrated): 181 teams profiled | avg xG: home=1.957, away=1.667
+stavki.features.builders.seasonal - SeasonalFeatureBuilder: ready (no fitting needed)
+stavki.features.builders.player_impact - PlayerImpactFeatureBuilder: 0 players (0 with ratings), 0 teams profiled
+stavki.features.builders.injuries - InjuryFeatureBuilder: 0 teams profiled
+stavki.features.builders.formation - FormationFeatureBuilder: 0 teams profiled, 0 formation matchup pairs tracked
+stavki.features.builders.venue - VenueFeatureBuilder: 0 venues cached
+stavki.features.builders.manager - ManagerFeatureBuilder: 0 teams profiled
+stavki.features.registry - FeatureRegistry (full) fitted on 23599 matches
+stavki.models.ensemble.predictor - Loaded ensemble weights from league_weights.json
+stavki.pipelines.daily -   Found 17 model files to load: ['dixon_coles.pkl', 'catboost.pkl', 'neural_multitask.pkl', 'LightGBM_BTTS.pkl', 'GoalsRegressor.pkl', 'poisson.pkl', 'DixonColes.pkl', 'goals_regressor_cpu.pkl', 'NeuralMultiTask.pkl', 'lightgbm.pkl', 'goals_regressor.pkl', 'CatBoost_1X2.pkl', 'MarketAdjuster.pkl', 'LightGBM_1X2.pkl', 'NeuralMultiTask_preproc.joblib', 'calibrator.joblib', 'neural_multitask_preproc.joblib']
+/Users/macuser/Library/Python/3.9/lib/python/site-packages/torch/_weights_only_unpickler.py:549: UserWarning: Detected pickle protocol 4 in the checkpoint, which was not the default pickle protocol used by `torch.load` (2). The weights_only Unpickler might not support all instructions implemented by this protocol, please file an issue for adding support if you encounter this.
+  warnings.warn(
+stavki.models.ensemble.predictor - Added model: DixonColes
+stavki.pipelines.daily -   Loaded model: DixonColes from dixon_coles.pkl
+stavki.models.ensemble.predictor - Added model: CatBoost_1X2
+stavki.pipelines.daily -   Loaded model: CatBoost_1X2 from catboost.pkl
+stavki.models.neural.multitask - Using device: mps
+stavki.models.ensemble.predictor - Added model: NeuralMultiTask
+stavki.pipelines.daily -   Loaded model: NeuralMultiTask from neural_multitask.pkl
+stavki.models.ensemble.predictor - Added model: LightGBM_BTTS
+stavki.pipelines.daily -   Loaded model: LightGBM_BTTS from LightGBM_BTTS.pkl
+/Users/macuser/Library/Python/3.9/lib/python/site-packages/torch/_weights_only_unpickler.py:549: UserWarning: Detected pickle protocol 4 in the checkpoint, which was not the default pickle protocol used by `torch.load` (2). The weights_only Unpickler might not support all instructions implemented by this protocol, please file an issue for adding support if you encounter this.
+  warnings.warn(
+stavki.models.neural.goals_regressor - Using device: cpu
+stavki.models.ensemble.predictor - Added model: GoalsRegressor
+stavki.pipelines.daily -   Loaded model: GoalsRegressor from GoalsRegressor.pkl
+stavki.models.ensemble.predictor - Added model: DixonColes
+stavki.pipelines.daily -   Loaded model: DixonColes from poisson.pkl
+stavki.models.ensemble.predictor - Added model: DixonColes
+stavki.pipelines.daily -   Loaded model: DixonColes from DixonColes.pkl
+stavki.models.neural.goals_regressor - Using device: cpu
+stavki.models.ensemble.predictor - Added model: GoalsRegressor
+stavki.pipelines.daily -   Loaded model: GoalsRegressor from goals_regressor_cpu.pkl
+stavki.models.neural.multitask - Using device: mps
+stavki.models.ensemble.predictor - Added model: NeuralMultiTask
+stavki.pipelines.daily -   Loaded model: NeuralMultiTask from NeuralMultiTask.pkl
+stavki.models.ensemble.predictor - Added model: LightGBM_1X2
+stavki.pipelines.daily -   Loaded model: LightGBM_1X2 from lightgbm.pkl
+stavki.models.neural.goals_regressor - Using device: cpu
+stavki.models.ensemble.predictor - Added model: GoalsRegressor
+stavki.pipelines.daily -   Loaded model: GoalsRegressor from goals_regressor.pkl
+stavki.models.ensemble.predictor - Added model: CatBoost_1X2
+stavki.pipelines.daily -   Loaded model: CatBoost_1X2 from CatBoost_1X2.pkl
+stavki.models.base - Unknown model type for MarketAdjuster, trying to load as is.
+stavki.models.base - Failed to reconstruct model MarketAdjuster: Can't instantiate abstract class BaseModel with abstract methods _get_state, _set_state, fit, predict
+stavki.pipelines.daily -   Could not load MarketAdjuster.pkl: Can't instantiate abstract class BaseModel with abstract methods _get_state, _set_state, fit, predict
+Traceback (most recent call last):
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/pipelines/daily.py", line 1059, in _load_ensemble
+    model = BaseModel.load(model_path)
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/models/base.py", line 291, in load
+    raise e
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/models/base.py", line 273, in load
+    instance = model_cls()
+TypeError: Can't instantiate abstract class BaseModel with abstract methods _get_state, _set_state, fit, predict
+stavki.models.ensemble.predictor - Added model: LightGBM_1X2
+stavki.pipelines.daily -   Loaded model: LightGBM_1X2 from LightGBM_1X2.pkl
+stavki.pipelines.daily -   Could not load NeuralMultiTask_preproc.joblib: Can't get attribute 'dtype' on <module 'stavki.data.schemas.match' from '/Users/macuser/Documents/something/stavki_v2/stavki/data/schemas/match.py'>
+Traceback (most recent call last):
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/models/base.py", line 231, in load
+    state = torch.load(path, map_location=torch.device('cpu'))
+  File "/Users/macuser/Library/Python/3.9/lib/python/site-packages/torch/serialization.py", line 1553, in load
+    raise pickle.UnpicklingError(_get_wo_message(str(e))) from None
+_pickle.UnpicklingError: Weights only load failed. In PyTorch 2.6, we changed the default value of the `weights_only` argument in `torch.load` from `False` to `True`. Re-running `torch.load` with `weights_only` set to `False` will likely succeed, but it can result in arbitrary code execution. Do it only if you got the file from a trusted source.
+Please file an issue with the following so that we can make `weights_only=True` compatible with your use case: WeightsUnpickler error: Unsupported operand 149
+
+Check the documentation of torch.load to learn more about types accepted by default with weights_only https://pytorch.org/docs/stable/generated/torch.load.html.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/pipelines/daily.py", line 1059, in _load_ensemble
+    model = BaseModel.load(model_path)
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/models/base.py", line 235, in load
+    state = pickle.load(f)
+AttributeError: Can't get attribute 'dtype' on <module 'stavki.data.schemas.match' from '/Users/macuser/Documents/something/stavki_v2/stavki/data/schemas/match.py'>
+stavki.pipelines.daily -   Could not load calibrator.joblib: invalid load key, '\x02'.
+Traceback (most recent call last):
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/models/base.py", line 231, in load
+    state = torch.load(path, map_location=torch.device('cpu'))
+  File "/Users/macuser/Library/Python/3.9/lib/python/site-packages/torch/serialization.py", line 1553, in load
+    raise pickle.UnpicklingError(_get_wo_message(str(e))) from None
+_pickle.UnpicklingError: Weights only load failed. In PyTorch 2.6, we changed the default value of the `weights_only` argument in `torch.load` from `False` to `True`. Re-running `torch.load` with `weights_only` set to `False` will likely succeed, but it can result in arbitrary code execution. Do it only if you got the file from a trusted source.
+Please file an issue with the following so that we can make `weights_only=True` compatible with your use case: WeightsUnpickler error: Unsupported operand 149
+
+Check the documentation of torch.load to learn more about types accepted by default with weights_only https://pytorch.org/docs/stable/generated/torch.load.html.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/pipelines/daily.py", line 1059, in _load_ensemble
+    model = BaseModel.load(model_path)
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/models/base.py", line 235, in load
+    state = pickle.load(f)
+_pickle.UnpicklingError: invalid load key, '\x02'.
+stavki.pipelines.daily -   Could not load neural_multitask_preproc.joblib: Can't get attribute 'dtype' on <module 'stavki.data.schemas.match' from '/Users/macuser/Documents/something/stavki_v2/stavki/data/schemas/match.py'>
+Traceback (most recent call last):
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/models/base.py", line 231, in load
+    state = torch.load(path, map_location=torch.device('cpu'))
+  File "/Users/macuser/Library/Python/3.9/lib/python/site-packages/torch/serialization.py", line 1553, in load
+    raise pickle.UnpicklingError(_get_wo_message(str(e))) from None
+_pickle.UnpicklingError: Weights only load failed. In PyTorch 2.6, we changed the default value of the `weights_only` argument in `torch.load` from `False` to `True`. Re-running `torch.load` with `weights_only` set to `False` will likely succeed, but it can result in arbitrary code execution. Do it only if you got the file from a trusted source.
+Please file an issue with the following so that we can make `weights_only=True` compatible with your use case: WeightsUnpickler error: Unsupported operand 149
+
+Check the documentation of torch.load to learn more about types accepted by default with weights_only https://pytorch.org/docs/stable/generated/torch.load.html.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/pipelines/daily.py", line 1059, in _load_ensemble
+    model = BaseModel.load(model_path)
+  File "/Users/macuser/Documents/something/stavki_v2/stavki/models/base.py", line 235, in load
+    state = pickle.load(f)
+AttributeError: Can't get attribute 'dtype' on <module 'stavki.data.schemas.match' from '/Users/macuser/Documents/something/stavki_v2/stavki/data/schemas/match.py'>
+stavki.models.v3_transformer_wrapper - Loaded V3 Transformer from models/v3_transformer.pth
+stavki.models.ensemble.predictor - Added shadow model: V3_Watcher
+/Users/macuser/Library/Python/3.9/lib/python/site-packages/torch/_weights_only_unpickler.py:549: UserWarning: Detected pickle protocol 4 in the checkpoint, which was not the default pickle protocol used by `torch.load` (2). The weights_only Unpickler might not support all instructions implemented by this protocol, please file an issue for adding support if you encounter this.
+  warnings.warn(
+stavki.pipelines.daily -   Using ensemble with 6 models
+stavki.models.ensemble.predictor - Running shadow prediction: V3_Watcher (1x2)
+stavki.models.v3_transformer_wrapper - Logged 10 shadow predictions to outputs/logs/shadow/v3_shadow_log_20260218.csv
+stavki.pipelines.daily -   Applied probability calibration
+stavki.pipelines.daily -   → 10 matches predicted (30 market slots)
+--- DEEP SYSTEM AUDIT START ---
+
+[Phase 1] Initialization
+  Pipeline initialized.
+  Staker Config: {'kelly_fraction': 0.25, 'max_stake_pct': 0.05, 'min_stake_pct': 0.0001, 'min_stake_amount': 0.1, 'max_daily_exposure_pct': 0.2, 'max_league_exposure_pct': 0.1, 'max_concurrent_bets': 50, 'drawdown_reduce_threshold': 0.15, 'drawdown_pause_threshold': 0.25, 'drawdown_reduction_factor': 0.5}
+  Bankroll: 1000.0
+
+[Phase 2] Kelly Simulation (Mock Data)
+  Input: Prob=0.65, Odds=2.0, EV=0.3
+  Result: Stake=50.0 (5.00%), Reason=None
+  PASS: Good bet accepted.
+
+[Phase 3] Live Data Inspection
+  Fetched 19 odds rows.
+  Odds Columns: ['event_id', 'fixture_id', 'source_id', 'home_team', 'away_team', 'league', 'commence_time', 'home_odds', 'draw_odds', 'away_odds', 'home_bookmaker', 'away_bookmaker', 'source']
+  WARN: 'market_key' column not found in odds_df.
+  Feature Zeros (Top 5): {'PSCH': 10, 'B365<2.5': 10, 'BbAHh': 10, 'BbMxAHH': 10, 'BbAvAHH': 10}
+
+[Phase 3.1] Model Breakdown
+  Loading ensemble for inspection...
+  Checking DixonColes...
+    Sample: {'home': 0.16970038557991501, 'draw': 0.22072690897668953, 'away': 0.6095727054433954}
+    Avg Draw Prob: 0.250
+  Checking CatBoost_1X2...
+    Sample: {'home': 0.23412581382252273, 'draw': 0.34608779980383947, 'away': 0.4197863863736377}
+    Avg Draw Prob: 0.488
+    !! SUSPECT !! CatBoost_1X2 is heavily biased towards draws.
+  Checking NeuralMultiTask...
+    Sample: {'home': 0.03517528623342514, 'draw': 0.3814983069896698, 'away': 0.5833264589309692}
+    Avg Draw Prob: 0.462
+    !! SUSPECT !! NeuralMultiTask is heavily biased towards draws.
+  Checking LightGBM_BTTS...
+    Sample (Non-1x2): {'yes': 0.5373961218836565, 'no': 0.4626038781163435}
+  Checking GoalsRegressor...
+    Sample (Non-1x2): {'over_2.5': 0.6537576597794852, 'under_2.5': 0.3462423402205148}
+  Checking LightGBM_1X2...
+    Sample: {'away': 0.437809965231473, 'draw': 0.253710327850368, 'home': 0.30847970691815907}
+    Avg Draw Prob: 0.336
+
+[Phase 3.3] Specific Diagnosis
+  PASS: 'HomeTeam' is in features_df.
+  Attempting to load models/DixonColes.pkl manually...
+  PASS: Loaded DixonColes successfully.
+
+[Phase 3.4] Ensemble Distribution
+  Avg Home Prob: 0.270
+  Avg Draw Prob: 0.511
+  Avg Away Prob: 0.219
+  WARN: Draw probability seems suspiciously high (>40%)

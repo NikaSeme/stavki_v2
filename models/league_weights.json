@@ -1,50 +1,66 @@
 {
-  "championship": {
-    "1x2": {
+  "EPL": 8,
+  "LA_LIGA": 564,
+  "BUNDESLIGA": 82,
+  "SERIE_A": 384,
+  "LIGUE_1": 301,
+  "CHAMPIONSHIP": 9,
+  "EREDIVISIE": 72,
+  "PRIMEIRA": 462,
+  "SCOTTISH": 501,
+  "BELGIAN": 208,
+  "epl": {
+    "min_ev": 0.02,
+    "weights": {
       "DixonColes": 0.0,
-      "CatBoost_1X2": 0.9485658629936419,
-      "NeuralMultiTask": 0.0,
-      "LightGBM_1X2": 0.051434137006358085
+      "LightGBM_1X2": 0.0,
+      "CatBoost_1X2": 0.75,
+      "NeuralMultiTask": 0.25
     }
   },
   "seriea": {
-    "1x2": {
+    "min_ev": 0.02,
+    "weights": {
       "DixonColes": 0.0,
-      "CatBoost_1X2": 1.0,
-      "NeuralMultiTask": 0.0,
-      "LightGBM_1X2": 0.0
-    }
-  },
-  "epl": {
-    "1x2": {
-      "DixonColes": 0.0,
-      "CatBoost_1X2": 1.0,
-      "NeuralMultiTask": 0.0,
-      "LightGBM_1X2": 0.0
-    }
-  },
-  "ligue1": {
-    "1x2": {
-      "DixonColes": 0.0,
-      "CatBoost_1X2": 1.0,
-      "NeuralMultiTask": 0.0,
-      "LightGBM_1X2": 0.0
+      "LightGBM_1X2": 0.05,
+      "CatBoost_1X2": 0.8500000000000001,
+      "NeuralMultiTask": 0.1
     }
   },
   "laliga": {
-    "1x2": {
+    "min_ev": 0.02,
+    "weights": {
       "DixonColes": 0.0,
-      "CatBoost_1X2": 0.8719843565113159,
-      "NeuralMultiTask": 0.1280156434886841,
-      "LightGBM_1X2": 0.0
+      "LightGBM_1X2": 0.0,
+      "CatBoost_1X2": 0.8,
+      "NeuralMultiTask": 0.2
     }
   },
   "bundesliga": {
-    "1x2": {
+    "min_ev": 0.02,
+    "weights": {
       "DixonColes": 0.0,
-      "CatBoost_1X2": 0.9101996743656786,
-      "NeuralMultiTask": 0.08980032563432135,
-      "LightGBM_1X2": 0.0
+      "LightGBM_1X2": 0.0,
+      "CatBoost_1X2": 0.9,
+      "NeuralMultiTask": 0.1
+    }
+  },
+  "ligue1": {
+    "min_ev": 0.02,
+    "weights": {
+      "DixonColes": 0.0,
+      "LightGBM_1X2": 0.0,
+      "CatBoost_1X2": 0.65,
+      "NeuralMultiTask": 0.35000000000000003
+    }
+  },
+  "championship": {
+    "min_ev": 0.03,
+    "weights": {
+      "DixonColes": 0.0,
+      "LightGBM_1X2": 0.15000000000000002,
+      "CatBoost_1X2": 0.7000000000000001,
+      "NeuralMultiTask": 0.15000000000000002
     }
   }
 }

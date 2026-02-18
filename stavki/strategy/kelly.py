@@ -146,6 +146,13 @@ class KellyStaker:
         Returns:
             StakeResult with recommended stake
         """
+        # Type safety check
+        if not isinstance(ev_result, EVResult):
+            raise TypeError(
+                f"Expected EVResult object, got {type(ev_result).__name__}. "
+                "Did you pass raw floats? Wrap them in EVResult(...) first."
+            )
+
         prob = ev_result.model_prob
         odds = ev_result.odds
         

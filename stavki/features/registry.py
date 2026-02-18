@@ -306,22 +306,80 @@ class FeatureRegistry:
         df = pd.DataFrame(rows)
         return df.set_index("match_id")
     
+    def get_all_feature_names(self) -> List[str]:
+        """
+        Get canonical list of all feature names produced by the registry.
+        Acts as the Single Source of Truth for model feature lists.
+        """
+        # Base features that don't depend on specific builders
+        # (Though ideally even these should come from builders)
+        # For now, we simulate a dummy computation to get keys, 
+        # but a cleaner way would be to ask builders directly.
+        
+        # Since builders are stateful/complex, we'll use the dummy compute method
+        # but cache the result class-level if possible, or just recompute (fast enough).
+        
+        # We need to handle the "enriched" features manually if they require match data
+        # that the dummy compute doesn't provide.
+        
+        dummy_names = self.get_feature_names()
+        
+        # Ensure consistent order
+        return sorted(dummy_names)
+
     def get_feature_names(self) -> List[str]:
-        """Get list of all feature names."""
-        # Compute for dummy match to get names
-        sample = self.compute(
-            "sample_team_a",
-            "sample_team_b",
-            None
-        )
-        # Manually add features that require match/enrichment data
+        """Get list of all feature names (internal helper)."""
+        # Hack to allow getting names without fitting
+        was_fitted = self._is_fitted
+        self._is_fitted = True
+        
+        try:
+            # Compute for dummy match to get keys
+            # We use empty lists/defaults where possible
+            sample = self.compute(
+                "sample_team_a",
+                "sample_team_b",
+                datetime.now(),
+                model_probs={"poisson": [0.33, 0.33, 0.34]}, # dummy probs for disagreement
+                market_probs={"home": 0.33}
+            )
+            keys = list(sample.keys())
+        except Exception as e:
+            logger.warning(f"Failed to compute sample features during name discovery: {e}")
+            # Fallback to hardcoded list if dynamic discovery fails
+            keys = [
+                "elo_home", "elo_away", "elo_diff",
+                "form_home_pts", "form_away_pts", "form_diff",
+                "form_home_gf", "form_away_gf", "gf_diff", "ga_diff",
+                "advanced_xg_home", "advanced_xg_away",
+                "synth_xg_home", "synth_xg_away",
+                "ref_strictness_t1", "ref_goals_zscore"
+            ]
+        finally:
+            self._is_fitted = was_fitted
+
+        # Manually add features that might be missing from sample (e.g. requires lineups)
+        # This acts as the manual registry for now until builders expose .feature_names property
         enriched_names = [
             "roster_regularity_home", "roster_experience_home",
-            "roster_regularity_away", "roster_experience_away",
+            "roster_regularity_away", "roster_experience_away", 
             "xi_xg90_home", "xi_xg90_away",
             "xi_strength_ratio_home", "xi_strength_ratio_away",
+             # Player Impact
+            "avg_rating_home", "avg_rating_away", "rating_delta",
+            "key_players_home", "key_players_away",
+            "xi_experience_home", "xi_experience_away",
+            # Formation
+            "formation_score_home", "formation_score_away",
+            "formation_mismatch", "formation_is_known",
+             # Venue
+            "home_advantage", "is_neutral",
+             # Weather
+             "temp_c", "wind_speed", "humidity", "precip_mm",
+             # Disagreement
+             "disagreement_score", "contrarian_index"
         ]
-        keys = list(sample.keys())
+        
         for name in enriched_names:
             if name not in keys:
                 keys.append(name)

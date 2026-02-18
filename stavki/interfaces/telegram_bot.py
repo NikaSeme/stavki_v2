@@ -3,12 +3,15 @@ STAVKI Telegram Bot
 ===================
 
 Telegram interface for receiving betting alerts and interacting with STAVKI.
-Optimized for performance and stability.
+Optimized for performance, stability, and memory efficiency.
+Uses native Telegram JobQueue for scheduling.
 """
 
 import logging
 import asyncio
 import threading
+import gc
+import sys
 from datetime import datetime
 from typing import Optional, List, Any
 import io
@@ -77,16 +80,29 @@ class GlobalPipelineManager:
         """Run the heavy pipeline and cache results."""
         with self._lock:
             try:
+                logger.info("GlobalPipelineManager: run_scan started")
                 pipeline = self.get_pipeline()
-                logger.info("Starting Global Pipeline Scan...")
+                logger.info("Starting Global Pipeline Scan (pipeline.run)...")
                 
-                # We pass a default bankroll, but staking will be recalculated per user
-                # This run is just to find the OPPORTUNITIES
-                bets = pipeline.run()
+                # Check memory before run
+                gc.collect()
                 
+                try:
+                    bets = pipeline.run()
+                    logger.info("GlobalPipelineManager: pipeline.run finished successfully")
+                except BaseException as e:
+                    logger.critical(f"CRITICAL: pipeline.run CRASHED: {e}", exc_info=True)
+                    # Force GC to cleanup potential partial state
+                    gc.collect()
+                    raise
+
                 self.cached_bets = bets
                 self.last_run_time = datetime.now()
                 logger.info(f"Global scan complete. Cached {len(bets)} bets.")
+                
+                # Cleanup after run to free memory
+                gc.collect()
+                
                 return bets
             except Exception as e:
                 logger.error(f"Scan failed: {e}", exc_info=True)
@@ -122,7 +138,7 @@ class StavkiBot:
         # Try to import telegram library
         try:
             from telegram import Bot
-            from telegram.ext import Application, CommandHandler
+            from telegram.ext import Application, CommandHandler, ContextTypes
             self._telegram_available = True
         except ImportError:
             logger.warning("python-telegram-bot not installed. Run: pip install python-telegram-bot")
@@ -130,7 +146,6 @@ class StavkiBot:
             
         # Initialize UserSettingsManager
         from stavki.config.user_settings import UserSettingsManager
-        # Path relative to project root mostly likely
         self.settings_manager = UserSettingsManager("config/user_settings.json")
     
     async def start(self, update, context):
@@ -159,14 +174,23 @@ class StavkiBot:
             bets = self.pipeline_manager.get_cached_bets(max_age_minutes=60)
             
             if bets is None:
-                await update.message.reply_text(
+                status_msg = await update.message.reply_text(
                     "⏳ No fresh scan available yet.\n"
-                    "The system scans every hour. I'll trigger a quick check now, please wait..."
+                    "Triggering a live scan (this takes ~30-60s)..."
                 )
-                # Trigger run in thread pool to not block asyncio loop
+                
+                # Trigger run in thread pool
                 loop = asyncio.get_event_loop()
+                # Run the scan
                 await loop.run_in_executor(None, self.pipeline_manager.run_scan)
+                # Re-fetch
                 bets = self.pipeline_manager.get_cached_bets()
+                
+                # Update status message to done (or just delete/ignore)
+                try:
+                    await context.bot.delete_message(chat_id=chat_id, message_id=status_msg.message_id)
+                except Exception:
+                    pass # Ignore if fail
                 
             if not bets:
                 await update.message.reply_text("❌ No value bets found in the market right now.")
@@ -183,23 +207,58 @@ class StavkiBot:
                  )
                  return
                  
-            # 3. Recalculate Stakes (Kelly)
+            # 3. Recalculate Stakes (Kelly) & Filter Zero Stakes
             from stavki.strategy import KellyStaker
-            # We can reuse staker logic efficiently
+            from stavki.strategy.ev import EVResult
             staker = KellyStaker(bankroll=user_settings.bankroll)
             
+            final_bets = []
+            
+            for bet in filtered_bets:
+                # Construct EVResult wrapper for KellyStaker
+                # Use blended_prob for consistent Kelly sizing (reflects market sentiment + model)
+                prob_to_use = getattr(bet, 'blended_prob', bet.model_prob)
+
+                ev_res = EVResult(
+                    match_id=bet.match_id,
+                    market=bet.market,
+                    selection=bet.selection,
+                    model_prob=prob_to_use, 
+                    odds=bet.odds,
+                    ev=bet.ev,
+                    edge_pct=0.0, # Not needed for stake calc
+                    implied_prob=1/bet.odds,
+                    bookmaker=bet.bookmaker
+                )
+                
+                rec_stake = staker.calculate_stake(ev_res)
+                stake_amt = rec_stake.stake_amount
+                
+                if stake_amt > 0:
+                    final_bets.append({
+                        "bet": bet,
+                        "stake": stake_amt,
+                        "prob": prob_to_use
+                    })
+
+            if not final_bets:
+                 await update.message.reply_text(
+                     f"❌ Found positive EV bets but Kelly Criterion suggests $0.00 stake (too risky or low bankroll).\n"
+                     f"Try increasing bankroll or lowering Min EV."
+                 )
+                 return
+
             # Create display message
-            message = f"✅ *Found {len(filtered_bets)} Value Bets*\n"
+            message = f"✅ *Found {len(final_bets)} Profitable Bets*\n"
             message += f"_(Settings: EV>{user_settings.min_ev:.1%}, Bank=${user_settings.bankroll:.0f})_\n\n"
             
             csv_data = []
 
-            for i, bet in enumerate(filtered_bets):
-                # Recalculate stake for this user
-                rec_stake = staker.calculate_stake(bet.ev, bet.odds - 1, bet.confidence)
-                stake_amt = rec_stake * user_settings.bankroll
+            for i, item in enumerate(final_bets):
+                bet = item["bet"]
+                stake_amt = item["stake"]
+                prob_to_use = item["prob"]
                 
-                # Add to CSV list
                 csv_data.append({
                      "Match": f"{bet.home_team} vs {bet.away_team}",
                      "Time": bet.kickoff.strftime("%Y-%m-%d %H:%M") if bet.kickoff else "TBD",
@@ -209,27 +268,31 @@ class StavkiBot:
                      "Bookmaker": bet.bookmaker,
                      "EV (%)": round(bet.ev * 100, 1),
                      "Stake ($)": round(stake_amt, 2),
+                     "Prob": round(prob_to_use, 3), # Added for transparency
                      "Confidence": round(bet.confidence, 2),
                 })
 
-                # Add to text message (limit to top 5)
+                # Bob's Requirement: Explicit Specificity
+                market_label = ""
+                if bet.market not in ["1x2", "match_winner"]:
+                    market_label = f"[{bet.market.replace('_', ' ').title()}] "
+                
                 if i < 5:
                     message += (
                         f"*{i+1}. {bet.home_team} vs {bet.away_team}*\n"
-                        f"   {bet.selection} @ {bet.odds:.2f} ({bet.bookmaker})\n"
+                        f"   {market_label}{bet.selection} @ {bet.odds:.2f} ({bet.bookmaker})\n"
                         f"   EV: {bet.ev:.1%} | *Stake: ${stake_amt:.2f}*\n\n"
                     )
             
-            if len(filtered_bets) > 5:
-                message += f"_...and {len(filtered_bets) - 5} more in the attached CSV._"
+            if len(final_bets) > 5:
+                message += f"_...and {len(final_bets) - 5} more in the attached CSV._"
             
             await update.message.reply_text(message, parse_mode="Markdown")
             
-            # Send CSV Document
+            # Send CSV
             if csv_data:
                 try:
                     df = pd.DataFrame(csv_data)
-                    # Ensure descending sort by EV
                     df = df.sort_values("EV (%)", ascending=False)
                     
                     buf = io.BytesIO()
@@ -237,24 +300,40 @@ class StavkiBot:
                     buf.seek(0)
                     
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+                    # Increased read timeout for large files or slow connections implicitly
                     await update.message.reply_document(
                         document=buf,
                         filename=f"stavki_bets_{timestamp}.csv",
-                        caption=f"📄 Full list of {len(filtered_bets)} value bets."
+                        caption=f"📄 Full list of {len(filtered_bets)} value bets.",
+                        read_timeout=30, 
+                        write_timeout=30,
+                        connect_timeout=30
                     )
                 except Exception as e:
                     logger.error(f"Failed to send CSV: {e}")
+                    await update.message.reply_text(f"⚠️ Could not send CSV file: {str(e)}")
         except Exception as e:
             logger.error(f"Error in get_bets: {e}", exc_info=True)
             await update.message.reply_text("⚠️ An error occurred while fetching bets. Please try again.")
     
+    async def force_scan(self, update, context):
+        """Admin command to force a scan."""
+        # Simple security check (optional, or rely on admin_chat_ids)
+        await update.message.reply_text("🔄 Force starting scan...")
+        
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self.pipeline_manager.run_scan)
+        
+        bets = self.pipeline_manager.get_cached_bets()
+        count = len(bets) if bets else 0
+        await update.message.reply_text(f"✅ Scan complete. Found {count} bets globally.")
+
     async def status(self, update, context):
         """Handle /status command."""
         try:
             chat_id = update.effective_chat.id
             user_settings = self.settings_manager.get_settings(chat_id)
             
-            # Check pipeline status
             last_run = self.pipeline_manager.last_run_time
             last_run_str = last_run.strftime('%H:%M') if last_run else "Never"
             
@@ -275,50 +354,36 @@ class StavkiBot:
             await update.message.reply_text("⚠️ Error retrieving status.")
 
     async def subscribe(self, update, context):
-        """Handle /subscribe command."""
         chat_id = update.effective_chat.id
         self.subscribers.add(chat_id)
-        await update.message.reply_text(
-            "✅ *Subscribed!*\n"
-            "You will receive alerts every hour if value bets are found."
-        )
+        await update.message.reply_text("✅ *Subscribed!* You will receive hourly alerts.")
 
     async def unsubscribe(self, update, context):
-        """Handle /unsubscribe command."""
         chat_id = update.effective_chat.id
         self.subscribers.discard(chat_id)
         await update.message.reply_text("👋 Unsubscribed.")
 
     async def help_command(self, update, context):
-        """Handle /help command."""
         help_text = (
             "🤖 *STAVKI Bot Help*\n\n"
             "/bets - Show current bets\n"
-            "/settings (or /status) - View config\n"
-            "/ev 0.05 (or 5%) - Set min EV\n"
+            "/status - View config\n"
+            "/ev 0.05 - Set min EV\n"
             "/bankroll 1000 - Set bankroll\n"
             "/subscribe - Enable alerts\n"
         )
         await update.message.reply_text(help_text, parse_mode="Markdown")
 
     async def set_ev_command(self, update, context):
-        """Handle /set_ev or /ev command."""
         try:
             if not context.args:
                 await update.message.reply_text("Usage: /ev <value> (e.g. 5% or 0.05)")
                 return
             
             try:
-                # robust parsing: remove % and allow comma
                 raw = context.args[0].replace("%", "").replace(",", ".")
                 val = float(raw)
-                
-                # Intelligent scale detection: if > 1, assume percentage (e.g. 5 -> 0.05)
-                # Unless user literally means > 100% EV (rare but possible), but 1.05 is ambiguous.
-                # Thresholds: > 1.0 usually means %. 
-                if val >= 1.0: 
-                    val /= 100.0
-                
+                if val >= 1.0: val /= 100.0
             except ValueError:
                 await update.message.reply_text("❌ Invalid number.")
                 return
@@ -326,18 +391,15 @@ class StavkiBot:
             chat_id = update.effective_chat.id
             self.settings_manager.update_ev(chat_id, val)
             await update.message.reply_text(f"✅ Min EV set to {val:.1%}")
-            
         except Exception as e:
             logger.error(f"Error in set_ev: {e}")
-            await update.message.reply_text("❌ Failed to update settings.")
+            await update.message.reply_text("❌ Failed.")
 
     async def set_bankroll_command(self, update, context):
-        """Handle /set_bankroll or /bankroll command."""
         try:
             if not context.args:
                 await update.message.reply_text("Usage: /bankroll <amount> (e.g. 1000)")
                 return
-            
             try:
                 input_str = context.args[0].replace("$", "").replace(",", "").replace("€", "").replace("£", "")
                 val = float(input_str)
@@ -349,34 +411,24 @@ class StavkiBot:
             chat_id = update.effective_chat.id
             self.settings_manager.update_bankroll(chat_id, val)
             await update.message.reply_text(f"✅ Bankroll set to ${val:.2f}")
-            
         except Exception as e:
             logger.error(f"Error in set_bankroll: {e}")
-            await update.message.reply_text("❌ Failed to update settings.")
+            await update.message.reply_text("❌ Failed.")
 
-    # --- Scheduler Logic ---
+    # --- JobQueue Logic ---
 
-    async def send_alert(self, message: str, chat_id: int):
-        """Send async alert."""
-        if not self._telegram_available: return
-        from telegram import Bot
-        try:
-            bot = Bot(token=self.config.token)
-            await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
-        except Exception as e:
-            logger.error(f"Failed to alert {chat_id}: {e}")
-
-    def _scheduled_scan(self):
+    async def scheduled_scan_job(self, context):
         """
-        Global Scheduled Scan.
-        1. Run Pipeline ONCE.
-        2. Filter & Alert PER USER.
+        Runs every hour via JobQueue.
+        1. Executes Pipeline (in executor).
+        2. Alerts Subscribers.
         """
-        logger.info("⏰ Starting Scheduled Global Scan...")
+        logger.info("⏰ Starting Scheduled Global Scan (Job)...")
         
         try:
-            # 1. Run Global Pipeline
-            all_bets = self.pipeline_manager.run_scan()
+            # 1. Run Pipeline (Blocking, so use executor)
+            loop = asyncio.get_event_loop()
+            all_bets = await loop.run_in_executor(None, self.pipeline_manager.run_scan)
             
             if not all_bets:
                 logger.info("No bets found globally.")
@@ -386,87 +438,114 @@ class StavkiBot:
                 return
 
             # 2. Alert Subscribers
-            # Need to run async code from sync scheduler thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
             from stavki.strategy import KellyStaker
 
             for chat_id in self.subscribers:
-                # Get User Config
-                user_settings = self.settings_manager.get_settings(chat_id)
-                staker = KellyStaker(bankroll=user_settings.bankroll)
-                
-                # Filter
-                user_bets = [b for b in all_bets if b.ev >= user_settings.min_ev]
-                
-                if not user_bets:
-                    continue
+                # Use context.bot to send messages
+                try:
+                    user_settings = self.settings_manager.get_settings(chat_id)
+                    staker = KellyStaker(bankroll=user_settings.bankroll)
                     
-                # Format
-                msg = f"🚨 *New Value Bets Found!* 🚨\n\n"
-                for i, bet in enumerate(user_bets[:5], 1):
-                    rec_stake = staker.calculate_stake(bet.ev, bet.odds - 1, bet.confidence)
-                    stake_amt = rec_stake * user_settings.bankroll
+                    user_bets = [b for b in all_bets if b.ev >= user_settings.min_ev]
                     
-                    msg += (
-                        f"*{i}. {bet.home_team} vs {bet.away_team}*\n"
-                        f"   {bet.selection} @ {bet.odds:.2f}\n"
-                        f"   EV: {bet.ev:.1%} | Stake: ${stake_amt:.2f}\n\n"
-                    )
-                
-                if len(user_bets) > 5:
-                    msg += f"_...and {len(user_bets)-5} more._"
+                    if not user_bets:
+                        continue
+                        
+                    final_bets = []
+                    for bet in user_bets:
+                        # Construct EVResult wrapper for KellyStaker
+                        # Use blended_prob for consistent Kelly sizing
+                        prob_to_use = getattr(bet, 'blended_prob', bet.model_prob)
+                        
+                        ev_res = EVResult(
+                            match_id=bet.match_id,
+                            market=bet.market,
+                            selection=bet.selection,
+                            model_prob=prob_to_use,
+                            odds=bet.odds,
+                            ev=bet.ev,
+                            edge_pct=0.0,
+                            implied_prob=1/bet.odds,
+                            bookmaker=bet.bookmaker
+                        )
+                        rec_stake = staker.calculate_stake(ev_res)
+                        stake_amt = rec_stake.stake_amount
+                        
+                        if stake_amt > 0:
+                            final_bets.append({
+                                "bet": bet,
+                                "stake": stake_amt
+                            })
+
+                    if not final_bets:
+                        continue
+                        
+                    msg = f"🚨 *New Profitable Bets Found!* 🚨\n\n"
+                    for i, item in enumerate(final_bets[:5], 1):
+                        bet = item["bet"]
+                        stake_amt = item["stake"]
+                        
+                        # Bob's Requirement: Explicit Specificity
+                        market_label = ""
+                        if bet.market not in ["1x2", "match_winner"]:
+                            market_label = f"[{bet.market.replace('_', ' ').title()}] "
+                        
+                        msg += (
+                            f"*{i}. {bet.home_team} vs {bet.away_team}*\n"
+                            f"   {market_label}{bet.selection} @ {bet.odds:.2f}\n"
+                            f"   EV: {bet.ev:.1%} | Stake: ${stake_amt:.2f}\n\n"
+                        )
+                    if len(final_bets) > 5:
+                        msg += f"_...and {len(final_bets)-5} more._"
+                        
+                    await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
                     
-                # Send
-                loop.run_until_complete(self.send_alert(msg, chat_id))
-                
-            loop.close()
+                except Exception as e:
+                    logger.error(f"Failed to alert {chat_id}: {e}")
+                    
             logger.info("Scan and alerts completed.")
             
         except Exception as e:
-            logger.error(f"Scheduled scan failed: {e}", exc_info=True)
+            logger.error(f"Scheduled scan job failed: {e}", exc_info=True)
 
     def run(self):
-        """Start the bot with scheduler."""
+        """Start the bot."""
         if not self._telegram_available: return
         
         from telegram.ext import Application, CommandHandler
-        from apscheduler.schedulers.background import BackgroundScheduler
-        from apscheduler.triggers.interval import IntervalTrigger
-        
-        # Scheduler
-        self.scheduler = BackgroundScheduler()
-        self.scheduler.add_job(
-            self._scheduled_scan, 
-            trigger=IntervalTrigger(minutes=60), 
-            id='hourly_scan',
-            max_instances=1,  # Prevent multiple overlapped scans
-            coalesce=True     # Skip missed executions
-        )
-        self.scheduler.start()
         
         app = Application.builder().token(self.config.token).build()
         
-        # Handlers
+        # Add Handlers
         for cmd, func in [
             ("start", self.start),
             ("bets", self.get_bets),
             ("status", self.status),
-            ("settings", self.status),  # Alias
+            ("settings", self.status),
             ("subscribe", self.subscribe),
             ("unsubscribe", self.unsubscribe),
             ("help", self.help_command),
             ("set_ev", self.set_ev_command),
-            ("ev", self.set_ev_command),          # Alias
+            ("ev", self.set_ev_command),
             ("set_bankroll", self.set_bankroll_command),
-            ("bankroll", self.set_bankroll_command) # Alias
+            ("bankroll", self.set_bankroll_command),
+            # NEW admin command
+            ("force_scan", self.force_scan),
         ]:
             app.add_handler(CommandHandler(cmd, func))
             
+        # Add Scheduled Job
+        if app.job_queue:
+            app.job_queue.run_repeating(
+                self.scheduled_scan_job, 
+                interval=3600, # 1 hour
+                first=10       # Start after 10s
+            )
+            logger.info("Scheduled scan job added (every 1h).")
+            
         logger.info("Bot started! 🚀")
         
-        # Add alert chat if configured (admin)
+        # Auto-subscribe admin for alerts
         if self.config.alert_chat_id:
              self.subscribers.add(self.config.alert_chat_id)
         
@@ -476,7 +555,6 @@ def create_bot(token: str, min_ev: float = 0.05) -> StavkiBot:
     """Create and configure bot instance."""
     config = BotConfig(token=token, min_ev_alert=min_ev)
     
-    # Load env for default chat id
     import os
     from dotenv import load_dotenv
     load_dotenv()

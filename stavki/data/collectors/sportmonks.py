@@ -110,13 +110,15 @@ class SportMonksClient:
         self,
         api_key: str,
         rate_limit: int = 180,  # Requests per minute
-        timeout: int = 30,
-        cache_ttl: int = 300  # Cache TTL in seconds
+        timeout: Any = (3.05, 27), # (connect, read) tuple
+        cache_ttl: int = 300,  # Cache TTL in seconds
+        retries: int = 5       # Max retries
     ):
         self.api_key = api_key
         self.rate_limit = rate_limit
         self.timeout = timeout
         self.cache_ttl = cache_ttl
+        self.max_retries = retries
         
         # Load leagues from config
         self.league_ids = {}
@@ -126,20 +128,22 @@ class SportMonksClient:
             if config_path.exists():
                 with open(config_path) as f:
                     full_config = json.load(f)
-                    per_league = full_config.get("per_league", {})
                     
-                    # Extract sportmonks_id from detailed config
-                    # Structure: "soccer_epl": { "sportmonks_id": 8, ... }
+                    # 1. New Format: per_league -> league -> sportmonks_id
+                    per_league = full_config.get("per_league", {})
                     for league_key, league_data in per_league.items():
                         if "sportmonks_id" in league_data:
-                            # Map internal key (soccer_epl) to ID
-                            # Ideally we map Enum name (EPL) to ID
-                            # But legacy used strings. We'll map config keys to IDs.
                             self.league_ids[league_key] = league_data["sportmonks_id"]
-                            
-                            # Also map simple names if possible (e.g. "EPL" if key is "soccer_epl")
                             simple_name = league_key.replace("soccer_", "").upper()
                             self.league_ids[simple_name] = league_data["sportmonks_id"]
+                            
+                    # 2. Legacy/Simple Format: EPL: 8 directly at top level or in explicit map
+                    # Check top level keys that look like league names
+                    for k, v in full_config.items():
+                        if isinstance(v, int):
+                            self.league_ids[k] = v
+                        elif k == "league_ids" and isinstance(v, dict):
+                            self.league_ids.update(v)
             
             if not self.league_ids: 
                 logger.warning("No league IDs found in config, falling back to legacy defaults")
@@ -199,11 +203,15 @@ class SportMonksClient:
         endpoint: str,
         params: Optional[Dict] = None,
         includes: Optional[List[str]] = None,
-        max_retries: int = 5,
+        max_retries: Optional[int] = None,
     ) -> Dict:
         """Make API request with rate limiting, retry on 429, and error handling."""
         url = f"{self.BASE_URL}/{endpoint}"
         
+        # Use instance default if not provided
+        if max_retries is None:
+            max_retries = self.max_retries
+            
         # Build params
         request_params = params or {}
         if includes:
@@ -802,7 +810,9 @@ class SportMonksClient:
         data = response.get("data", {})
         weather = data.get("weatherreport", {})
         
-        if not weather:
+        # Handle case where weather is not a dict (e.g. "NS" string or None)
+        if not weather or not isinstance(weather, dict):
+            return None
             return None
         
         return {
@@ -852,25 +862,84 @@ class SportMonksClient:
             
             # Smart market matching
             match_found = False
-            if market == "1X2":
-                if any(alias in market_name for alias in ["1X2", "Fulltime Result", "Match Winner", "3Way Result"]):
+            normalized_name = market_name.lower()
+            target_market_type = "1x2" # default
+            
+            if "Result & Both Teams To Score" in market_name or "Result/Both Teams To Score" in market_name:
+                match_found = True
+                target_market_type = "result_btts"
+            elif "Correct Score" in market_name:
+                match_found = True
+                target_market_type = "correct_score"
+            elif "Double Chance" in market_name:
+                match_found = True
+                target_market_type = "double_chance"
+            
+            # Existing checks...
+            elif market == "1X2":
+                # Primary 1X2 Market
+                valid_aliases = ["1x2", "fulltime result", "match winner", "3way result", "match result"]
+                # Exclude ONLY if we are specifically looking for PURE 1X2
+                # If we are in "ALL" mode (which we are), we want everything properly labeled.
+                exclude_terms = ["corner", "card", "half", "period", "handicap", "booking", "goal", "qualify"]
+                
+                if any(alias in normalized_name for alias in valid_aliases):
+                    if not any(ex in normalized_name for ex in exclude_terms):
+                        # Ensure we don't accidentally grab "Result & BTTS" as "1x2" here
+                        # The specific check above handles "Result & BTTS", so if we are here, likely safe
+                        if "btts" not in normalized_name and "both teams" not in normalized_name:
+                            match_found = True
+                            target_market_type = "1x2"
+                        
+            elif market == "ALL":
+                # We want everything valid
+                # 1. Main 1X2
+                if any(alias in normalized_name for alias in ["1x2", "fulltime result", "match winner"]):
+                    if not any(ex in normalized_name for ex in ["corner", "card", "half", "period"]):
+                        if "btts" in normalized_name or "both teams" in normalized_name:
+                             match_found = True
+                             target_market_type = "result_btts"
+                        else:
+                             match_found = True
+                             target_market_type = "1x2"
+                
+                # 2. Corners 1X2 
+                elif "corner" in normalized_name and "1x2" in normalized_name:
                     match_found = True
-            else:
-                if market.lower() in market_name.lower():
-                    match_found = True
+                    target_market_type = "corners_1x2"
                     
+                # 3. BTTS (Both Teams To Score)
+                elif "both teams to score" in normalized_name or "btts" in normalized_name:
+                     if "result" not in normalized_name and "winner" not in normalized_name:
+                         match_found = True
+                         target_market_type = "btts"
+                         
+                # 4. Correct Score
+                elif "correct score" in normalized_name:
+                    match_found = True
+                    target_market_type = "correct_score"
+                    
+                # 5. Double Chance
+                elif "double chance" in normalized_name:
+                    match_found = True
+                    target_market_type = "double_chance"
+
             if not match_found:
                 continue
             
-            # Key by bookmaker
+            # Key by bookmaker AND market type
             bm_id = odd.get("bookmaker_id")
             if not bm_id:
                 continue
-                
-            if bm_id not in grouped_odds:
-                grouped_odds[bm_id] = {
+            
+            # Create unique key for grouping (Bookmaker + Market)
+            group_key = f"{bm_id}_{target_market_type}"
+
+            if group_key not in grouped_odds:
+                grouped_odds[group_key] = {
                     "bookmaker": odd.get("bookmaker", {}).get("name", "Unknown"),
                     "market": market_name,
+                    "market_type": target_market_type, 
                     "timestamp": odd.get("updated_at") or odd.get("latest_bookmaker_update"),
                     "odds": {}
                 }
@@ -880,28 +949,27 @@ class SportMonksClient:
             value = odd.get("value")
             if not value:
                 continue
+
+            # Standardize labels based on market type
+            std_label = label # Default: keep original label (e.g. "2-1", "Draw / Yes")
+            
+            if target_market_type == "1x2" or target_market_type == "corners_1x2":
+                if "1" == label or "home" in label: std_label = "home"
+                elif "x" == label or "draw" in label: std_label = "draw"
+                elif "2" == label or "away" in label: std_label = "away"
+            
+            elif target_market_type == "btts":
+                if "yes" in label: std_label = "yes"
+                elif "no" in label: std_label = "no"
                 
             try:
-                val_float = float(value)
-                if label in ["1", "home"]:
-                    grouped_odds[bm_id]["odds"]["home"] = val_float
-                elif label in ["x", "draw"]:
-                    grouped_odds[bm_id]["odds"]["draw"] = val_float
-                elif label in ["2", "away"]:
-                    grouped_odds[bm_id]["odds"]["away"] = val_float
-            except ValueError:
+                grouped_odds[group_key]["odds"][std_label] = float(value)
+            except (ValueError, TypeError):
                 continue
         
-        # Convert groups to list
-        result = []
-        for data in grouped_odds.values():
-            # Only include if we have at least one outcome (or strictly all 3?)
-            # Schema expects all 3 usually, but let's be permissive and filter later if needed.
-            # Actually, fetch_odds checks for all 3.
-            if data["odds"]:
-                result.append(data)
-        
-        return result
+        return list(grouped_odds.values())
+                
+
     
     # =========================================================================
     # UTILITY
@@ -1028,25 +1096,78 @@ class SportMonksCollector:
         
         for m in matches:
             try:
-                sm_odds = self.client.get_fixture_odds(int(m.source_id), market="1X2")
+                # Fetch ALL key markets (1X2, BTTS, Corners)
+                sm_odds = self.client.get_fixture_odds(int(m.source_id), market="ALL")
                 
                 snapshots = []
                 for o in sm_odds:
-                    # Construct snapshot
+                    market_type = o.get("market_type", "1x2")
                     odds_map = o.get("odds", {})
-                    if "home" in odds_map and "draw" in odds_map and "away" in odds_map:
+                    
+                    # Map odds based on market type
+                    home = None
+                    draw = None
+                    away = None
+                    
+                    # 1. Standard 1X2 / Corners 1X2 / Double Chance (Home/Draw/Away structure)
+                    if market_type in ["1x2", "corners_1x2", "double_chance"]:
+                        home = odds_map.get("home") or odds_map.get("1") or odds_map.get("1x")
+                        draw = odds_map.get("draw") or odds_map.get("x") or odds_map.get("12") # 12 is usually Home/Away but DC is weird
+                        away = odds_map.get("away") or odds_map.get("2") or odds_map.get("x2")
+                        
+                        # Double Chance special mapping if needed, but usually APIs normalize to 1X, X2, 12
+                        # SportMonks labels: "1X", "X2", "12"
+                        if market_type == "double_chance":
+                             home = odds_map.get("1x") or odds_map.get("Home/Draw")
+                             draw = odds_map.get("12") or odds_map.get("Home/Away") # Middle option often
+                             away = odds_map.get("x2") or odds_map.get("Draw/Away")
+
+                    # 2. BTTS (Yes/No)
+                    elif market_type == "btts":
+                        home = odds_map.get("yes")
+                        away = odds_map.get("no")
+                        draw = None # No draw in BTTS
+                    
+                    # 3. Complex Markets (Result & BTTS, Correct Score)
+                    # We store them but might abuse the fields or need a new schema property.
+                    # For now, we will store the raw odds_map in a metadata field if permitted, 
+                    # OR we just store the most relevant ones.
+                    # Actually, for "Result & BTTS", we have outcomes like "Home & Yes", "Draw & Yes", etc.
+                    # schema.OddsSnapshot expects home/draw/away floats. 
+                    # We need to extend the schema or pack data.
+                    # Current schema: home_odds, draw_odds, away_odds.
+                    # Let's map "Home & Yes" -> home_odds, "Draw & Yes" -> draw_odds, "Away & Yes" -> away_odds
+                    # determining the specific sub-market (Yes or No) might be needed.
+                    # Simplification: Store "Yes" combo in the main fields (Home/Draw/Away & Yes)
+                    
+                    elif market_type == "result_btts":
+                        # Attempt to find "Home & Yes", "Draw & Yes", "Away & Yes"
+                        # Labels might be: "1 & Yes", "X & Yes", "2 & Yes"
+                        home = odds_map.get("Home & Yes")
+                        draw = odds_map.get("Draw & Yes")
+                        away = odds_map.get("Away & Yes")
+                    
+                    elif market_type == "correct_score":
+                        # Too many outcomes for 3 columns. match_id/bookmaker unique constraint usually exists.
+                        # We can't fit 20 scores into home/draw/away.
+                        # We skip Correct Score for now in the Snapshot schema unless we refactor it.
+                        continue
+
+                    # Validation: Must have at least meaningful odds
+                    # For BTTS, we need Home(Yes) and Away(No). Draw is None.
+                    if (home and away) or (market_type == "result_btts" and home and away):
                         snap = OddsSnapshot(
                             match_id=m.id,
                             bookmaker=o.get("bookmaker", "Unknown"),
                             timestamp=datetime.fromisoformat(o.get("timestamp").replace("Z", "+00:00")) if o.get("timestamp") else datetime.now(),
-                            home_odds=odds_map["home"],
-                            draw_odds=odds_map["draw"],
-                            away_odds=odds_map["away"]
+                            home_odds=home,
+                            draw_odds=draw,
+                            away_odds=away,
+                            market=market_type  # Store the specific market type
                         )
                         snapshots.append(snap)
                     else:
-                        missing = [k for k in ["home", "draw", "away"] if k not in odds_map]
-                        logger.debug(f"Dropped snapshot for match {m.id} (Bookmaker: {o.get('bookmaker', 'Unknown')}): Missing {missing}")
+                        pass # Skip incomplete odds
                 
                 results[m.id] = snapshots
                 

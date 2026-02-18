@@ -50,36 +50,52 @@ class SMOddsFeatureBuilder:
         
         if not match or not match.enrichment:
             return defaults
+            
+        features = defaults.copy()
         
-        sm_home = match.enrichment.sm_odds_home
-        sm_draw = match.enrichment.sm_odds_draw
-        sm_away = match.enrichment.sm_odds_away
-        
-        if not all([sm_home, sm_draw, sm_away]):
-            return defaults
-        
-        # Convert odds to implied probabilities (with vig removal)
-        raw_sum = (1/sm_home) + (1/sm_draw) + (1/sm_away)
-        sm_p_home = (1/sm_home) / raw_sum
-        sm_p_draw = (1/sm_draw) / raw_sum
-        sm_p_away = (1/sm_away) / raw_sum
-        
-        features = {
-            "sm_implied_home": round(sm_p_home, 4),
-            "sm_implied_draw": round(sm_p_draw, 4),
-            "sm_implied_away": round(sm_p_away, 4),
-        }
-        
-        # Disagreement with primary source
-        if primary_home_prob and primary_draw_prob and primary_away_prob:
-            # Mean absolute difference between probability distributions
-            disagreement = (
-                abs(sm_p_home - primary_home_prob) +
-                abs(sm_p_draw - primary_draw_prob) +
-                abs(sm_p_away - primary_away_prob)
-            ) / 3
-            features["odds_source_disagreement"] = round(disagreement, 4)
-        else:
-            features["odds_source_disagreement"] = 0.0
+        if match.enrichment.sm_odds_home and match.enrichment.sm_odds_draw and match.enrichment.sm_odds_away:
+            sm_home = match.enrichment.sm_odds_home
+            sm_draw = match.enrichment.sm_odds_draw
+            sm_away = match.enrichment.sm_odds_away
+            
+            # Convert odds to implied probabilities (with vig removal)
+            raw_sum = (1/sm_home) + (1/sm_draw) + (1/sm_away)
+            features.update({
+                "sm_implied_home": round((1/sm_home) / raw_sum, 4),
+                "sm_implied_draw": round((1/sm_draw) / raw_sum, 4),
+                "sm_implied_away": round((1/sm_away) / raw_sum, 4),
+            })
+            
+            # Disagreement with primary source
+            if primary_home_prob and primary_draw_prob and primary_away_prob:
+                disagreement = (
+                    abs(features["sm_implied_home"] - primary_home_prob) +
+                    abs(features["sm_implied_draw"] - primary_draw_prob) +
+                    abs(features["sm_implied_away"] - primary_away_prob)
+                ) / 3
+                features["odds_source_disagreement"] = round(disagreement, 4)
+
+        # Corners 1X2 Features
+        if match.enrichment.sm_corners_home and match.enrichment.sm_corners_away:
+             c_home = match.enrichment.sm_corners_home
+             c_draw = match.enrichment.sm_corners_draw or 100.0 # fallback if missing
+             c_away = match.enrichment.sm_corners_away
+             
+             raw_sum_c = (1/c_home) + (1/c_draw) + (1/c_away)
+             features.update({
+                 "sm_corners_implied_home": round((1/c_home) / raw_sum_c, 4),
+                 "sm_corners_implied_away": round((1/c_away) / raw_sum_c, 4),
+             })
+
+        # BTTS Features
+        if match.enrichment.sm_btts_yes and match.enrichment.sm_btts_no:
+            b_yes = match.enrichment.sm_btts_yes
+            b_no = match.enrichment.sm_btts_no
+            
+            raw_sum_b = (1/b_yes) + (1/b_no)
+            features.update({
+                "sm_btts_implied_yes": round((1/b_yes) / raw_sum_b, 4),
+                "sm_btts_implied_no": round((1/b_no) / raw_sum_b, 4),
+            })
         
         return features

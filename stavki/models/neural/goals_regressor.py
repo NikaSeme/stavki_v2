@@ -188,9 +188,9 @@ class GoalsRegressor(BaseModel):
             train_ds, 
             batch_size=self.batch_size, 
             shuffle=True,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            persistent_workers=(num_workers > 0)
+            num_workers=0, # Force 0 to prevent hangs on VM/MPS
+            pin_memory=False,
+            persistent_workers=False
         )
         
         X_eval_t = torch.FloatTensor(X_eval).to(self.device)

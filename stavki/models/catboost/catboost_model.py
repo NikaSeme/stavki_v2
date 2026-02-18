@@ -83,7 +83,7 @@ CATBOOST_FEATURES = [
 ]
 
 # Categorical features (CatBoost handles natively)
-CATEGORICAL_FEATURES = ["league", "HomeTeam", "AwayTeam"]
+CATEGORICAL_FEATURES = ["league", "League", "HomeTeam", "AwayTeam"]
 
 
 class CatBoostModel(CalibratedModel):
@@ -161,17 +161,34 @@ class CatBoostModel(CalibratedModel):
         df = df.dropna(subset=["target"])
         
         # Auto-detect features if not specified
+        # Auto-detect features if not specified
         if self.features is None:
-             exclude = {
-                 "target", "Date", "FTHG", "FTAG", "FTR", "match_id", "id", 
-                 "HomeTeam", "AwayTeam", "home_team", "away_team", "league", "season", "Div", "Time",
-                 # Match Stats (Leakage)
-                 "HTHG", "HTAG", "HTR",
-                 "HS", "AS", "HST", "AST", "HF", "AF", "HC", "AC", "HY", "AY", "HR", "AR",
-                 # Target aliases
-                 "FTR_num", "Result", "Res",
-             }
-             self.features = [c for c in df.columns if c not in exclude and df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
+             # Use Registry as source of truth
+             try:
+                 from stavki.features.registry import FeatureRegistry
+                 registry = FeatureRegistry()
+                 # Get all potential features
+                 registry_features = registry.get_all_feature_names()
+                 
+                 # Intersect with available columns in df to be safe
+                 self.features = [f for f in registry_features if f in df.columns]
+                 
+                 # If registry failed or returned empty (e.g. no sample data), fallback to numeric heuristic
+                 if not self.features:
+                     logger.warning("FeatureRegistry returned no features, falling back to heuristic.")
+                     exclude = {
+                         "target", "Date", "FTHG", "FTAG", "FTR", "match_id", "id", 
+                         "HomeTeam", "AwayTeam", "home_team", "away_team", "league", "season", "Div", "Time",
+                         "HTHG", "HTAG", "HTR",
+                         "HS", "AS", "HST", "AST", "HF", "AF", "HC", "AC", "HY", "AY", "HR", "AR",
+                         "FTR_num", "Result", "Res",
+                     }
+                     self.features = [c for c in df.columns if c not in exclude and df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
+             except Exception as e:
+                 logger.warning(f"Failed to load features from registry: {e}")
+                 # Fallback
+                 self.features = [c for c in df.columns if c not in ["target", "Date", "FTHG", "FTAG", "match_id"] and df[c].dtype in [np.float64, np.int64]]
+
              # Add known categoricals if present
              for cat in self.cat_features:
                  if cat in df.columns and cat not in self.features:
@@ -316,17 +333,35 @@ class CatBoostModel(CalibratedModel):
         all_features = self.metadata.get("features", [])
         cat_features = self.metadata.get("cat_features", [])
         
-        X = data[all_features].copy() if all(f in data.columns for f in all_features) else data.copy()
+        missing_features = [f for f in all_features if f not in data.columns]
         
-        # Handle missing features
-        available = [f for f in all_features if f in data.columns]
-        X = data[available].copy()
+        # Start with available data
+        X = data.copy()
+        
+        # Robustly handle case sensitivity for League
+        if "League" in all_features and "League" not in X.columns and "league" in X.columns:
+             X["League"] = X["league"]
+             if "League" in missing_features: missing_features.remove("League")
+             
+        if "league" in all_features and "league" not in X.columns and "League" in X.columns:
+             X["league"] = X["League"]
+             if "league" in missing_features: missing_features.remove("league")
+        
+        # Add missing features with defaults
+        if missing_features:
+            for f in missing_features:
+                if f in cat_features:
+                    X[f] = "Unknown"
+                else:
+                    X[f] = 0.0
+                    
+        # Enforce exact column order and selection
+        X = X[all_features]
         
         # Process categoricals
         for cat_col in cat_features:
-            if cat_col in X.columns:
-                # Force to string to match training
-                X[cat_col] = X[cat_col].fillna("Unknown").astype(str)
+             # Force to string to match training
+             X[cat_col] = X[cat_col].fillna("Unknown").astype(str)
                 
         # Fill numeric
         for col in X.columns:

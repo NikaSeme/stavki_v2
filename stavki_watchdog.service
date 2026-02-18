@@ -1,0 +1,15 @@
+[Unit]
+Description=STAVKI Watchdog Supervisor
+After=network.target
+
+[Service]
+User=serni13678
+Group=serni13678
+WorkingDirectory=/home/serni13678/stavki_v2
+ExecStart=/usr/bin/python3 -u /home/serni13678/stavki_v2/scripts/watchdog.py
+Restart=always
+RestartSec=60
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target

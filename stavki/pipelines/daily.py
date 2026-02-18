@@ -25,6 +25,13 @@ import json
 import numpy as np
 import pandas as pd
 
+from stavki.config import get_config
+from stavki.data.collectors.sportmonks import SportMonksClient
+from stavki.data.schemas.match import (
+    MatchEnrichment, RefereeInfo, WeatherInfo, InjuryInfo,
+    CoachInfo, VenueInfo,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +39,13 @@ logger = logging.getLogger(__name__)
 class PipelineConfig:
     """Configuration for daily pipeline."""
     # Data
-    leagues: List[str] = field(default_factory=lambda: ["soccer_epl"])
+    leagues: List[str] = field(default_factory=lambda: [
+        "soccer_epl", 
+        "soccer_spain_la_liga", 
+        "soccer_germany_bundesliga", 
+        "soccer_italy_serie_a", 
+        "soccer_france_ligue_one"
+    ])
     max_matches: int = 50
     scan_window_hours: int = 72  # Lookahead window (3 days)
     
@@ -43,7 +56,8 @@ class PipelineConfig:
     # Strategy
     min_ev: float = 0.03
     max_stake_pct: float = 0.05
-    kelly_fraction: float = 0.25
+    # BOB'S AGGRESSIVE STRATEGY: 0.75 KELLY
+    kelly_fraction: float = 0.75
     
     # Filters
     min_confidence: float = 0.05
@@ -137,15 +151,28 @@ class DailyPipeline:
         )
         
         if self._router is None:
-            self._router = LeagueRouter()
+            # Use optimized league weights
+            root_dir = Path(__file__).resolve().parents[2]
+            config_path = root_dir / "stavki" / "config" / "leagues.json"
+            self._router = LeagueRouter(config_path=config_path)
         
         if self._blender is None:
             self._blender = LiquidityBlender(league_router=self._router)
         
         if self._staker is None:
+            # Reconstruct path to data/kelly_state.json relative to this file
+            # daily.py -> pipelines -> stavki -> [root] -> data
+            root_dir = Path(__file__).resolve().parents[2]
+            state_path = root_dir / "data" / "kelly_state.json"
+            
             self._staker = KellyStaker(
                 bankroll=self.bankroll,
-                config={"kelly_fraction": self.config.kelly_fraction},
+                config={
+                    "kelly_fraction": self.config.kelly_fraction,
+                    "min_stake_amount": 0.1,  # Allow 10 cent bets to verify system works
+                    "min_stake_pct": 0.0001,  # 0.01%
+                },
+                state_file=state_path
             )
         
         if self._filters is None:
@@ -272,10 +299,10 @@ class DailyPipeline:
                 import os
                 age_minutes = (datetime.now().timestamp() - os.path.getmtime(latest)) / 60
                 cached_df = pd.read_csv(latest)
-                if age_minutes < 30:
-                    logger.info(f"Using fresh cached odds ({age_minutes:.0f}m old): {latest.name}")
+                if age_minutes < 5:
+                    logger.info(f"Using fresh cached odds ({age_minutes:.1f}m old): {latest.name}")
                     return cached_df
-                logger.info(f"Cache is {age_minutes:.0f}m old, attempting live fetch...")
+                logger.info(f"Cache is {age_minutes:.1f}m old (limit 5m), attempting live fetch...")
         
         # 2. Fetch live odds via Collectors
         try:
@@ -356,42 +383,67 @@ class DailyPipeline:
 
                 # C. Build Rows
                 for m in matches:
-                    best_snap = None
+                    row = {
+                        "event_id": m.id,
+                        "fixture_id": m.id,
+                        "source_id": m.id,
+                        "home_team": m.home_team.name,
+                        "away_team": m.away_team.name,
+                        "league": league.value,
+                        "commence_time": m.commence_time.isoformat(),
+                        "source": m.source
+                    }
                     
-                    # 1. Try Betfair
-                    if m.id in bf_odds and bf_odds[m.id]:
-                        best_snap = bf_odds[m.id][0] # Take first (best back)
-                        
-                    # 2. Try SportMonks
-                    elif m.id in sm_odds and sm_odds[m.id]:
-                        best_snap = sm_odds[m.id][0]
+                    primary_found = False
                     
-                    # 3. Try OddsAPI (if match came from OA, it might have odds embedded or we fetch?)
-                    # If match source is 'odds_api', we might have fetched best odds via fetch_all previously.
-                    # Simplified: if we fell back to OA for matches, we likely want OA odds.
-                    if not best_snap and m.source == "odds_api" and oa_collector:
-                        # Fetch specific match odds or use what we have? 
-                        # OA fetch_matches with include_odds=True doesn't return odds attached to Match object directly in current schema?
-                        # Actually OddsAPICollector.fetch_matches calls get_odds internally but discards odds data in return list?
-                        # Let's re-fetch best odds for OA if needed.
-                        pass 
+                    # 1. SportMonks Odds (Multi-Market)
+                    if m.id in sm_odds and sm_odds[m.id]:
+                        for snap in sm_odds[m.id]:
+                            if snap.market == "1x2":
+                                # Only set if not already set (though SM is iterated first here)
+                                if "home_odds" not in row:
+                                    row.update({
+                                        "home_odds": snap.home_odds,
+                                        "draw_odds": snap.draw_odds,
+                                        "away_odds": snap.away_odds,
+                                        "home_bookmaker": snap.bookmaker,
+                                        "away_bookmaker": snap.bookmaker,
+                                    })
+                                    primary_found = True
+                            
+                            elif snap.market == "corners_1x2":
+                                row.update({
+                                    "corners_home_odds": snap.home_odds,
+                                    "corners_draw_odds": snap.draw_odds,
+                                    "corners_away_odds": snap.away_odds,
+                                })
+                                
+                            elif snap.market == "btts":
+                                row.update({
+                                    "btts_yes_odds": snap.home_odds,
+                                    "btts_no_odds": snap.away_odds,
+                                })
 
-                    if best_snap:
-                        row = {
-                            "event_id": m.id,
-                            "fixture_id": m.id,
-                            "source_id": m.id,
-                            "home_team": m.home_team.name,
-                            "away_team": m.away_team.name,
-                            "league": league.value,
-                            "commence_time": m.commence_time.isoformat(),
+                    # 2. Betfair Fallback (for 1X2 only)
+                    if m.id in bf_odds and bf_odds[m.id]:
+                        # Prefer Betfair for 1X2 if available? 
+                        # Original logic: bf_odds was checked first.
+                        # Let's override 1X2 if we have Betfair (it's often sharper)
+                        best_snap = bf_odds[m.id][0]
+                        row.update({
                             "home_odds": best_snap.home_odds,
                             "draw_odds": best_snap.draw_odds,
                             "away_odds": best_snap.away_odds,
                             "home_bookmaker": best_snap.bookmaker,
                             "away_bookmaker": best_snap.bookmaker,
-                            "source": m.source
-                        }
+                        })
+                        primary_found = True
+
+                    # 3. OddsAPI Fallback
+                    if not primary_found and m.source == "odds_api" and oa_collector:
+                         pass # Logic as before (placeholder)
+
+                    if primary_found:
                         rows.append(row)
             
             if not rows:
@@ -446,32 +498,37 @@ class DailyPipeline:
         This data is later passed to the FeatureRegistry.
         """
         try:
-            from stavki.config import get_config
-            from stavki.data.collectors.sportmonks import SportMonksClient
-            from stavki.data.schemas.match import (
-                MatchEnrichment, RefereeInfo, WeatherInfo, InjuryInfo,
-                CoachInfo, VenueInfo,
-            )
+            # Use os.getenv directly to avoid get_config() global lock/side-effects in threads
+            import os
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             
-            config = get_config()
-            if not config.sportmonks_api_key:
-                logger.info("  → No SportMonks API key, skipping enrichment")
+            api_key = os.getenv("SPORTMONKS_API_KEY")
+            
+            if not api_key:
+                logger.info("  → No SportMonks API key (env), skipping enrichment")
                 return
             
-            client = SportMonksClient(api_key=config.sportmonks_api_key)
+            # Pass strict timeout/retries to avoid hangs
+            # Default is 30s timeout, 5 retries. We want much faster fail.
+            client = SportMonksClient(
+                api_key=api_key,
+                timeout=(3.05, 5),   # (connect, read) tuple for safety
+                retries=1      # Max 1 retry
+            )
         except Exception as e:
             logger.warning(f"  → SportMonks init failed: {e}, skipping enrichment")
             return
         
-        enriched_count = 0
         enrichments = {}
         
-        for idx, row in matches_df.iterrows():
+        def _process_single_match(row):
+            """Helper to process a single match in a thread."""
+            idx = row.name
             match_id = row.get("event_id", f"{row.get('home_team', '')}_{row.get('away_team', '')}")
             fixture_id = row.get("fixture_id") or row.get("source_id")
             
             if not fixture_id:
-                continue
+                return None
             
             try:
                 enrichment = MatchEnrichment()
@@ -488,31 +545,62 @@ class DailyPipeline:
                             description=weather.get("description"),
                         )
                 except Exception as e:
-                    logger.debug(f"Weather fetch failed for {fixture_id}: {e}")
+                    # Log at debug to avoid spamming console
+                    logger.debug(f"  Weather fetch failed for {fixture_id}: {e}")
                 
-                # Injuries (for both teams if team_id available)
-                # Note: Injuries require team_id, which may come from fixture data
-                
-                # SM Odds
+                # SM Odds (Multi-Market)
                 try:
-                    odds = client.get_fixture_odds(int(fixture_id), market="1X2")
+                    odds = client.get_fixture_odds(int(fixture_id), market="ALL")
                     if odds:
-                        # Take first available odds
                         for o in odds:
-                            if o.get("home") and o.get("draw") and o.get("away"):
-                                enrichment.sm_odds_home = float(o["home"])
-                                enrichment.sm_odds_draw = float(o["draw"])
-                                enrichment.sm_odds_away = float(o["away"])
-                                break
+                            market_type = o.get("market_type", "1x2")
+                            vals = o.get("odds", {})
+                            
+                            if market_type == "1x2":
+                                if vals.get("home") and vals.get("draw") and vals.get("away"):
+                                    enrichment.sm_odds_home = float(vals["home"])
+                                    enrichment.sm_odds_draw = float(vals["draw"])
+                                    enrichment.sm_odds_away = float(vals["away"])
+                            
+                            elif market_type == "corners_1x2":
+                                if vals.get("home") and vals.get("draw") and vals.get("away"):
+                                    enrichment.sm_corners_home = float(vals["home"])
+                                    enrichment.sm_corners_draw = float(vals["draw"])
+                                    enrichment.sm_corners_away = float(vals["away"])
+                                    
+                            elif market_type == "btts":
+                                if vals.get("yes") and vals.get("no"):
+                                    enrichment.sm_btts_yes = float(vals["yes"])
+                                    enrichment.sm_btts_no = float(vals["no"])
+
                 except Exception as e:
-                    logger.debug(f"SM odds fetch failed for {fixture_id}: {e}")
+                    logger.debug(f"  SM odds fetch failed for {fixture_id}: {e}")
                 
-                enrichments[match_id] = enrichment
-                enriched_count += 1
+                return match_id, enrichment
                 
             except Exception as e:
                 logger.debug(f"Enrichment failed for match {match_id}: {e}")
-                continue
+                return None
+
+        # Execute in parallel
+        # 10 workers is usually safe for API calls (mostly I/O)
+        # SportMonks rate limit will be defining factor
+        max_workers = min(10, len(matches_df)) if len(matches_df) > 0 else 1
+        logger.info(f"Enriching {len(matches_df)} matches using {max_workers} threads...")
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_process_single_match, row) for _, row in matches_df.iterrows()]
+            
+            processed_count = 0
+            for future in as_completed(futures):
+                result = future.result()
+                processed_count += 1
+                if result:
+                    m_id, enrich = result
+                    enrichments[m_id] = enrich
+                
+                if processed_count % 5 == 0:
+                    logger.info(f"  → Enriched {processed_count}/{len(matches_df)} matches...")
         
         # Store enrichments on the DataFrame
         matches_df["_enrichment"] = matches_df.apply(
@@ -523,7 +611,7 @@ class DailyPipeline:
             axis=1
         )
         
-        logger.info(f"  → {enriched_count}/{len(matches_df)} matches enriched")
+        logger.info(f"  → {len(enrichments)}/{len(matches_df)} matches successfully enriched")
     
     def _build_features(
         self,
@@ -728,12 +816,17 @@ class DailyPipeline:
         return df
 
     def _load_history(self) -> pd.DataFrame:
-        """Load historical data for feature context."""
+        """
+        Load historical data for feature context.
+        Prioritizes Parquet for speed and type safety.
+        """
         from pathlib import Path
         import pandas as pd
         
-        # Try different locations
+        # Try different locations (Parquet first!)
         paths = [
+            Path("data/training_data.parquet"),
+            Path("data/features_full.parquet"),
             Path("data/training_data.csv"),
             Path("data/historical.csv"),
             Path("data/features_full.csv"),
@@ -742,20 +835,48 @@ class DailyPipeline:
         for p in paths:
             if p.exists():
                 try:
-                    df = pd.read_csv(p, low_memory=False)
+                    logger.info(f"Loading history from {p}...")
+                    if p.suffix == ".parquet":
+                        df = pd.read_parquet(p)
+                    else:
+                        # CSV Optimization
+                        # Specify types for known columns to save memory
+                        dtype_map = {
+                            "HomeTeam": "object", "AwayTeam": "object", "League": "object",
+                            "FTHG": "float32", "FTAG": "float32",
+                            "HST": "float32", "AST": "float32", 
+                            "HC": "float32", "AC": "float32",
+                            "HY": "float32", "AY": "float32",
+                            "HR": "float32", "AR": "float32",
+                        }
+                        df = pd.read_csv(p, low_memory=False, dtype=dtype_map)
+                    
+                    # Basic Validation
+                    required = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG"]
+                    missing = [c for c in required if c not in df.columns]
+                    if missing:
+                        logger.warning(f"File {p} missing required columns: {missing}")
+                        continue
+                        
                     # Parse Date if it's string (avoid warning)
-                    if df['Date'].dtype == 'object':
+                    if 'Date' in df.columns and df['Date'].dtype == 'object':
                         # Use mixed format to handle potential variations without warning
-                        df['Date'] = pd.to_datetime(df['Date'], format='mixed', dayfirst=True)
+                        df['Date'] = pd.to_datetime(df['Date'], format='mixed', dayfirst=True, errors='coerce')
+                    
+                    # Valid load
+                    logger.info(f"  -> Loaded {len(df)} rows from {p.name}")
                     return df
-                except Exception:
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to load {p}: {e}")
                     continue
         
+        logger.warning("No historical data found in standard locations.")
         return pd.DataFrame()
 
     def _df_to_matches(self, df: pd.DataFrame, is_historical: bool = False) -> List['Match']:
         """Convert DataFrame to List[Match]."""
-        from stavki.data.schemas import Match, Team, League
+        from stavki.data.schemas import Match, Team, League, MatchStats
         from datetime import datetime
         import hashlib
         
@@ -820,6 +941,30 @@ class DailyPipeline:
                 
                 league_enum = league_map.get(league_str, League.EPL) # Default to EPL if unknown
                 
+                # Stats (Historical Only)
+                stats = None
+                if is_historical:
+                     # Check if stats columns exist (HS = Home Shots, AS = Away Shots)
+                     if pd.notna(row.get('HS')) and pd.notna(row.get('AS')):
+                         try:
+                             stats = MatchStats(
+                                 match_id=mid,
+                                 shots_home=int(row['HS']) if pd.notna(row.get('HS')) else None,
+                                 shots_away=int(row['AS']) if pd.notna(row.get('AS')) else None,
+                                 shots_on_target_home=int(row['HST']) if pd.notna(row.get('HST')) else None,
+                                 shots_on_target_away=int(row['AST']) if pd.notna(row.get('AST')) else None,
+                                 corners_home=int(row['HC']) if pd.notna(row.get('HC')) else None,
+                                 corners_away=int(row['AC']) if pd.notna(row.get('AC')) else None,
+                                 fouls_home=int(row['HF']) if pd.notna(row.get('HF')) else None,
+                                 fouls_away=int(row['AF']) if pd.notna(row.get('AF')) else None,
+                                 yellow_cards_home=int(row['HY']) if pd.notna(row.get('HY')) else None,
+                                 yellow_cards_away=int(row['AY']) if pd.notna(row.get('AY')) else None,
+                                 red_cards_home=int(row['HR']) if pd.notna(row.get('HR')) else None,
+                                 red_cards_away=int(row['AR']) if pd.notna(row.get('AR')) else None,
+                             )
+                         except Exception:
+                             pass # Robustness
+
                 m = Match(
                     id=mid,
                     home_team=home,
@@ -829,6 +974,7 @@ class DailyPipeline:
                     home_score=home_score,
                     away_score=away_score,
                     enrichment=row.get("_enrichment") if pd.notna(row.get("_enrichment")) else None,
+                    stats=stats,
                     source="historical" if is_historical else "api"
                 )
                 matches.append(m)
@@ -880,10 +1026,22 @@ class DailyPipeline:
             from stavki.models.ensemble.predictor import EnsemblePredictor
             from stavki.models.base import Market, Prediction, MatchPredictions
             
-            ensemble = self._load_ensemble()
+            # Lazy load ensemble and cache it
+            if not getattr(self, "ensemble", None):
+                self.ensemble = self._load_ensemble()
+            
+            ensemble = self.ensemble
             
             if ensemble and ensemble.models:
                 logger.info(f"  Using ensemble with {len(ensemble.models)} models")
+                
+                # Compatibility: Add legacy column aliases if missing
+                if "HomeTeam" not in features_df.columns and "home_team" in features_df.columns:
+                    features_df["HomeTeam"] = features_df["home_team"]
+                if "AwayTeam" not in features_df.columns and "away_team" in features_df.columns:
+                    features_df["AwayTeam"] = features_df["away_team"]
+                if "League" not in features_df.columns and "league" in features_df.columns:
+                    features_df["League"] = features_df["league"]
                 
                 preds = ensemble.predict(features_df)
                 
@@ -946,15 +1104,44 @@ class DailyPipeline:
             logger.warning(f"  Config not found at {config_path}, using defaults.")
         
         # Try to load saved model files
-        model_files = list(models_dir.glob("*.pkl")) + list(models_dir.glob("*.joblib"))
+        # Include _config.json for split-file models (NeuralMultiTask)
+        model_files = list(models_dir.glob("*.pkl")) + \
+                      list(models_dir.glob("*.joblib")) + \
+                      list(models_dir.glob("*_config.json"))
+
+        logger.info(f"  Found {len(model_files)} model files to load: {[f.name for f in model_files]}")
+        
         for model_path in model_files:
+            # Skip non-model files
+            if "calibrator" in model_path.name or "preproc" in model_path.name:
+                continue
+                
             try:
                 from stavki.models.base import BaseModel
-                model = BaseModel.load(model_path)
-                ensemble.add_model(model)
-                logger.info(f"  Loaded model: {model.name} from {model_path.name}")
+                
+                # Handle split-file config paths
+                if model_path.name.endswith("_config.json"):
+                    # Skip known non-model configs
+                    if "league" in model_path.name or "training" in model_path.name:
+                        continue
+                        
+                    # Strip _config.json to get base stem (e.g. NeuralMultiTask)
+                    # We pass the abstract base path which load() uses to find config
+                    base_name = model_path.name.replace("_config.json", "")
+                    load_path = model_path.parent / base_name
+                    model = BaseModel.load(load_path)
+                else:
+                    model = BaseModel.load(model_path)
+
+                if model:
+                    ensemble.add_model(model)
+                    logger.info(f"  Loaded model: {model.name} from {model_path.name}")
+                else:
+                    logger.warning(f"  Loaded {model_path.name} but result was None/Empty")
             except Exception as e:
                 logger.warning(f"  Could not load {model_path.name}: {e}")
+                import traceback
+                traceback.print_exc()
                 
         # --- Load Shadow Models (V3 Watcher) ---
         try:
@@ -1056,10 +1243,18 @@ class DailyPipeline:
     
     # Map outcome names to their Market enum .value for structured lookups.
     # Must align with Market.MATCH_WINNER.value="1x2", Market.OVER_UNDER.value="over_under", etc.
+    # Map outcome names to their Market enum .value for structured lookups.
+    # Must align with Market.MATCH_WINNER.value="1x2", Market.OVER_UNDER.value="over_under", etc.
     OUTCOME_TO_MARKET = {
         "home": "1x2", "draw": "1x2", "away": "1x2",
         "over_2.5": "over_under", "under_2.5": "over_under",
         "yes": "btts", "no": "btts",
+        # Combo Markets
+        "home & yes": "result_btts", "draw & yes": "result_btts", "away & yes": "result_btts",
+        "home & no": "result_btts", "draw & no": "result_btts", "away & no": "result_btts",
+        # Double Chance
+        "1x": "double_chance", "12": "double_chance", "x2": "double_chance",
+        "home/draw": "double_chance", "home/away": "double_chance", "draw/away": "double_chance",
     }
 
     def _find_value_bets(
@@ -1123,9 +1318,58 @@ class DailyPipeline:
                         market_probs_dict.get(outcome.lower())
                         or market_probs_dict.get(outcome.title())
                     )
+                    
+                # DERIVED PROBABILITIES for Combo Markets (Bob's Request)
+                # If we don't have authorized model output for "Result & BTTS", we approximate it
+                # to ensure we don't miss high-value opportunities provided by the data collector.
+                if p_model is None and market_key == "result_btts":
+                    # Parse "Home & Yes"
+                    normalized_outcome = outcome.lower()
+                    
+                    # Get base probabilities
+                    probs_1x2 = event_markets.get("1x2", {})
+                    probs_btts = event_markets.get("btts", {})
+                    
+                    p_res = None
+                    p_btts = None
+                    
+                    if "home" in normalized_outcome or "1" in normalized_outcome:
+                        p_res = probs_1x2.get("home")
+                    elif "draw" in normalized_outcome or "x" in normalized_outcome:
+                        p_res = probs_1x2.get("draw")
+                    elif "away" in normalized_outcome or "2" in normalized_outcome:
+                        p_res = probs_1x2.get("away")
+                        
+                    if "yes" in normalized_outcome:
+                        p_btts = probs_btts.get("yes")
+                    elif "no" in normalized_outcome:
+                        p_btts = probs_btts.get("no")
+                        
+                    if p_res and p_btts:
+                        # Naive independence assumption: P(A & B) = P(A) * P(B)
+                        # We apply a penalty discount for correlation risk
+                        # e.g. Favorites winning + BTTS No is correlated.
+                        # For now, just raw multiplication to surface the bet.
+                        p_model = p_res * p_btts
+                        
+                        # Add to the dict so we don't recompute
+                        if "result_btts" not in event_markets:
+                            event_markets["result_btts"] = {}
+                        event_markets["result_btts"][outcome] = p_model
                 
                 if p_model is None:
                     continue
+                
+                # Double Chance derivation (if missing)
+                if p_model is None and market_key == "double_chance":
+                     probs_1x2 = event_markets.get("1x2", {})
+                     normalized_outcome = outcome.lower()
+                     if "1x" in normalized_outcome or "home" in normalized_outcome:
+                         p_model = (probs_1x2.get("home", 0) + probs_1x2.get("draw", 0))
+                     elif "x2" in normalized_outcome or "away" in normalized_outcome:
+                         p_model = (probs_1x2.get("away", 0) + probs_1x2.get("draw", 0))
+                     elif "12" in normalized_outcome:
+                         p_model = (probs_1x2.get("home", 0) + probs_1x2.get("away", 0))
                 
                 p_market = event_market_probs.get(outcome, 1.0 / odds)
                 
@@ -1215,8 +1459,15 @@ class DailyPipeline:
             
             bet.stake_pct = stake_result.stake_pct
             bet.stake_amount = stake_result.stake_amount
+            
+            if bet.stake_amount == 0:
+                logger.debug(f"Matches {bet.match_id}: Stake $0. Reason: {stake_result.reason} (EV={bet.ev:.1%}, Odds={bet.odds})")
         
         # Filter out zero stakes
+        # NO! Don't filter them yet, let the bot decide or log them. 
+        # Actually, for the pipeline return, we usually want actionable bets.
+        # But for debugging "why 0", we might want to see them if we change logic.
+        # For now, keep filtering but we logged the reason above.
         return [b for b in bets if b.stake_amount > 0]
     
     def _save_output(self, bets: List[BetCandidate]):

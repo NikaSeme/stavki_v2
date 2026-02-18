@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field, field_validator, computed_field
 import hashlib
+from numpy import dtype # Compatibility for unpickling old objects
 
 
 class League(str, Enum):
@@ -482,6 +483,13 @@ class MatchEnrichment(BaseModel):
     sm_odds_home: Optional[float] = None
     sm_odds_draw: Optional[float] = None
     sm_odds_away: Optional[float] = None
+    
+    # New Multi-Market Odds
+    sm_corners_home: Optional[float] = None
+    sm_corners_draw: Optional[float] = None
+    sm_corners_away: Optional[float] = None
+    sm_btts_yes: Optional[float] = None
+    sm_btts_no: Optional[float] = None
 
 # Update forward refs
 Match.model_rebuild()

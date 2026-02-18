@@ -1,0 +1,79 @@
+/Users/macuser/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+2026-02-18 17:33:22,342 [INFO] 🚀 Starting Full System Retraining...
+/Users/macuser/Documents/something/stavki_v2/scripts/retrain_system.py:53: DtypeWarning: Columns (69) have mixed types. Specify dtype option on import or set low_memory=False.
+  df = pd.read_csv(data_path)
+2026-02-18 17:33:22,454 [INFO] Loaded 23599 matches. Sorting by date...
+2026-02-18 17:33:22,529 [INFO] Split: Train=14159, Val=4720, Test=4720
+2026-02-18 17:33:22,529 [INFO] 
+📉 Training Poisson (Dixon-Coles)...
+2026-02-18 17:33:22,538 [INFO]   Fitting with per-league Home Advantage for 6 leagues
+2026-02-18 17:33:22,539 [INFO] Fitting Dixon-Coles (Scipy) on 14159 matches, 168 teams
+2026-02-18 17:33:26,595 [INFO] Dixon-Coles optimization converged: ρ=-0.0629, avg_ha=0.2075
+2026-02-18 17:33:26,597 [INFO] 
+⚡ Training LightGBM (1X2)...
+2026-02-18 17:33:26,604 [INFO] Using 165 features
+2026-02-18 17:33:26,604 [INFO] Train: 11327, Eval: 2832
+2026-02-18 17:33:28,202 [INFO] 
+⚡ Training LightGBM (BTTS)...
+2026-02-18 17:33:28,209 [INFO] BTTS model using 20 features
+2026-02-18 17:33:28,310 [INFO] 
+🐱 Training CatBoost...
+2026-02-18 17:33:28,325 [INFO] Using 23 numeric + 3 categorical features
+2026-02-18 17:33:31,185 [INFO] 
+🧠 Training Neural MultiTask...
+2026-02-18 17:33:31,196 [INFO] Using device: mps
+2026-02-18 17:33:31,202 [INFO] Using 35 features for neural model
+2026-02-18 17:33:31,212 [INFO] Embeddings: Teams=169 (dim=50), Leagues=7 (dim=4)
+2026-02-18 17:33:35,779 [INFO] Epoch 1/25 | Loss: 1307.5400 | Eval: 1.8072
+2026-02-18 17:33:39,567 [INFO] Epoch 2/25 | Loss: 1266.8464 | Eval: 1.7877
+2026-02-18 17:33:43,370 [INFO] Epoch 3/25 | Loss: 1237.6884 | Eval: 1.7801
+2026-02-18 17:33:47,437 [INFO] Epoch 4/25 | Loss: 1221.1267 | Eval: 1.7615
+2026-02-18 17:33:51,463 [INFO] Epoch 5/25 | Loss: 1195.5930 | Eval: 1.7745
+2026-02-18 17:33:55,464 [INFO] Epoch 6/25 | Loss: 1175.1650 | Eval: 1.7348
+2026-02-18 17:33:59,432 [INFO] Epoch 7/25 | Loss: 1154.9185 | Eval: 1.7329
+2026-02-18 17:34:03,403 [INFO] Epoch 8/25 | Loss: 1141.1709 | Eval: 1.7159
+2026-02-18 17:34:07,359 [INFO] Epoch 9/25 | Loss: 1121.4976 | Eval: 1.7658
+2026-02-18 17:34:11,320 [INFO] Epoch 10/25 | Loss: 1111.9823 | Eval: 1.7298
+2026-02-18 17:34:15,282 [INFO] Epoch 11/25 | Loss: 1094.7708 | Eval: 1.7608
+2026-02-18 17:34:19,250 [INFO] Epoch 12/25 | Loss: 1080.3167 | Eval: 1.7710
+2026-02-18 17:34:23,222 [INFO] Epoch 13/25 | Loss: 1069.7338 | Eval: 1.7629
+2026-02-18 17:34:27,248 [INFO] Epoch 14/25 | Loss: 1055.3379 | Eval: 1.7894
+2026-02-18 17:34:31,277 [INFO] Epoch 15/25 | Loss: 1020.2192 | Eval: 1.7846
+2026-02-18 17:34:35,313 [INFO] Epoch 16/25 | Loss: 1004.2621 | Eval: 1.8146
+2026-02-18 17:34:39,360 [INFO] Epoch 17/25 | Loss: 998.0544 | Eval: 1.8527
+2026-02-18 17:34:43,350 [INFO] Early stopping at epoch 17
+2026-02-18 17:34:43,381 [INFO] Saved Neural model to /Users/macuser/Documents/something/stavki_v2/models/neural_multitask* [.pth, .json, .joblib]
+2026-02-18 17:34:43,381 [INFO] 
+⚽ Training Goals Regressor...
+2026-02-18 17:34:43,381 [INFO] Using device: cpu
+2026-02-18 17:34:49,628 [INFO] 
+⚖️ Optimizing Ensemble Weights...
+2026-02-18 17:34:49,628 [INFO] Generating validation predictions...
+2026-02-18 17:34:50,241 [INFO] Testing 1771 weight combinations
+2026-02-18 17:34:59,940 [INFO] Optimal weights: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.75, 'neural': 0.25} (log_loss=-641.5327)
+2026-02-18 17:34:59,941 [INFO] epl: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.75, 'neural': 0.25}
+2026-02-18 17:34:59,960 [INFO] Testing 1771 weight combinations
+2026-02-18 17:35:09,973 [INFO] Optimal weights: {'poisson': 0.0, 'lightgbm': 0.05, 'catboost': 0.8500000000000001, 'neural': 0.1} (log_loss=-666.6391)
+2026-02-18 17:35:09,973 [INFO] seriea: {'poisson': 0.0, 'lightgbm': 0.05, 'catboost': 0.8500000000000001, 'neural': 0.1}
+2026-02-18 17:35:09,992 [INFO] Testing 1771 weight combinations
+2026-02-18 17:35:19,622 [INFO] Optimal weights: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.65, 'neural': 0.35000000000000003} (log_loss=-657.7109)
+2026-02-18 17:35:19,622 [INFO] ligue1: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.65, 'neural': 0.35000000000000003}
+2026-02-18 17:35:19,640 [INFO] Testing 1771 weight combinations
+2026-02-18 17:35:33,632 [INFO] Optimal weights: {'poisson': 0.0, 'lightgbm': 0.15000000000000002, 'catboost': 0.7000000000000001, 'neural': 0.15000000000000002} (log_loss=-1028.5447)
+2026-02-18 17:35:33,633 [INFO] championship: {'poisson': 0.0, 'lightgbm': 0.15000000000000002, 'catboost': 0.7000000000000001, 'neural': 0.15000000000000002}
+2026-02-18 17:35:33,653 [INFO] Testing 1771 weight combinations
+2026-02-18 17:35:41,416 [INFO] Optimal weights: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.9, 'neural': 0.1} (log_loss=-492.6082)
+2026-02-18 17:35:41,416 [INFO] bundesliga: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.9, 'neural': 0.1}
+2026-02-18 17:35:41,435 [INFO] Testing 1771 weight combinations
+2026-02-18 17:35:50,973 [INFO] Optimal weights: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.8, 'neural': 0.2} (log_loss=-643.1275)
+2026-02-18 17:35:50,973 [INFO] laliga: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.8, 'neural': 0.2}
+2026-02-18 17:35:50,974 [INFO] Updated epl: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.75, 'neural': 0.25}
+2026-02-18 17:35:50,974 [INFO] Updated seriea: {'poisson': 0.0, 'lightgbm': 0.05, 'catboost': 0.8500000000000001, 'neural': 0.1}
+2026-02-18 17:35:50,974 [INFO] Updated ligue1: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.65, 'neural': 0.35000000000000003}
+2026-02-18 17:35:50,974 [INFO] Updated championship: {'poisson': 0.0, 'lightgbm': 0.15000000000000002, 'catboost': 0.7000000000000001, 'neural': 0.15000000000000002}
+2026-02-18 17:35:50,974 [INFO] Updated bundesliga: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.9, 'neural': 0.1}
+2026-02-18 17:35:50,974 [INFO] Updated laliga: {'poisson': 0.0, 'lightgbm': 0.0, 'catboost': 0.8, 'neural': 0.2}
+2026-02-18 17:35:50,974 [INFO] Saved optimized weights to /Users/macuser/Documents/something/stavki_v2/stavki/config/leagues.json
+2026-02-18 17:35:50,974 [INFO] 
+✅ Retraining Complete!
