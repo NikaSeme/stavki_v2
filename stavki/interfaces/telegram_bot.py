@@ -443,6 +443,7 @@ class StavkiBot:
 
             # 2. Alert Subscribers
             from stavki.strategy import KellyStaker
+            from stavki.strategy.ev import EVResult
 
             for chat_id in self.subscribers:
                 # Use context.bot to send messages
