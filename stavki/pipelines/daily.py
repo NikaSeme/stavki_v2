@@ -1048,10 +1048,19 @@ class DailyPipeline:
                 logger.info(f"  Using ensemble with {len(ensemble.models)} models")
                 
                 # Compatibility: Add legacy column aliases if missing
-                if "HomeTeam" not in features_df.columns and "home_team" in features_df.columns:
+                # CRITICAL FIX for High EV: Normalize team names to match training data
+                # Models like DixonColes rely on exact string matches for parameters.
+                # If we pass "Paris Saint-Germain" but trained on "Paris SG", it treats it as a new (average) team.
+                from stavki.utils.team_names import normalize_team_name
+                
+                if "home_team" in features_df.columns:
+                    features_df["home_team"] = features_df["home_team"].apply(normalize_team_name)
                     features_df["HomeTeam"] = features_df["home_team"]
-                if "AwayTeam" not in features_df.columns and "away_team" in features_df.columns:
+                
+                if "away_team" in features_df.columns:
+                    features_df["away_team"] = features_df["away_team"].apply(normalize_team_name)
                     features_df["AwayTeam"] = features_df["away_team"]
+
                 if "League" not in features_df.columns and "league" in features_df.columns:
                     features_df["League"] = features_df["league"]
                 
