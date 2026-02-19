@@ -142,7 +142,7 @@ class CatBoostModel(CalibratedModel):
         self.random_seed = random_seed
         self.use_gpu = use_gpu
         
-        self.features = features # If None, will auto-detect from input data
+        self.features = features if features is not None else list(CATBOOST_FEATURES)
         self.cat_features = cat_features or CATEGORICAL_FEATURES
         
         self.model: Optional[CatBoostClassifier] = None
