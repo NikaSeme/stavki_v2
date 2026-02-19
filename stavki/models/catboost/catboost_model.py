@@ -39,46 +39,60 @@ from ..base import BaseModel, CalibratedModel, Prediction, Market
 logger = logging.getLogger(__name__)
 
 
-# Features for CatBoost — must match real column names in features_full.csv
+# Features for CatBoost — CLEAN LIST: only features available at prediction time
+# NO in-match stats (HS, HC, HY, etc.) — impossible to know pre-match
+# NO closing odds (B365CH, VCCH, etc.) — future data leakage
+# NO per-bookmaker odds (B365H, BWH, IWH) — use aggregates instead
 CATBOOST_FEATURES = [
-    # ELO features
+    # ELO features (3)
     "elo_home", "elo_away", "elo_diff",
     
-    # Form features (last 5 matches)
+    # Form features (7)
     "form_home_pts", "form_away_pts", "form_diff",
     "form_home_gf", "form_away_gf",
     "gf_diff", "ga_diff",
     
-    # Odds features (Bet365 as primary source)
-    "B365H", "B365D", "B365A",
+    # Aggregate odds — available at prediction time (6)
+    "AvgH", "AvgD", "AvgA",
+    "MaxH", "MaxD", "MaxA",
+    
+    # Over/Under aggregate odds (4)
+    "Avg>2.5", "Avg<2.5",
+    "Max>2.5", "Max<2.5",
+    
+    # Asian Handicap aggregates (3)
+    "AHh", "AvgAHH", "AvgAHA",
+    
+    # Implied probabilities from odds (7)
+    "imp_home", "imp_draw", "imp_away",
     "imp_home_norm", "imp_draw_norm", "imp_away_norm",
     "margin",
     
-    # Tier 1: Synthetic xG
+    # Synthetic xG (3)
     "synth_xg_home", "synth_xg_away", "synth_xg_diff",
     
-    # Tier 1: Player ratings
+    # Player ratings (5)
     "avg_rating_home", "avg_rating_away", "rating_delta",
     "key_players_home", "key_players_away",
     "xi_experience_home", "xi_experience_away",
     
-    # Tier 1: Referee profile
+    # Referee profile (6)
     "ref_goals_per_game", "ref_cards_per_game_t1",
     "ref_over25_rate", "ref_strictness_t1",
     "ref_experience", "ref_goals_zscore",
     
-    # Phase 3: Formation matchup
+    # Formation matchup (4)
     "formation_score_home", "formation_score_away",
     "formation_mismatch", "formation_is_known",
     "matchup_home_wr", "matchup_sample_size",
     
-    # Phase 3: Rolling match stats
+    # Rolling match stats (8)
     "rolling_fouls_home", "rolling_fouls_away",
     "rolling_yellows_home", "rolling_yellows_away",
     "rolling_corners_home", "rolling_corners_away",
     "rolling_possession_home", "rolling_possession_away",
     
-    # Phase 3: Referee target encoding
+    # Referee target encoding (2)
     "ref_encoded_goals", "ref_encoded_cards",
 ]
 

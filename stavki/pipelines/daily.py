@@ -648,28 +648,50 @@ class DailyPipeline:
             features = features.reset_index().rename(columns={"index": "match_id"})
             
             # --- Inject Odds Features ---
-            # We need to map available odds from odds_df to the features models expect.
-            # odds_df has "event_id", "home_odds", "draw_odds", "away_odds"
-            if not odds_df.empty:
-                # Deduplicate odds per event_id (take first/best)
-                unique_odds = odds_df.drop_duplicates("event_id")[["event_id", "home_odds", "draw_odds", "away_odds"]]
-                unique_odds = unique_odds.rename(columns={
-                    "event_id": "match_id",
-                    "home_odds": "AvgH", # Map to generic Avg/Max placeholders
-                    "draw_odds": "AvgD",
-                    "away_odds": "AvgA"
-                })
-                # Synthesize other common columns if missing
-                unique_odds["MaxH"] = unique_odds["AvgH"]
-                unique_odds["MaxD"] = unique_odds["AvgD"]
-                unique_odds["MaxA"] = unique_odds["AvgA"]
+            # Compute real Avg/Max odds from ALL bookmakers, plus implied probabilities
+            if not odds_df.empty and "home_odds" in odds_df.columns:
+                odds_cols = ["event_id", "home_odds", "draw_odds", "away_odds"]
+                odds_clean = odds_df[odds_cols].dropna(subset=["home_odds", "away_odds"])
+                
+                # Aggregate across bookmakers: mean → Avg, max → Max
+                agg_odds = odds_clean.groupby("event_id").agg(
+                    AvgH=("home_odds", "mean"),
+                    AvgD=("draw_odds", "mean"),
+                    AvgA=("away_odds", "mean"),
+                    MaxH=("home_odds", "max"),
+                    MaxD=("draw_odds", "max"),
+                    MaxA=("away_odds", "max"),
+                    n_bookmakers=("home_odds", "count"),
+                ).reset_index().rename(columns={"event_id": "match_id"})
+                
+                # Compute implied probabilities from average odds
+                agg_odds["imp_home"] = 1.0 / agg_odds["AvgH"]
+                agg_odds["imp_draw"] = 1.0 / agg_odds["AvgD"].clip(lower=1.01)
+                agg_odds["imp_away"] = 1.0 / agg_odds["AvgA"]
+                agg_odds["margin"] = agg_odds["imp_home"] + agg_odds["imp_draw"] + agg_odds["imp_away"] - 1.0
+                total_imp = agg_odds["imp_home"] + agg_odds["imp_draw"] + agg_odds["imp_away"]
+                agg_odds["imp_home_norm"] = agg_odds["imp_home"] / total_imp
+                agg_odds["imp_draw_norm"] = agg_odds["imp_draw"] / total_imp
+                agg_odds["imp_away_norm"] = agg_odds["imp_away"] / total_imp
+                
+                # Also compute SportMonks-style implied columns
+                agg_odds["sm_implied_home"] = agg_odds["imp_home_norm"]
+                agg_odds["sm_implied_draw"] = agg_odds["imp_draw_norm"]
+                agg_odds["sm_implied_away"] = agg_odds["imp_away_norm"]
+                
+                # Drop helper column
+                agg_odds = agg_odds.drop(columns=["n_bookmakers"])
+                
+                logger.info(f"  Computed odds aggregates from {len(odds_clean)} bookmaker entries → {len(agg_odds)} matches")
                 
                 # Ensure match_id type consistency (str)
                 features["match_id"] = features["match_id"].astype(str)
-                unique_odds["match_id"] = unique_odds["match_id"].astype(str)
+                agg_odds["match_id"] = agg_odds["match_id"].astype(str)
                 
-                # Merge into features
-                features = pd.merge(features, unique_odds, on="match_id", how="left")
+                # Merge into features (don't overwrite existing columns)
+                existing_cols = set(features.columns) - {"match_id"}
+                new_cols = [c for c in agg_odds.columns if c not in existing_cols or c == "match_id"]
+                features = pd.merge(features, agg_odds[new_cols], on="match_id", how="left")
             
             # 7. Map features to model expectations (Backwards Compatibility)
             features = self._map_features_to_model_inputs(features)
@@ -777,23 +799,13 @@ class DailyPipeline:
                 missing_cols = {}
                 for col in master_cols:
                     if col not in df.columns:
-                        # Use smart defaults where possible
-                        # Use smart defaults where possible
-                        if "rolling" in col or "imp" in col or "prob" in col:
-                            missing_cols[col] = 0.5 # Neutral probability/importance
+                        # Smart defaults for features not populated by _build_features
+                        if "rolling" in col or "prob" in col:
+                            missing_cols[col] = 0.5  # Neutral for rolling/probability features
                         elif "ref" in col:
-                            missing_cols[col] = 0.0 
-                        # Fill specific odds columns with available generic odds if present
-                        elif col in ["B365H", "BWH", "IWH", "PSH", "WHH", "VCH"] and "AvgH" in df.columns:
-                            missing_cols[col] = df["AvgH"]
-                        elif col in ["B365D", "BWD", "IWD", "PSD", "WHD", "VCD"] and "AvgD" in df.columns:
-                            missing_cols[col] = df["AvgD"]
-                        elif col in ["B365A", "BWA", "IWA", "PSA", "WHA", "VCA"] and "AvgA" in df.columns:
-                            missing_cols[col] = df["AvgA"]
-                        elif ">2.5" in col and "Avg>2.5" in df.columns:
-                            missing_cols[col] = df["Avg>2.5"]
-                        elif "<2.5" in col and "Avg<2.5" in df.columns:
-                            missing_cols[col] = df["Avg<2.5"]
+                            missing_cols[col] = 0.0
+                        elif "streak" in col:
+                            missing_cols[col] = 0
                         else:
                             missing_cols[col] = 0.0
                 
