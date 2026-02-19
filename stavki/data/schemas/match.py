@@ -62,8 +62,13 @@ class Team(BaseModel):
     
     def model_post_init(self, __context: Any) -> None:
         if not self.normalized_name:
-            # Will be set by normalizer
-            object.__setattr__(self, 'normalized_name', self.name.lower().strip())
+            # Use specific normalizer if available
+            try:
+                from stavki.utils.team_names import normalize_team_name
+                object.__setattr__(self, 'normalized_name', normalize_team_name(self.name))
+            except ImportError:
+                # Fallback
+                object.__setattr__(self, 'normalized_name', self.name.lower().strip())
     
     def __hash__(self) -> int:
         return int(hashlib.md5(self.normalized_name.encode()).hexdigest(), 16) % (2**61 - 1)

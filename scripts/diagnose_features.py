@@ -2,6 +2,9 @@
 """Diagnostic: show what features each model actually sees at prediction time"""
 import sys, logging
 from pathlib import Path
+import pickle
+import pandas as pd
+import numpy as np
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -11,57 +14,91 @@ load_dotenv(PROJECT_ROOT / ".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", stream=sys.stdout)
 for n in ["httpx","urllib3","httpcore"]: logging.getLogger(n).setLevel(logging.WARNING)
 
-import pandas as pd
-import numpy as np
-
 def main():
-    import pickle
+    print("=== PIPELINE FEATURE CAPTURE ===")
+    from stavki.pipelines.daily import DailyPipeline
+    pipeline = DailyPipeline()
+    
+    print("1. Fetching odds...")
+    odds_df = pipeline._fetch_odds()
+    
+    print("2. Extracting matches...")
+    matches_df = pipeline._extract_matches(odds_df)
+    print(f"   Found {len(matches_df)} matches")
+    
+    print("3. Enriching matches (SportMonks)...")
+    pipeline._enrich_matches(matches_df)
+    
+    print("4. Building features...")
+    features_df = pipeline._build_features(matches_df, odds_df)
+    print(f"   Built features DF: {features_df.shape}")
 
-    # Inspect the CatBoost model
-    print("=== CATBOOST MODEL DIAGNOSTIC ===")
+    print("\n=== CATBOOST MODEL INSPECTION ===")
     with open("models/catboost.pkl", "rb") as f:
         state = pickle.load(f)
-    model_features = state.get("features", [])
-    print(f"Model expects {len(model_features)} features: {model_features}")
+    
+    # Handle dict vs object
+    if isinstance(state, dict):
+        metadata = state.get("metadata", {})
+        model_features = metadata.get("features", [])
+        cat_features = metadata.get("cat_features", [])
+    else:
+        model_features = getattr(state, "features", [])
+        cat_features = getattr(state, "cat_features", [])
+        
+    print(f"Model expects {len(model_features)} features.")
+    if model_features:
+        print(f"First 10: {model_features[:10]}")
 
-    cat_features = state.get("cat_features", [])
-    print(f"Categorical features: {cat_features}")
+    if not features_df.empty:
+        print("\n=== DATA QUALITY AUDIT ===")
+        
+        # 1. Check ELO defaults (1500.0)
+        elo_cols = [c for c in features_df.columns if "elo" in c]
+        for c in elo_cols:
+            defaults = (features_df[c] == 1500.0).sum()
+            pct = (defaults / len(features_df)) * 100
+            print(f"{c:20s}: {defaults:>2}/{len(features_df)} ({pct:.1f}%) are 1500.0 (default)")
+            
+        # 2. Check Form defaults (0)
+        form_cols = [c for c in features_df.columns if "form" in c and "pts" in c]
+        for c in form_cols:
+            zeros = (features_df[c] == 0).sum()
+            pct = (zeros / len(features_df)) * 100
+            print(f"{c:20s}: {zeros:>2}/{len(features_df)} ({pct:.1f}%) are 0 (potential default)")
+            
+            # Show which teams have 0 form
+            if zeros > 0:
+                zero_rows = features_df[features_df[c] == 0]
+                teams = zero_rows["home_team" if "home" in c else "away_team"].unique()
+                print(f"    Teams with 0 {c}: {list(teams)[:5]}...")
 
-    # Check training data
-    train = pd.read_csv("data/features_full.csv")
-    print(f"\nTraining data: {len(train)} rows, {len(train.columns)} columns")
+        # 3. Check Implied Probs defaults (0.5)
+        imp_cols = [c for c in features_df.columns if "imp" in c]
+        for c in imp_cols:
+            defaults = (features_df[c] == 0.5).sum()
+            pct = (defaults / len(features_df)) * 100
+            print(f"{c:20s}: {defaults:>2}/{len(features_df)} ({pct:.1f}%) are 0.5 (default)")
 
-    # Check each feature: training stats
-    print(f"\n{'Feature':40s} | {'Train Mean':>10s} | {'Train Std':>10s} | {'Non-zero%':>10s}")
-    print("-" * 80)
-    for f in model_features:
-        if f in train.columns and train[f].dtype in [np.float64, np.int64, float, int]:
-            vals = train[f].dropna()
-            nz = (vals != 0).mean() * 100
-            print(f"{f:40s} | {vals.mean():10.4f} | {vals.std():10.4f} | {nz:9.1f}%")
-        elif f in train.columns:
-            nuniq = train[f].nunique()
-            print(f"{f:40s} | {'(cat)':>10s} | {nuniq:>10d} | {'unique':>10s}")
-        else:
-            print(f"{f:40s} | {'MISSING':>10s} | {'?':>10s} | {'?':>10s}")
+        # 4. Check Missing Features
+        if model_features:
+            missing = [f for f in model_features if f not in features_df.columns]
+            if missing:
+                print(f"\nCRITICAL: {len(missing)} features missing from live dataframe!")
+                print(f"Example missing: {missing[:10]}")
+            else:
+                print("\nAll model features present in live dataframe.")
 
-    # Check the LightGBM model
-    print("\n\n=== LIGHTGBM MODEL DIAGNOSTIC ===")
-    with open("models/LightGBM_1X2.pkl", "rb") as f:
-        lgb_state = pickle.load(f)
-    lgb_features = lgb_state.get("features", [])
-    print(f"LightGBM expects {len(lgb_features)} features")
-    missing_in_train = [f for f in lgb_features if f not in train.columns]
-    if missing_in_train:
-        print(f"  Missing from training data: {missing_in_train[:10]}...")
-
-    # Check ensemble weights
-    import json
-    with open("models/league_weights.json") as f:
-        weights = json.load(f)
-    print(f"\n=== ENSEMBLE WEIGHTS ===")
-    for league, w in weights.items():
-        print(f"  {league}: {w}")
+        # 5. Show First Match Details
+        print("\n=== SAMPLE MATCH FEATURES ===")
+        row = features_df.iloc[0]
+        print(f"Match: {row.get('home_team')} vs {row.get('away_team')}")
+        print(f"League: {row.get('league', 'unknown')}")
+        
+        cols_to_show = elo_cols + form_cols + imp_cols + ["AvgH", "AvgD", "AvgA"]
+        for c in cols_to_show:
+            if c in row.index:
+                print(f"{c:20s}: {row[c]}")
 
 if __name__ == "__main__":
     main()
