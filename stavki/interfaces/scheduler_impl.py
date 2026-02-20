@@ -307,5 +307,26 @@ def create_default_scheduler() -> Scheduler:
         minutes=5,
         run_immediately=False,
     )
+    # Job 4: Daily Data Maintenance (Gold Pipeline)
+    def run_daily_gold_pipeline():
+        try:
+            import subprocess
+            from stavki.config import PROJECT_ROOT
+            logger.info("Executing Daily Gold Pipeline to update deep tensors...")
+            script_path = PROJECT_ROOT / "scripts" / "build_gold_pipeline.py"
+            if script_path.exists():
+                subprocess.run(["python3", str(script_path)], check=True)
+                logger.info("Daily Gold Pipeline completed successfully.")
+            else:
+                logger.error(f"Gold pipeline script not found at {script_path}")
+        except Exception as e:
+            logger.error(f"Daily Gold Pipeline failed: {e}")
+    
+    scheduler.add_job(
+        name="daily_gold_pipeline",
+        func=run_daily_gold_pipeline,
+        hours=24,
+        run_immediately=False,
+    )
     
     return scheduler

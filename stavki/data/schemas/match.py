@@ -485,6 +485,15 @@ class MatchEnrichment(BaseModel):
     home_coach: Optional[CoachInfo] = None
     away_coach: Optional[CoachInfo] = None
     venue_info: Optional[VenueInfo] = None
+    
+    # Tactics & Lineups Live Feed
+    home_coach_id: Optional[int] = None
+    away_coach_id: Optional[int] = None
+    home_player_ids: List[int] = []
+    away_player_ids: List[int] = []
+    home_positions: List[int] = []
+    away_positions: List[int] = []
+    
     sm_odds_home: Optional[float] = None
     sm_odds_draw: Optional[float] = None
     sm_odds_away: Optional[float] = None

@@ -127,55 +127,8 @@ class UnifiedDataLoader:
         Returns:
             Normalized name
         """
-        if not name:
-            return "unknown"
-            
-        name = name.strip()
-        
-        # Mapping for common variations
-        # This could be loaded from a file
-        mapping = {
-            "Man City": "Manchester City",
-            "Man Utd": "Manchester United",
-            "Man United": "Manchester United",
-            "Spurs": "Tottenham Hotspur",
-            "Tottenham": "Tottenham Hotspur",
-            "Wolves": "Wolverhampton Wanderers",
-            "Nott'm Forest": "Nottingham Forest",
-            "Sheff Utd": "Sheffield United",
-            "Newcastle": "Newcastle United",
-            "West Ham": "West Ham United",
-            "Brighton": "Brighton & Hove Albion",
-            "Leeds": "Leeds United",
-            "Leicester": "Leicester City",
-            "Norwich": "Norwich City",
-            "Watford": "Watford FC",
-            "Bournemouth": "AFC Bournemouth",
-            # Bundesliga
-            "Bayern Munich": "Bayern München",
-            "Dortmund": "Borussia Dortmund",
-            "Leverkusen": "Bayer 04 Leverkusen",
-            "Frankfurt": "Eintracht Frankfurt",
-            "Gladbach": "Borussia Mönchengladbach",
-            "RB Leipzig": "RB Leipzig",
-            # La Liga
-            "Real Madrid": "Real Madrid",
-            "Barcelona": "FC Barcelona",
-            "Atletico Madrid": "Atlético Madrid",
-            "Sevilla": "Sevilla FC",
-            "Sociedad": "Real Sociedad",
-            "Bilbao": "Athletic Club",
-            # Serie A
-            "Inter Milan": "Inter",
-            "AC Milan": "Milan",
-            "Juventus": "Juventus",
-            "Napoli": "Napoli",
-            "Roma": "AS Roma",
-            "Lazio": "Lazio",
-            "Atalanta": "Atalanta",
-        }
-        
-        return mapping.get(name, name)
+        from stavki.data.processors.normalize import normalize_team_name as centralized_normalize
+        return centralized_normalize(name)
 
     def _get_cache_path(self, key: str) -> Path:
         """Get path for cache key."""
@@ -364,6 +317,27 @@ class UnifiedDataLoader:
                 # Deduplicate based on Date + Teams
                 df = df.drop_duplicates(subset=['Date', 'HomeTeam', 'AwayTeam'], keep='last')
         
+        # 5. Standardization (Dual support for snake_case and PascalCase)
+        # This resolves the widespread inconsistency in the codebase
+        if not df.empty:
+            # HomeTeam <-> home_team
+            if 'HomeTeam' in df.columns and 'home_team' not in df.columns:
+                df['home_team'] = df['HomeTeam']
+            elif 'home_team' in df.columns and 'HomeTeam' not in df.columns:
+                df['HomeTeam'] = df['home_team']
+
+            # AwayTeam <-> away_team
+            if 'AwayTeam' in df.columns and 'away_team' not in df.columns:
+                df['away_team'] = df['AwayTeam']
+            elif 'away_team' in df.columns and 'AwayTeam' not in df.columns:
+                df['AwayTeam'] = df['away_team']
+            
+            # Date <-> date
+            if 'Date' in df.columns and 'date' not in df.columns:
+                df['date'] = df['Date']
+            elif 'date' in df.columns and 'Date' not in df.columns:
+                df['Date'] = df['date']
+
         return df.sort_values('Date').reset_index(drop=True)
 
     def _fetch_recent_from_api(

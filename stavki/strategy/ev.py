@@ -30,6 +30,7 @@ class EVResult:
     edge_pct: float  # Edge = model_prob - implied_prob
     implied_prob: float
     bookmaker: Optional[str] = None
+    is_suspicious: bool = False
     
     @property
     def is_value(self) -> bool:
@@ -45,7 +46,9 @@ class EVResult:
             "ev": self.ev,
             "edge_pct": self.edge_pct,
             "implied_prob": self.implied_prob,
+            "implied_prob": self.implied_prob,
             "bookmaker": self.bookmaker,
+            "is_suspicious": self.is_suspicious,
         }
 
 
@@ -164,6 +167,15 @@ class EVCalculator:
         # Apply filters
         if ev < self.min_ev:
             return None
+            
+        # Optimization: Flag suspicious high EV bets (Data integrity check)
+        is_suspicious = False
+        if ev > 0.50:
+            logger.warning(
+                f"⚠️ Suspicious High EV ({ev:.2%}) for {match_id} ({selection}). "
+                f"Odds: {odds}, Prob: {model_prob:.2%} | Keeping but flagging."
+            )
+            is_suspicious = True
         
         return EVResult(
             match_id=match_id,
@@ -175,6 +187,7 @@ class EVCalculator:
             edge_pct=edge,
             implied_prob=implied,
             bookmaker=bookmaker,
+            is_suspicious=is_suspicious,
         )
     
     def find_value_bets(

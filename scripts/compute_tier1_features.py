@@ -29,6 +29,10 @@ from sklearn.linear_model import LinearRegression
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# Import RealXGBuilder
+from stavki.features.builders.real_xg import RealXGBuilder
+
+
 DATA_DIR = PROJECT_ROOT / "data"
 ENRICHED_PATH = DATA_DIR / "features_enriched.parquet"
 FEATURES_CSV = DATA_DIR / "features_full.csv"
@@ -192,7 +196,7 @@ def calibrate_xg_model(df: pd.DataFrame) -> dict:
     X_data = []
     y_data = []
     
-    for _, row in df.iterrows():
+    for row in df.to_dict('records'):
         csv_idx = row.get("csv_index")
         if pd.isna(csv_idx):
             continue
@@ -325,7 +329,7 @@ def build_referee_profiles(df: pd.DataFrame) -> dict:
         "over25_count": 0,
     })
     
-    for _, row in df.iterrows():
+    for row in df.to_dict('records'):
         ref = row.get("referee")
         if pd.isna(ref) or not ref:
             continue
@@ -415,17 +419,22 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
             if pd.notna(row.get("FTHG")):
                 csv_goals[idx] = (float(row["FTHG"]), float(row["FTAG"]))
     
-    # Calibrate xG model (trains on actual goals)
-    xg_coefs = calibrate_xg_model(df)
-    logger.info(f"xG coefficients: shots={xg_coefs['coef_shots']}, "
-                f"sot={xg_coefs['coef_sot']}, big_chances={xg_coefs['coef_big_chances']}")
+            if pd.notna(row.get("FTHG")):
+                csv_goals[idx] = (float(row["FTHG"]), float(row["FTAG"]))
+    
+    # Initialize RealXGBuilder (loads historical storage)
+    xg_builder = RealXGBuilder(rolling_window=10)
+    # We access its internal storage directly for speed: xg_builder._historical_data
+    # Key format: f"{date}_{home}_{away}" using CSV names from backfill
+
     
     # Build referee profiles  
     ref_profiles = build_referee_profiles(df)
     
     # Rolling state for teams (built chronologically)
+    # Rolling state for teams (built chronologically)
     team_rating_history = defaultdict(list)  # team -> list of avg XI ratings
-    team_xg_history = defaultdict(list)      # team -> list of synth_xg values
+    team_xg_history = defaultdict(list)      # team -> list of real xg values
     team_goals_history = defaultdict(list)   # team -> list of actual goals
     ROLLING_WINDOW = 10  # Last N matches for rolling average
     
@@ -506,8 +515,10 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
     
     # Defaults
     DEFAULT_RATING = 6.5
-    DEFAULT_XG_HOME = 1.3
-    DEFAULT_XG_AWAY = 1.1
+    # Defaults
+    DEFAULT_RATING = 6.5
+    DEFAULT_XG_HOME = 1.35
+    DEFAULT_XG_AWAY = 1.15
     
     # Feature columns to fill (Tier 1 + Phase 3)
     new_cols = {
@@ -515,7 +526,8 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
         "avg_rating_home": [], "avg_rating_away": [], "rating_delta": [],
         "key_players_home": [], "key_players_away": [],
         "xi_experience_home": [], "xi_experience_away": [],
-        "synth_xg_home": [], "synth_xg_away": [], "synth_xg_diff": [],
+        "xg_home": [], "xg_away": [], "xg_diff": [],
+        "xg_efficiency_home": [], "xg_efficiency_away": [],
         "ref_goals_per_game": [], "ref_cards_per_game_t1": [],
         "ref_over25_rate": [], "ref_strictness_t1": [],
         "ref_experience": [], "ref_goals_zscore": [],
@@ -533,7 +545,7 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
         "ref_encoded_goals": [], "ref_encoded_cards": [],
     }
     
-    for _, row in df.iterrows():
+    for row in df.to_dict('records'):
         home_team = str(row.get("csv_home", "")).strip()
         away_team = str(row.get("csv_away", "")).strip()
         csv_idx = row.get("csv_index")
@@ -586,7 +598,7 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
             team_rating_history[away_team].append(match_r_a)
         
         # ============================================================
-        # SYNTHETIC xG — use rolling team average (pre-match)
+        # REAL xG — use rolling team average (pre-match)
         # ============================================================
         
         def get_rolling_xg(team, default):
@@ -595,42 +607,59 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
                 return default
             recent = hist[-ROLLING_WINDOW:]
             return round(np.mean(recent), 3)
+            
+        def get_rolling_efficiency(team):
+             hist_xg = team_xg_history.get(team, [])
+             hist_goals = team_goals_history.get(team, [])
+             if not hist_xg or not hist_goals: 
+                 return 0.0
+             recent_xg = hist_xg[-ROLLING_WINDOW:]
+             recent_goals = hist_goals[-ROLLING_WINDOW:]
+             return round(np.mean(recent_goals) - np.mean(recent_xg), 3)
         
         rolling_xg_h = get_rolling_xg(home_team, DEFAULT_XG_HOME)
         rolling_xg_a = get_rolling_xg(away_team, DEFAULT_XG_AWAY)
+        eff_h = get_rolling_efficiency(home_team)
+        eff_a = get_rolling_efficiency(away_team)
         
-        # Compute this match's actual synth_xg for rolling state
-        shots_h = home_stats.get("total_shots", 0)
-        sot_h = home_stats.get("total_sot", 0)
-        bc_h = home_stats.get("total_big_chances", 0) + home_stats.get("total_big_chances_missed", 0)
-        shots_a = away_stats.get("total_shots", 0)
-        sot_a = away_stats.get("total_sot", 0)
-        bc_a = away_stats.get("total_big_chances", 0) + away_stats.get("total_big_chances_missed", 0)
+        # Look up THIS match's xG from storage for updating history
+        # Key: YYYY-MM-DD_Home_Away
+        date_str = str(row.get("date", "")).split(" ")[0] # Ensure just date part
+        match_key = f"{date_str}_{home_team}_{away_team}"
         
-        # Fall back to team-level shots
-        if shots_h == 0 and pd.notna(row.get("shots_home")):
-            shots_h = float(row["shots_home"])
-            sot_h = float(row.get("sot_home", shots_h * 0.35))
-        if shots_a == 0 and pd.notna(row.get("shots_away")):
-            shots_a = float(row["shots_away"])
-            sot_a = float(row.get("sot_away", shots_a * 0.35))
+        xg_data = xg_builder._historical_data.get(match_key)
         
-        match_xg_h = compute_synth_xg(shots_h, sot_h, bc_h, xg_coefs) if (shots_h > 0 or bc_h > 0) else None
-        match_xg_a = compute_synth_xg(shots_a, sot_a, bc_a, xg_coefs) if (shots_a > 0 or bc_a > 0) else None
+        match_xg_h = None
+        match_xg_a = None
         
-        # Use rolling for prediction, fall back to computed or default
-        use_xg_h = rolling_xg_h if team_xg_history.get(home_team) else (match_xg_h if match_xg_h else DEFAULT_XG_HOME)
-        use_xg_a = rolling_xg_a if team_xg_history.get(away_team) else (match_xg_a if match_xg_a else DEFAULT_XG_AWAY)
+        if xg_data:
+             match_xg_h = xg_data.get('home_xg')
+             match_xg_a = xg_data.get('away_xg')
         
-        new_cols["synth_xg_home"].append(use_xg_h)
-        new_cols["synth_xg_away"].append(use_xg_a)
-        new_cols["synth_xg_diff"].append(round(use_xg_h - use_xg_a, 3))
+        # Use rolling for prediction (features)
+        # If we have no history, fallback to defaults (or this match's xG if we dare leak? No, better start with default)
+        use_xg_h = rolling_xg_h
+        use_xg_a = rolling_xg_a
+        
+        new_cols["xg_home"].append(use_xg_h)
+        new_cols["xg_away"].append(use_xg_a)
+        new_cols["xg_diff"].append(round(use_xg_h - use_xg_a, 3))
+        new_cols["xg_efficiency_home"].append(eff_h)
+        new_cols["xg_efficiency_away"].append(eff_a)
         
         # Update rolling state AFTER using pre-match values
+        # If we found real xG for this match, add to history
         if match_xg_h is not None and home_team:
             team_xg_history[home_team].append(match_xg_h)
         if match_xg_a is not None and away_team:
             team_xg_history[away_team].append(match_xg_a)
+            
+        # Also track goals for efficiency
+        # We need actual goals. CSV goals were loaded into csv_goals
+        if csv_idx and int(csv_idx) in csv_goals:
+             g_h, g_a = csv_goals[int(csv_idx)]
+             team_goals_history[home_team].append(g_h)
+             team_goals_history[away_team].append(g_a)
         
         # ============================================================
         # REFEREE (Tier 1 profile features)
@@ -859,7 +888,8 @@ def merge_into_csv(tier1_df: pd.DataFrame, csv_path: Path) -> None:
         "avg_rating_home", "avg_rating_away", "rating_delta",
         "key_players_home", "key_players_away",
         "xi_experience_home", "xi_experience_away",
-        "synth_xg_home", "synth_xg_away", "synth_xg_diff",
+        "xg_home", "xg_away", "xg_diff",
+        "xg_efficiency_home", "xg_efficiency_away",
         "ref_goals_per_game", "ref_cards_per_game_t1",
         "ref_over25_rate", "ref_strictness_t1",
         "ref_experience", "ref_goals_zscore",
@@ -907,7 +937,8 @@ def merge_into_csv(tier1_df: pd.DataFrame, csv_path: Path) -> None:
         "avg_rating_home": 6.5, "avg_rating_away": 6.5, "rating_delta": 0.0,
         "key_players_home": 0, "key_players_away": 0,
         "xi_experience_home": 90.0, "xi_experience_away": 90.0,
-        "synth_xg_home": 1.3, "synth_xg_away": 1.1, "synth_xg_diff": 0.2,
+        "xg_home": 1.35, "xg_away": 1.15, "xg_diff": 0.20,
+        "xg_efficiency_home": 0.0, "xg_efficiency_away": 0.0,
         "ref_goals_per_game": 2.7, "ref_cards_per_game_t1": 3.5,
         "ref_over25_rate": 0.55, "ref_strictness_t1": 0.0,
         "ref_experience": 0.0, "ref_goals_zscore": 0.0,
@@ -970,7 +1001,7 @@ def main():
     
     # Print sample
     tier1_cols = [c for c in df.columns if c.startswith(("avg_rating", "rating_delta",
-                  "key_players", "synth_xg", "ref_", "xi_experience"))]
+                  "key_players", "xg", "ref_", "xi_experience"))]
     print("\n📊 Sample Tier 1 Features (first 5 matches):")
     print(df[tier1_cols].head().to_string())
     

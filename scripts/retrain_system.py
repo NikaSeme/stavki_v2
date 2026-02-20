@@ -75,6 +75,15 @@ def main():
     if "Date" in df.columns:
         df["Date"] = pd.to_datetime(df["Date"])
         df = df.sort_values("Date").reset_index(drop=True)
+
+    # CRITICAL: Normalize team names to match Live Pipeline
+    # This ensures models are trained on the exact same canonical names used in production
+    logger.info("Normalizing team names...")
+    from stavki.data.processors.normalize import normalize_team_name
+    if 'HomeTeam' in df.columns:
+        df['HomeTeam'] = df['HomeTeam'].apply(normalize_team_name)
+    if 'AwayTeam' in df.columns:
+        df['AwayTeam'] = df['AwayTeam'].apply(normalize_team_name)
     
     # OPTIMIZATION: Downcast float64 to float32 to save 50% RAM
     fcols = df.select_dtypes('float').columns

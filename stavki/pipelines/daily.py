@@ -533,6 +533,63 @@ class DailyPipeline:
             try:
                 enrichment = MatchEnrichment()
                 
+                # Full Fixture Data (Coaches, Lineups, Positions)
+                try:
+                    # Request directly to bypass parsing omissions
+                    full_res = client._request(
+                        f"fixtures/{fixture_id}", 
+                        includes=["lineups.player", "coaches", "participants"]
+                    )
+                    data = full_res.get("data", {})
+                    
+                    if isinstance(data, dict):
+                        # 1. Team map for locations
+                        participants = data.get("participants", [])
+                        home_tid = away_tid = None
+                        for p in participants:
+                            loc = p.get("meta", {}).get("location")
+                            if loc == "home":
+                                home_tid = p.get("id")
+                            elif loc == "away":
+                                away_tid = p.get("id")
+                        
+                        # 2. Coaches
+                        coaches = data.get("coaches", [])
+                        for coach in coaches:
+                            cid = coach.get("coach_id")
+                            if coach.get("team_id") == home_tid:
+                                enrichment.home_coach_id = cid
+                            elif coach.get("team_id") == away_tid:
+                                enrichment.away_coach_id = cid
+                                
+                        # 3. Lineups & Positions
+                        lineups = data.get("lineups", [])
+                        h_players, a_players = [], []
+                        h_pos, a_pos = [], []
+                        
+                        for p in lineups:
+                            # Only include starting XI (type_id=11)
+                            if p.get("type_id") == 11:
+                                pid = p.get("player_id")
+                                pos_id = p.get("player", {}).get("position_id", 0)
+                                if pos_id is None:
+                                    pos_id = 0
+                                
+                                if p.get("team_id") == home_tid:
+                                    h_players.append(pid)
+                                    h_pos.append(pos_id)
+                                elif p.get("team_id") == away_tid:
+                                    a_players.append(pid)
+                                    a_pos.append(pos_id)
+                                    
+                        enrichment.home_player_ids = h_players
+                        enrichment.away_player_ids = a_players
+                        enrichment.home_positions = h_pos
+                        enrichment.away_positions = a_pos
+                        
+                except Exception as e:
+                    logger.debug(f"  Full fixture fetch failed for {fixture_id}: {e}")
+
                 # Weather
                 try:
                     weather = client.get_fixture_weather(int(fixture_id))
@@ -589,7 +646,7 @@ class DailyPipeline:
         logger.info(f"Enriching {len(matches_df)} matches using {max_workers} threads...")
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(_process_single_match, row) for _, row in matches_df.iterrows()]
+            futures = [executor.submit(_process_single_match, row) for row in matches_df.to_dict('records')]
             
             processed_count = 0
             for future in as_completed(futures):
@@ -693,6 +750,31 @@ class DailyPipeline:
                 new_cols = [c for c in agg_odds.columns if c not in existing_cols or c == "match_id"]
                 features = pd.merge(features, agg_odds[new_cols], on="match_id", how="left")
             
+            # --- Inject Live Arrays (Positions, Coaches, Lineups) ---
+            if "_enrichment" in matches_df.columns:
+                # Add default columns to features
+                for col in ["home_coach_id", "away_coach_id"]:
+                    if col not in features.columns:
+                        features[col] = 0
+                for col in ["home_player_ids", "away_player_ids", "home_positions", "away_positions"]:
+                    if col not in features.columns:
+                        features[col] = None
+                        
+                for idx, row in matches_df.iterrows():
+                    mid = str(row.get("event_id", row.get("match_id")))
+                    enrich = row.get("_enrichment")
+                    if enrich:
+                        idx_f = features.index[features["match_id"] == mid]
+                        if len(idx_f) > 0:
+                            if enrich.home_coach_id: features.at[idx_f[0], "home_coach_id"] = enrich.home_coach_id
+                            if enrich.away_coach_id: features.at[idx_f[0], "away_coach_id"] = enrich.away_coach_id
+                            
+                            # Use at for lists to prevent pandas shape broadcasting issues!
+                            features.at[idx_f[0], "home_player_ids"] = enrich.home_player_ids
+                            features.at[idx_f[0], "away_player_ids"] = enrich.away_player_ids
+                            features.at[idx_f[0], "home_positions"] = enrich.home_positions
+                            features.at[idx_f[0], "away_positions"] = enrich.away_positions
+
             # 7. Map features to model expectations (Backwards Compatibility)
             features = self._map_features_to_model_inputs(features)
             
@@ -757,8 +839,7 @@ class DailyPipeline:
             "goals_conceded_away": "form_away_ga",
             "roster_experience_home": "xi_experience_home",
             "roster_experience_away": "xi_experience_away",
-            "advanced_xg_for_home": "synth_xg_home",
-            "advanced_xg_for_away": "synth_xg_away",
+
             "advanced_xg_against_home": "advanced_xg_against_home", # Explicit pass-through or rename if needed
             "advanced_xg_against_away": "advanced_xg_against_away",
             "advanced_shots_for_home": "HS", # Approximation if HS missing
@@ -893,20 +974,35 @@ class DailyPipeline:
         import hashlib
         
         matches = []
-        for _, row in df.iterrows():
+        matches = []
+        # Optimization: use itertuples for much faster iteration
+        for row in df.itertuples(index=False):
             try:
-                # Teams
-                home = Team(name=str(row.get('HomeTeam', row.get('home_team'))))
-                away = Team(name=str(row.get('AwayTeam', row.get('away_team'))))
+                # Handle inconsistent column casing via getattr (defaults to None, handled by logic)
+                # Helper to check both PascalCase (CSV) and snake_case (Internal)
+                p_home = getattr(row, 'HomeTeam', None)
+                s_home = getattr(row, 'home_team', None)
+                home_name = str(p_home if p_home is not None else s_home)
+
+                p_away = getattr(row, 'AwayTeam', None)
+                s_away = getattr(row, 'away_team', None)
+                away_name = str(p_away if p_away is not None else s_away)
+
+                home = Team(name=home_name)
+                away = Team(name=away_name)
                 
                 # Date/Time
                 if is_historical:
-                    date_val = row.get('Date')
+                    date_val = getattr(row, 'Date', None)
+                    if date_val is None:
+                         date_val = getattr(row, 'date', None)
+                         
                     if hasattr(date_val, 'date'):
                         date_str = date_val.strftime("%Y-%m-%d")
                     else:
                         date_str = str(date_val).split()[0]
                     commence = datetime.strptime(date_str, "%Y-%m-%d")
+
                     
                     # Generate ID for historical
                     key = f"{home.normalized_name}_{away.normalized_name}_{date_str}"
@@ -1076,13 +1172,22 @@ class DailyPipeline:
                 dt_col = "Date" if "Date" in features_df.columns else "commence_time"
                 
                 if eid_col:
-                    for _, row in features_df.iterrows():
-                        mid = generate_match_id(
-                            str(row.get(ht_col, "")),
-                            str(row.get(at_col, "")),
-                            row.get(dt_col),
-                        )
-                        mid_to_eid[mid] = str(row[eid_col])
+                    # Vectorized fillna for xG columns
+                    xg_cols = [c for c in ["xg_home", "xg_away", "xg_diff"] if c in features_df.columns]
+                    if xg_cols:
+                        features_df[xg_cols] = features_df[xg_cols].fillna(0.0)
+
+                    # List comprehension for fast ID generation (avoid iterrows overhead)
+                    # Extract columns to lists for faster iteration
+                    h_list = features_df[ht_col].astype(str).tolist()
+                    a_list = features_df[at_col].astype(str).tolist()
+                    d_list = features_df[dt_col].tolist()
+                    e_list = features_df[eid_col].astype(str).tolist()
+                    
+                    mid_to_eid = {
+                        generate_match_id(h, a, d): e
+                        for h, a, d, e in zip(h_list, a_list, d_list, e_list)
+                    }
                     logger.info(f"  Built match_id→event_id mapping for {len(mid_to_eid)} matches")
                 
                 preds = ensemble.predict(features_df)
@@ -1262,26 +1367,28 @@ class DailyPipeline:
         self,
         best_prices: pd.DataFrame,
     ) -> Dict[str, Dict[str, float]]:
-        """Compute no-vig probabilities from best prices."""
+        """Compute no-vig probabilities from best prices using strict vectorization."""
         market_probs = {}
         
-        # Group by event
-        if "event_id" not in best_prices.columns:
+        if "event_id" not in best_prices.columns or best_prices.empty:
             return market_probs
-        
-        for event_id, group in best_prices.groupby("event_id"):
-            # Get implied probs
-            implied = {}
-            for _, row in group.iterrows():
-                outcome = row.get("outcome_name", "unknown")
-                price = row.get("outcome_price", 2.0)
-                implied[outcome] = 1.0 / price if price > 0 else 0
             
-            # Normalize (remove vig)
-            total = sum(implied.values())
-            if total > 0:
-                market_probs[str(event_id)] = {k: v / total for k, v in implied.items()}
+        prices = best_prices.copy()
+        # Fast vectorized implied probability
+        prices['implied_prob'] = np.where(prices['outcome_price'] > 0, 1.0 / prices['outcome_price'], 0.0)
         
+        # Calculate market margin/total per event safely
+        totals = prices.groupby('event_id')['implied_prob'].sum().reset_index()
+        totals.rename(columns={'implied_prob': 'total_prob'}, inplace=True)
+        
+        # Broadcast margin and normalize
+        prices = prices.merge(totals, on='event_id')
+        prices['no_vig_prob'] = np.where(prices['total_prob'] > 0, prices['implied_prob'] / prices['total_prob'], 0.0)
+        
+        # Convert to dictionary cleanly mapping event_id -> {outcome: prob}
+        for event_id, group in prices.groupby('event_id'):
+            market_probs[str(event_id)] = dict(zip(group['outcome_name'], group['no_vig_prob']))
+            
         return market_probs
     
     # Map outcome names to their Market enum .value for structured lookups.
@@ -1318,8 +1425,11 @@ class DailyPipeline:
         
         candidates = []
         
-        for _, match in matches_df.iterrows():
-            event_id = str(match["event_id"])
+        # O(N) HashMap caching for prices (avoid O(N*M) nested DataFrame scans)
+        prices_map = {str(k): v.to_dict('records') for k, v in best_prices.groupby(best_prices["event_id"].astype(str))}
+        
+        for match in matches_df.to_dict('records'):
+            event_id = str(match.get("event_id"))
             home = match.get("home_team", "Home")
             away = match.get("away_team", "Away")
             league = match.get("league", match.get("sport_key", "unknown"))
@@ -1330,10 +1440,9 @@ class DailyPipeline:
             event_markets = model_probs[event_id]  # {market: {outcome: prob}}
             event_market_probs = market_probs.get(event_id, {})
             
-            # Get best prices for this event (handle str/int mismatch)
-            event_prices = best_prices[best_prices["event_id"].astype(str) == event_id]
+            event_prices = prices_map.get(event_id, [])
             
-            for _, price_row in event_prices.iterrows():
+            for price_row in event_prices:
                 outcome = price_row.get("outcome_name")
                 odds = price_row.get("outcome_price", 2.0)
                 bookmaker = price_row.get(

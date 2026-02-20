@@ -49,7 +49,8 @@ DEFAULT_FEATURES = [
     "margin",
     
     # Tier 1: Synthetic xG
-    "synth_xg_home", "synth_xg_away", "synth_xg_diff",
+    "xg_home", "xg_away", "xg_diff",
+    "xg_efficiency_home", "xg_efficiency_away",
     
     # Tier 1: Player ratings
     "avg_rating_home", "avg_rating_away", "rating_delta",

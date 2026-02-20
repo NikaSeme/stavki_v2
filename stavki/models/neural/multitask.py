@@ -54,7 +54,8 @@ NEURAL_FEATURES = [
     "form_diff", "gf_diff", "ga_diff",
     
     # xG
-    "synth_xg_home", "synth_xg_away", "synth_xg_diff",
+    "xg_home", "xg_away", "xg_diff",
+    "xg_efficiency_home", "xg_efficiency_away",
     #"xGA_Home_L5", "xGA_Away_L5", # Not in features_full.csv
     
     # Market (Odds & Imp. Prob)

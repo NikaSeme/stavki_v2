@@ -27,10 +27,11 @@ logger = logging.getLogger(__name__)
 # Default ensemble weights per market
 DEFAULT_WEIGHTS = {
     Market.MATCH_WINNER.value: {
-        "CatBoost_1X2": 0.35,
-        "DixonColes": 0.15,
-        "LightGBM_1X2": 0.25,
-        "NeuralMultiTask": 0.25,
+        "CatBoost_1X2": 1.00,
+        "DixonColes": 0.00,
+        "LightGBM_1X2": 0.00,
+        "NeuralMultiTask": 0.00,
+        "DeepInteraction": 0.00,
     },
     Market.OVER_UNDER.value: {
         "DixonColes": 0.30,

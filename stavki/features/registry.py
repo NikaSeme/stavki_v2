@@ -31,7 +31,9 @@ from .builders.roster import RosterFeatureBuilder
 from .builders.referee import RefereeFeatureBuilder
 from .builders.player_impact import PlayerImpactFeatureBuilder
 from .builders.injuries import InjuryFeatureBuilder
-from .builders.synth_xg import SyntheticXGBuilder
+from .builders.injuries import InjuryFeatureBuilder
+from .builders.real_xg import RealXGBuilder
+# from .builders.synth_xg import SyntheticXGBuilder # Deprecated
 
 # Tier 2
 from .builders.formation import FormationFeatureBuilder
@@ -77,7 +79,10 @@ class FeatureRegistry:
         
         # Tier 1 — Referee + SynthXG work from CSV data; others need API
         self.referee = RefereeFeatureBuilder()
-        self.synth_xg = SyntheticXGBuilder()
+        # Tier 1 — Referee + RealXG (Hybrid Strategy)
+        self.referee = RefereeFeatureBuilder()
+        self.real_xg = RealXGBuilder()
+        # self.synth_xg = SyntheticXGBuilder() # Deprecated
         
         # Tier 3 — CSV supported
         self.corners = CornersFeatureBuilder(rolling_window=corners_window)
@@ -126,7 +131,8 @@ class FeatureRegistry:
         self.corners.fit(sorted_matches)
         
         self.referee.fit(sorted_matches)
-        self.synth_xg.fit(sorted_matches)
+        self.referee.fit(sorted_matches)
+        self.real_xg.fit(sorted_matches)
         
         # Seasonal needs no fitting but good to init
         self.seasonal.fit(sorted_matches)
@@ -227,8 +233,8 @@ class FeatureRegistry:
             inj_features = self.injuries.get_features(match=match, as_of=as_of)
             features.update(inj_features)
         
-        # Synthetic xG (works from goal data)
-        xg_features = self.synth_xg.get_features(match=match, as_of=as_of)
+        # Real xG (Hybrid Strategy)
+        xg_features = self.real_xg.get_features(match=match, as_of=as_of)
         features.update(xg_features)
         
         # === Tier 2: Medium Impact (API only) ===
@@ -352,7 +358,8 @@ class FeatureRegistry:
                 "form_home_pts", "form_away_pts", "form_diff",
                 "form_home_gf", "form_away_gf", "gf_diff", "ga_diff",
                 "advanced_xg_home", "advanced_xg_away",
-                "synth_xg_home", "synth_xg_away",
+                "xg_home", "xg_away", "xg_efficiency_home",
+                "ref_strictness_t1", "ref_goals_zscore"
                 "ref_strictness_t1", "ref_goals_zscore"
             ]
         finally:

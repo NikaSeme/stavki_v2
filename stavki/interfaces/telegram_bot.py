@@ -219,8 +219,8 @@ class StavkiBot:
             
             for bet in filtered_bets:
                 # Construct EVResult wrapper for KellyStaker
-                # Use blended_prob for consistent Kelly sizing (reflects market sentiment + model)
-                prob_to_use = getattr(bet, 'blended_prob', bet.model_prob)
+                # Use model_prob for consistent Kelly sizing (reflects model confidence only)
+                prob_to_use = bet.model_prob
 
                 ev_res = EVResult(
                     match_id=bet.match_id,
@@ -462,8 +462,8 @@ class StavkiBot:
                     final_bets = []
                     for bet in user_bets:
                         # Construct EVResult wrapper for KellyStaker
-                        # Use blended_prob for consistent Kelly sizing
-                        prob_to_use = getattr(bet, 'blended_prob', bet.model_prob)
+                        # Use model_prob for consistent Kelly sizing
+                        prob_to_use = bet.model_prob
                         
                         ev_res = EVResult(
                             match_id=bet.match_id,
@@ -498,7 +498,7 @@ class StavkiBot:
                         if bet.market not in ["1x2", "match_winner"]:
                             market_label = f"[{bet.market.replace('_', ' ').title()}] "
                         
-                        prob_to_use = getattr(bet, 'blended_prob', bet.model_prob)
+                        prob_to_use = bet.model_prob
                         msg += (
                             f"*{i}. {bet.home_team} vs {bet.away_team}*\n"
                             f"   {market_label}{bet.selection} @ {bet.odds:.2f}\n"

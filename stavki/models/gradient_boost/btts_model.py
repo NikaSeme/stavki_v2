@@ -39,8 +39,8 @@ BTTS_FEATURES = [
     "home_scored_pct", "away_scored_pct",
     
     # xG features
-    "synth_xg_home", "advanced_xg_against_home", 
-    "synth_xg_away", "advanced_xg_against_away",
+    "xg_home", "advanced_xg_against_home", 
+    "xg_away", "advanced_xg_against_away",
     
     # Defense strength
     "defense_strength_home", "defense_strength_away",

@@ -124,7 +124,8 @@ class SportMonksClient:
         self.league_ids = {}
         try:
             # Try loading from league_config.json first (source of truth)
-            config_path = PROJECT_ROOT / "models" / "league_config.json"
+            # Try loading from stavki/config/leagues.json
+            config_path = PROJECT_ROOT / "stavki" / "config" / "leagues.json"
             if config_path.exists():
                 with open(config_path) as f:
                     full_config = json.load(f)
@@ -306,7 +307,7 @@ class SportMonksClient:
             response = self._request(
                 endpoint,
                 params=params,
-                includes=["participants", "venue", "round"]
+                includes=["participants", "venue", "round", "coaches"]
             )
             
             data_items = response.get("data", [])
@@ -402,6 +403,7 @@ class SportMonksClient:
         - nested type.code strings (from 'statistics.type' include)
         """
         # SportMonks v3 stat type_id mapping
+        # SportMonks v3 stat type_id mapping
         TYPE_ID_MAP = {
             42: "shots-total",
             86: "shots-on-target",
@@ -410,12 +412,24 @@ class SportMonksClient:
             56: "fouls",
             84: "yellowcards",
             83: "redcards",
+            580: "big-chances",
+            49: "shots-inside",
+            50: "shots-outside",
         }
         
         result = MatchStats(fixture_id=fixture_id)
         
+        # Temp storage for proxy calculation
+        proxy_stats = {
+            "home": {"big-chances": 0, "shots-inside": 0, "shots-outside": 0, "shots-total": 0},
+            "away": {"big-chances": 0, "shots-inside": 0, "shots-outside": 0, "shots-total": 0}
+        }
+        
         for stat in stats:
             location = stat.get("location")  # "home" or "away"
+            if location not in ["home", "away"]: 
+                continue
+                
             value = stat.get("data", {}).get("value")
             
             # Determine stat code from type_id or nested type object
@@ -431,46 +445,80 @@ class SportMonksClient:
             if not code:
                 continue
             
+            # Helper for safe int/float conversion
+            def get_val(v, is_float=False):
+                if v is None: return None
+                return float(v) if is_float else int(v)
+
             if code == "shots-total":
-                if location == "home":
-                    result.home_shots = int(value) if value is not None else None
-                else:
-                    result.away_shots = int(value) if value is not None else None
+                val = get_val(value)
+                if location == "home": result.home_shots = val
+                else: result.away_shots = val
+                proxy_stats[location]["shots-total"] = val or 0
+                
             elif code == "shots-on-target":
-                if location == "home":
-                    result.home_shots_on_target = int(value) if value is not None else None
-                else:
-                    result.away_shots_on_target = int(value) if value is not None else None
+                val = get_val(value)
+                if location == "home": result.home_shots_on_target = val
+                else: result.away_shots_on_target = val
+                
             elif code == "ball-possession":
-                if location == "home":
-                    result.home_possession = float(value) if value is not None else None
-                else:
-                    result.away_possession = float(value) if value is not None else None
+                val = get_val(value, True)
+                if location == "home": result.home_possession = val
+                else: result.away_possession = val
+                
             elif code == "corners":
-                if location == "home":
-                    result.home_corners = int(value) if value is not None else None
-                else:
-                    result.away_corners = int(value) if value is not None else None
+                val = get_val(value)
+                if location == "home": result.home_corners = val
+                else: result.away_corners = val
+                
             elif code == "fouls":
-                if location == "home":
-                    result.home_fouls = int(value) if value is not None else None
-                else:
-                    result.away_fouls = int(value) if value is not None else None
+                val = get_val(value)
+                if location == "home": result.home_fouls = val
+                else: result.away_fouls = val
+                
             elif code == "yellowcards":
-                if location == "home":
-                    result.home_yellow_cards = int(value) if value is not None else None
-                else:
-                    result.away_yellow_cards = int(value) if value is not None else None
+                val = get_val(value)
+                if location == "home": result.home_yellow_cards = val
+                else: result.away_yellow_cards = val
+                
             elif code == "redcards":
-                if location == "home":
-                    result.home_red_cards = int(value) if value is not None else None
-                else:
-                    result.away_red_cards = int(value) if value is not None else None
+                val = get_val(value)
+                if location == "home": result.home_red_cards = val
+                else: result.away_red_cards = val
+                
             elif code == "expected-goals":
-                if location == "home":
-                    result.home_xg = float(value) if value is not None else None
-                else:
-                    result.away_xg = float(value) if value is not None else None
+                val = get_val(value, True)
+                if location == "home": result.home_xg = val
+                else: result.away_xg = val
+            
+            # Derived stats for Proxy xG
+            elif code == "big-chances":
+                proxy_stats[location]["big-chances"] = get_val(value) or 0
+            elif code == "shots-inside":
+                proxy_stats[location]["shots-inside"] = get_val(value) or 0
+            elif code == "shots-outside":
+                proxy_stats[location]["shots-outside"] = get_val(value) or 0
+        
+        # Calculate Proxy xG if missing
+        for side in ["home", "away"]:
+            current_xg = getattr(result, f"{side}_xg")
+            if current_xg is None:
+                # Proxy Formula: same as RealXGBuilder
+                # xG ≈ (Big Chances * 0.45) + (Shots Inside * 0.08) + (Shots Outside * 0.03)
+                
+                stats_side = proxy_stats[side]
+                bc = stats_side["big-chances"]
+                inside = max(0, stats_side["shots-inside"] - bc)
+                outside = stats_side["shots-outside"]
+                
+                proxy_xg = (bc * 0.45) + (inside * 0.08) + (outside * 0.03)
+                
+                if proxy_xg == 0 and stats_side["shots-total"] > 0:
+                    # Fallback coarse: 0.10 per shot
+                     proxy_xg = stats_side["shots-total"] * 0.10
+                
+                if proxy_xg > 0:
+                     setattr(result, f"{side}_xg", round(proxy_xg, 2))
         
         return result
     
@@ -531,6 +579,7 @@ class SportMonksClient:
                 "lineups.details.type",
                 "events",
                 "referees.referee",
+                "coaches"
             ]
         )
         
@@ -546,6 +595,7 @@ class SportMonksClient:
                     "lineups",
                     "events",
                     "referees.referee",
+                    "coaches"
                 ]
             )
             data = response.get("data", {})

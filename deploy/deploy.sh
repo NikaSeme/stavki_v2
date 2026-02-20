@@ -17,8 +17,11 @@ SSH_CMD="ssh"
 SCP_CMD="scp"
 
 if [ ! -z "$KEY_PATH" ]; then
-    SSH_CMD="ssh -i $KEY_PATH"
-    SCP_CMD="scp -i $KEY_PATH"
+    SSH_CMD="ssh -i $KEY_PATH -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    SCP_CMD="scp -i $KEY_PATH -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+else
+    SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    SCP_CMD="scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 fi
 
 REMOTE_DIR="/home/$USER/stavki_v2"
@@ -30,11 +33,12 @@ $SSH_CMD $USER@$HOST "mkdir -p $REMOTE_DIR/models $REMOTE_DIR/deploy $REMOTE_DIR
 
 # 2. Sync Code (excluding heavy/unwanted files)
 echo "📦 Syncing code..."
-rsync -avz --exclude-from='.gitignore' \
+rsync -avz -e "$SSH_CMD" --exclude-from='.gitignore' \
     --exclude '/data/*' \
     --exclude '/models/*' \
     --exclude '.git' \
     --exclude '__pycache__' \
+    --exclude '.mypy_cache' \
     --exclude '*.log' \
     ./ $USER@$HOST:$REMOTE_DIR/
 
@@ -63,9 +67,24 @@ $SSH_CMD $USER@$HOST << EOF
     pip install --upgrade pip
     pip install -r requirements.txt
     
-    # Configure Service File
-    sed -i "s|User=root|User=$USER|g" deploy/stavki_bot.service
-    sed -i "s|/home/ubuntu/stavki_v2|$REMOTE_DIR|g" deploy/stavki_bot.service
+    # Configure Service File (Dynamic Generation)
+    echo "[Unit]
+Description=STAVKI Telegram Bot Service
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$REMOTE_DIR
+ExecStart=$REMOTE_DIR/venv/bin/python3 $REMOTE_DIR/scripts/start_bot.py
+Restart=always
+RestartSec=10
+EnvironmentFile=$REMOTE_DIR/.env
+StandardOutput=append:$REMOTE_DIR/logs/bot_service.log
+StandardError=append:$REMOTE_DIR/logs/bot_error.log
+
+[Install]
+WantedBy=multi-user.target" > deploy/stavki_bot.service
     
     # Setup Systemd Service
     sudo cp deploy/stavki_bot.service /etc/systemd/system/

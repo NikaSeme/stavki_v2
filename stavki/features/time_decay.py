@@ -140,12 +140,52 @@ def add_sample_weights(
     """
     df = df.copy()
     
-    df[weight_column] = df[date_column].apply(
-        lambda d: calculate_season_weight(d, decay_factor, reference_season)
-    )
+    # Ensure datetime
+    if not pd.api.types.is_datetime64_any_dtype(df[date_column]):
+        dates = pd.to_datetime(df[date_column], errors='coerce')
+    else:
+        dates = df[date_column]
+        
+    # Valid dates only
+    mask = dates.notna()
     
-    # Add season column for reference
-    df['season'] = df[date_column].apply(get_season_from_date)
+    # Vectorized Season Calculation
+    # Season Year = Year if Month >= 8 else Year - 1
+    # e.g. Aug 2023 -> 2023 season. May 2024 -> 2023 season.
+    years = dates.dt.year
+    months = dates.dt.month
+    season_start_years = np.where(months >= 8, years, years - 1)
+    
+    # Calculate seasons ago
+    if reference_season is None:
+        reference_season = get_current_season()
+    ref_year = season_to_number(reference_season)
+    
+    seasons_ago = np.maximum(0, ref_year - season_start_years)
+    
+    # Calculate weights
+    weights = np.power(decay_factor, seasons_ago)
+    
+    # Initialise column with default/min weight
+    df[weight_column] = min_weight = 0.05 # Default from calculate_season_weight signature
+    
+    # Assign calculated weights where dates valid
+    # Apply max(min_weight, weight)
+    df.loc[mask, weight_column] = np.maximum(min_weight, weights[mask])
+    
+    # Add season column for reference (Vectorized string creation is harder, stick to apply for string formatting if needed, or just year)
+    # But for optimization, let's skip the costly string creation unless requested. 
+    # The original function added it, so we should too to preserve query compatibility.
+    # Vectorized string creation:
+    s_years = season_start_years[mask]
+    # e.g. 2023 -> "2023/24"
+    next_years = (s_years + 1) % 100
+    
+    # Use pandas Series to get .str accessor
+    s_years_series = pd.Series(s_years).astype(str)
+    next_years_series = pd.Series(next_years).astype(str).str.zfill(2)
+    
+    df.loc[mask, 'season'] = (s_years_series + '/' + next_years_series).values
     
     return df
 

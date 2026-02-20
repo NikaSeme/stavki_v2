@@ -261,6 +261,9 @@ class BaseModel(ABC):
             elif "GoalsRegressor" in name:
                 from stavki.models.neural.goals_regressor import GoalsRegressor
                 model_cls = GoalsRegressor
+            elif "DeepInteraction" in name:
+                from stavki.models.deep_interaction_wrapper import DeepInteractionWrapper
+                model_cls = DeepInteractionWrapper
             else:
                 # Fallback: try to guess or use base if possible (though base is abstract)
                 logger.warning(f"Unknown model type for {name}, trying to load as is.")

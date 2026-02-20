@@ -23,9 +23,11 @@
     "form_diff",
     "gf_diff",
     "ga_diff",
-    "synth_xg_home",
-    "synth_xg_away",
-    "synth_xg_diff",
+    "xg_home",
+    "xg_away",
+    "xg_diff",
+    "xg_efficiency_home",
+    "xg_efficiency_away",
     "B365H",
     "B365D",
     "B365A",
@@ -50,7 +52,7 @@
     "formation_mismatch"
   ],
   "metadata": {
-    "created_at": "2026-02-18T23:35:27.031144",
+    "created_at": "2026-02-19T17:11:13.407964",
     "version": "2.0.0",
     "features": [
       "elo_home",
@@ -63,9 +65,11 @@
       "form_diff",
       "gf_diff",
       "ga_diff",
-      "synth_xg_home",
-      "synth_xg_away",
-      "synth_xg_diff",
+      "xg_home",
+      "xg_away",
+      "xg_diff",
+      "xg_efficiency_home",
+      "xg_efficiency_away",
       "B365H",
       "B365D",
       "B365A",
@@ -89,10 +93,10 @@
       "formation_score_away",
       "formation_mismatch"
     ],
-    "n_features": 35
+    "n_features": 37
   },
   "network_dims": {
-    "input_dim": 35,
+    "input_dim": 37,
     "cat_dims": [
       169,
       7

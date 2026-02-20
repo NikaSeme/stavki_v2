@@ -114,8 +114,8 @@ class GoalsRegressor(BaseModel):
             "elo_home", "elo_away", "elo_diff",
             "form_home_gf", "form_home_pts", 
             "form_away_gf", "form_away_pts",
-            "synth_xg_home", "synth_xg_away",
-            "avg_rating_home", "avg_rating_away",
+            "xg_home", "xg_away",
+            "xg_efficiency_home", "xg_efficiency_away",
             "rating_delta",
         ]
         

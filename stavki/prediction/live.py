@@ -89,7 +89,7 @@ class LivePredictor:
         self.feature_cols: List[str] = []
         self.elo_ratings: Dict[str, float] = {}
         self.team_form: Dict[str, List[float]] = {}
-        self.team_synth_xg: Dict[str, float] = {}  # team -> rolling synth_xg
+        self.team_xg: Dict[str, float] = {}  # team -> rolling xg
         self.team_avg_rating: Dict[str, float] = {}  # team -> rolling avg XI rating
         self.referee_profiles: Dict[str, Dict] = {}  # referee -> profile
         
@@ -122,22 +122,53 @@ class LivePredictor:
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
             df = df.sort_values('Date')
             
+            # CRITICAL: Normalize team names to match API/UnifiedLoader
+            from stavki.data.processors.normalize import normalize_team_name
+            if 'HomeTeam' in df.columns:
+                df['HomeTeam'] = df['HomeTeam'].apply(normalize_team_name)
+            if 'AwayTeam' in df.columns:
+                df['AwayTeam'] = df['AwayTeam'].apply(normalize_team_name)
+            
             # Extract ELO from latest matches
-            for _, row in df.tail(1000).iterrows():
-                home = row.get('HomeTeam', '')
-                away = row.get('AwayTeam', '')
-                
-                if home and 'elo_home' in row:
-                    self.elo_ratings[home] = row['elo_home']
-                if away and 'elo_away' in row:
-                    self.elo_ratings[away] = row['elo_away']
-                    
-                # Form (last points)
-                if home and 'form_home_pts' in row:
-                    if home not in self.team_form:
-                        self.team_form[home] = []
-                    self.team_form[home].append(row['form_home_pts'])
-                    self.team_form[home] = self.team_form[home][-5:]
+            # Vectorized ELO loading
+            # Create a long format DataFrame for easier dict conversion
+            # We want the LAST value for each team
+            
+            # Home ELOs
+            h_elo = df[['HomeTeam', 'elo_home']].rename(columns={'HomeTeam': 'Team', 'elo_home': 'Elo'}).dropna()
+            # Away ELOs
+            a_elo = df[['AwayTeam', 'elo_away']].rename(columns={'AwayTeam': 'Team', 'elo_away': 'Elo'}).dropna()
+            
+            # Concatenate and take last (since df is sorted by Date)
+            all_elo = pd.concat([h_elo, a_elo])
+            # drop_duplicates with keep='last' ensures we get the most recent rating
+            all_elo = all_elo.drop_duplicates(subset=['Team'], keep='last')
+            self.elo_ratings = all_elo.set_index('Team')['Elo'].to_dict()
+
+            # Vectorized Form Loading (Last 5 pts)
+            # This is trickier to vectorize fully without complex reshaping, sticking to last 5 matches per team
+            # But we can optimize by grouping.
+            # For now, let's keep it simple: iterrows is actually okay for "form" list building 
+            # if we pre-filter to only relevant columns and teams.
+            # Use a slightly optimized loop over tuples
+            
+            # ... actually, let's leave Form as is for now or use a dedicated helper later 
+            # as constructing the list of last 5 points per team via groupby is non-trivial in one line.
+            # But we can optimize the iteration:
+            
+            subset = df[['HomeTeam', 'AwayTeam', 'form_home_pts', 'form_away_pts']].tail(2000)
+            for row in subset.itertuples(index=False):
+                h, a, hp, ap = row.HomeTeam, row.AwayTeam, row.form_home_pts, row.form_away_pts
+                if h:
+                    if h not in self.team_form: self.team_form[h] = []
+                    self.team_form[h].append(hp)
+                if a:
+                    if a not in self.team_form: self.team_form[a] = []
+                    self.team_form[a].append(ap)
+            
+            # Trim all to 5
+            for k in self.team_form:
+                self.team_form[k] = self.team_form[k][-5:]
                     
             logger.info(f"Loaded ELO for {len(self.elo_ratings)} teams")
             
@@ -150,107 +181,120 @@ class LivePredictor:
                 edf = pd.read_parquet(src)
             edf = edf.sort_values('Date') if 'Date' in edf.columns else edf
             
-            # Rolling synth_xg and ratings from last 1000 rows
-            for _, row in edf.tail(1000).iterrows():
-                home = row.get('HomeTeam', '')
-                away = row.get('AwayTeam', '')
-                if home and 'synth_xg_home' in row and pd.notna(row['synth_xg_home']):
-                    self.team_synth_xg[home] = float(row['synth_xg_home'])
-                if away and 'synth_xg_away' in row and pd.notna(row['synth_xg_away']):
-                    self.team_synth_xg[away] = float(row['synth_xg_away'])
-                if home and 'avg_rating_home' in row and pd.notna(row['avg_rating_home']):
-                    self.team_avg_rating[home] = float(row['avg_rating_home'])
-                if away and 'avg_rating_away' in row and pd.notna(row['avg_rating_away']):
-                    self.team_avg_rating[away] = float(row['avg_rating_away'])
+            # Rolling xg and ratings from last 1000 rows
+            # Vectorized Rolling xG and Ratings
+            # Similar strategy: concat home/away, keep last
             
-            # Build referee profiles from Referee column
+            # xG
+            h_xg = edf[['HomeTeam', 'xg_home']].rename(columns={'HomeTeam': 'Team', 'xg_home': 'Val'}).dropna()
+            a_xg = edf[['AwayTeam', 'xg_away']].rename(columns={'AwayTeam': 'Team', 'xg_away': 'Val'}).dropna()
+            all_xg = pd.concat([h_xg, a_xg]).drop_duplicates(subset=['Team'], keep='last')
+            self.team_xg = all_xg.set_index('Team')['Val'].to_dict()
+            
+            # Avg Ratings
+            h_rat = edf[['HomeTeam', 'avg_rating_home']].rename(columns={'HomeTeam': 'Team', 'avg_rating_home': 'Val'}).dropna()
+            a_rat = edf[['AwayTeam', 'avg_rating_away']].rename(columns={'AwayTeam': 'Team', 'avg_rating_away': 'Val'}).dropna()
+            all_rat = pd.concat([h_rat, a_rat]).drop_duplicates(subset=['Team'], keep='last')
+            self.team_avg_rating = all_rat.set_index('Team')['Val'].to_dict()
+            
+            # Vectorized Referee Profiles
             if 'Referee' in edf.columns:
-                from collections import defaultdict
-                ref_data = defaultdict(lambda: {'matches': 0, 'goals': 0, 'cards': 0, 'over25': 0})
-                for _, row in edf.iterrows():
-                    ref = row.get('Referee')
-                    if pd.isna(ref) or not ref:
-                        continue
-                    ref = str(ref).strip().lower()
-                    rd = ref_data[ref]
-                    rd['matches'] += 1
-                    goals = (row.get('FTHG', 0) or 0) + (row.get('FTAG', 0) or 0)
-                    rd['goals'] += goals
-                    if goals > 2:
-                        rd['over25'] += 1
-                    rd['cards'] += (row.get('HY', 0) or 0) + (row.get('AY', 0) or 0) + \
-                                   (row.get('HR', 0) or 0) + (row.get('AR', 0) or 0)
-                for ref, rd in ref_data.items():
-                    n = rd['matches']
-                    if n >= 5:
-                        self.referee_profiles[ref] = {
-                            'goals_pg': round(rd['goals'] / n, 2),
-                            'cards_pg': round(rd['cards'] / n, 2),
-                            'over25_rate': round(rd['over25'] / n, 3),
-                            'strictness': round((rd['cards']/n - 3.5) / 1.5, 3),
-                        }
+                # Filter valid refs
+                valid_refs = edf[edf['Referee'].notna() & (edf['Referee'] != '')].copy()
+                valid_refs['Referee'] = valid_refs['Referee'].astype(str).str.strip().str.lower()
+                
+                # Pre-calculate metrics
+                valid_refs['total_goals'] = valid_refs['FTHG'].fillna(0) + valid_refs['FTAG'].fillna(0)
+                valid_refs['total_cards'] = (valid_refs['HY'].fillna(0) + valid_refs['AY'].fillna(0) + 
+                                           valid_refs['HR'].fillna(0) + valid_refs['AR'].fillna(0))
+                # For strictness: (cards/match - 3.5) / 1.5
+                
+                # GroupBy
+                # calculate is_over25
+                valid_refs['is_over25'] = (valid_refs['total_goals'] > 2.5).astype(int)
+
+                ref_grp = valid_refs.groupby('Referee').agg(
+                    matches=('Date', 'count'),
+                    goals=('total_goals', 'sum'),
+                    cards=('total_cards', 'sum'),
+                    over25=('is_over25', 'sum')
+                )
+                
+                # Filter min matches
+                ref_grp = ref_grp[ref_grp['matches'] >= 5]
+                
+                # Calculate profiles in a loop over the small aggregated result (fast)
+                for ref, row in ref_grp.iterrows():
+                    n = row['matches']
+                    self.referee_profiles[ref] = {
+                        'goals_pg': round(row['goals'] / n, 2),
+                        'cards_pg': round(row['cards'] / n, 2),
+                        'over25_rate': round(row['over25'] / n, 3),
+                        'strictness': round((row['cards']/n - 3.5) / 1.5, 3),
+                    }
+
             
-            logger.info(f"Loaded synth_xg for {len(self.team_synth_xg)} teams, "
+            logger.info(f"Loaded xg for {len(self.team_xg)} teams, "
                         f"ratings for {len(self.team_avg_rating)} teams, "
                         f"{len(self.referee_profiles)} referee profiles")
             
             # Phase 3: Load rolling match stats from enriched data
-            for _, row in edf.tail(1000).iterrows():
-                home = row.get('HomeTeam', '')
-                away = row.get('AwayTeam', '')
-                # Rolling fouls
-                if home and 'rolling_fouls_home' in row and pd.notna(row['rolling_fouls_home']):
-                    self.team_fouls[home] = float(row['rolling_fouls_home'])
-                if away and 'rolling_fouls_away' in row and pd.notna(row['rolling_fouls_away']):
-                    self.team_fouls[away] = float(row['rolling_fouls_away'])
-                # Rolling yellows
-                if home and 'rolling_yellows_home' in row and pd.notna(row['rolling_yellows_home']):
-                    self.team_yellows[home] = float(row['rolling_yellows_home'])
-                if away and 'rolling_yellows_away' in row and pd.notna(row['rolling_yellows_away']):
-                    self.team_yellows[away] = float(row['rolling_yellows_away'])
-                # Rolling corners
-                if home and 'rolling_corners_home' in row and pd.notna(row['rolling_corners_home']):
-                    self.team_corners[home] = float(row['rolling_corners_home'])
-                if away and 'rolling_corners_away' in row and pd.notna(row['rolling_corners_away']):
-                    self.team_corners[away] = float(row['rolling_corners_away'])
-                # Rolling possession
-                if home and 'rolling_possession_home' in row and pd.notna(row['rolling_possession_home']):
-                    self.team_possession[home] = float(row['rolling_possession_home'])
-                if away and 'rolling_possession_away' in row and pd.notna(row['rolling_possession_away']):
-                    self.team_possession[away] = float(row['rolling_possession_away'])
+            
+            # Phase 3: Load rolling match stats from enriched data
+            # Vectorized loading helper
+            def load_feature(target_dict, col_h, col_a):
+                h = edf[['HomeTeam', col_h]].rename(columns={'HomeTeam': 'Team', col_h: 'Val'}).dropna()
+                a = edf[['AwayTeam', col_a]].rename(columns={'AwayTeam': 'Team', col_a: 'Val'}).dropna()
+                # concat and keep last
+                m = pd.concat([h, a]).drop_duplicates('Team', keep='last')
+                target_dict.update(m.set_index('Team')['Val'].to_dict())
+
+            load_feature(self.team_fouls, 'rolling_fouls_home', 'rolling_fouls_away')
+            load_feature(self.team_yellows, 'rolling_yellows_home', 'rolling_yellows_away')
+            load_feature(self.team_corners, 'rolling_corners_home', 'rolling_corners_away')
+            load_feature(self.team_possession, 'rolling_possession_home', 'rolling_possession_away')
+
             
             # Phase 3: Referee target encoding from enriched data 
+            # Phase 3: Referee target encoding from enriched data 
+            # Vectorized loading
             if 'ref_encoded_goals' in edf.columns and 'Referee' in edf.columns:
-                for _, row in edf.tail(5000).iterrows():
-                    ref = row.get('Referee')
-                    if pd.isna(ref) or not ref:
-                        continue
-                    ref = str(ref).strip().lower()
-                    if 'ref_encoded_goals' in row and pd.notna(row['ref_encoded_goals']):
-                        self.ref_encoded_goals[ref] = float(row['ref_encoded_goals'])
-                    if 'ref_encoded_cards' in row and pd.notna(row['ref_encoded_cards']):
-                        self.ref_encoded_cards[ref] = float(row['ref_encoded_cards'])
+                # Extract columns of interest
+                cols = ['Referee']
+                if 'ref_encoded_goals' in edf.columns: cols.append('ref_encoded_goals')
+                if 'ref_encoded_cards' in edf.columns: cols.append('ref_encoded_cards')
+                
+                subset = edf[cols].dropna(subset=['Referee']).copy()
+                subset['Referee'] = subset['Referee'].astype(str).str.strip().str.lower()
+                
+                # Keep last value per referee
+                subset = subset.drop_duplicates('Referee', keep='last').set_index('Referee')
+                
+                if 'ref_encoded_goals' in subset:
+                    self.ref_encoded_goals.update(subset['ref_encoded_goals'].dropna().to_dict())
+                if 'ref_encoded_cards' in subset:
+                    self.ref_encoded_cards.update(subset['ref_encoded_cards'].dropna().to_dict())
             
-            # Phase 3: Load historical formations for builder
-            # Use columns formation_home / formation_away if available
+
+            # Phase 3: Load historical formations
             if 'formation_home' in edf.columns and 'formation_away' in edf.columns:
-                 # Manually populate builder's internal state
                  team_fmts = self.formation_builder._team_formations
-                 for _, row in edf.tail(2000).iterrows():
-                     h_name = str(row.get("HomeTeam")).strip().lower()
-                     a_name = str(row.get("AwayTeam")).strip().lower()
-                     h_fmt = row.get("formation_home")
-                     a_fmt = row.get("formation_away")
-                     
-                     if h_name and pd.notna(h_fmt):
-                         if h_name not in team_fmts: team_fmts[h_name] = []
-                         team_fmts[h_name].append(str(h_fmt))
-                         team_fmts[h_name] = team_fmts[h_name][-10:]
-                         
-                     if a_name and pd.notna(a_fmt):
-                         if a_name not in team_fmts: team_fmts[a_name] = []
-                         team_fmts[a_name].append(str(a_fmt))
-                         team_fmts[a_name] = team_fmts[a_name][-10:]
+                 
+                 # Vectorized formation loading
+                 h_fmt = edf[['HomeTeam', 'formation_home']].rename(columns={'HomeTeam': 'Team', 'formation_home': 'Fmt'}).dropna()
+                 a_fmt = edf[['AwayTeam', 'formation_away']].rename(columns={'AwayTeam': 'Team', 'formation_away': 'Fmt'}).dropna()
+                 all_fmt = pd.concat([h_fmt, a_fmt])
+                 
+                 # Group by team and take last 10
+                 # apply(list) is somewhat slow but much faster than iterrows for string aggregation
+                 # Filter to recent 5000 rows to speed up groupby
+                 all_fmt = all_fmt.tail(5000)
+                 
+                 # Bob's Standard: Fast C-optimized grouping, then list slicing
+                 fmt_series = all_fmt.groupby('Team')['Fmt'].agg(list)
+                 fmt_lists = fmt_series.apply(lambda x: [str(i) for i in x[-10:]]).to_dict()
+                 
+                 team_fmts.update(fmt_lists)
                  self.formation_builder._is_fitted = True
 
             logger.info(f"Phase 3: {len(self.team_fouls)} teams with fouls, "
@@ -266,8 +310,16 @@ class LivePredictor:
         with open(model_path, 'rb') as f:
             data = pickle.load(f)
         
-        self.model = data.get('model')
-        self.feature_cols = data.get('features', [])
+        # Handle new BaseModel.save format (nested in model_state)
+        if 'model_state' in data:
+            state = data['model_state']
+            self.model = state.get('model')
+            self.feature_cols = state.get('features', [])
+        # Handle legacy format (flat)
+        else:
+            self.model = data.get('model')
+            self.feature_cols = data.get('features', [])
+            
         logger.info(f"Loaded model with {len(self.feature_cols)} features")
     
     def _build_features(self, fixture: MatchFixture, odds: Dict) -> pd.DataFrame:
@@ -297,9 +349,9 @@ class LivePredictor:
         imp_draw = (1/odds_d) / margin
         imp_away = (1/odds_a) / margin
         
-        # Tier 1: Synthetic xG
-        synth_xg_home = self.team_synth_xg.get(home, 1.3)
-        synth_xg_away = self.team_synth_xg.get(away, 1.1)
+        # Tier 1: Real xG
+        xg_home = self.team_xg.get(home, 1.35)
+        xg_away = self.team_xg.get(away, 1.15)
         
         # Tier 1: Player Ratings
         avg_rating_home = self.team_avg_rating.get(home, 6.5)
@@ -327,10 +379,10 @@ class LivePredictor:
             'imp_home_norm': imp_home,
             'imp_draw_norm': imp_draw,
             'imp_away_norm': imp_away,
-            # Tier 1: Synthetic xG
-            'synth_xg_home': synth_xg_home,
-            'synth_xg_away': synth_xg_away,
-            'synth_xg_diff': round(synth_xg_home - synth_xg_away, 3),
+            # Tier 1: Real xG
+            'xg_home': xg_home,
+            'xg_away': xg_away,
+            'xg_diff': round(xg_home - xg_away, 3),
             # Tier 1: Player Ratings
             'avg_rating_home': avg_rating_home,
             'avg_rating_away': avg_rating_away,
@@ -398,9 +450,23 @@ class LivePredictor:
         X = self._build_features(fixture, odds)
         
         # Predict
+        # Predict
         if self.model is not None:
-            available_cols = [c for c in self.feature_cols if c in X.columns]
-            X_pred = X[available_cols].fillna(0)
+            # Ensure all model features exist
+            missing_cols = [c for c in self.feature_cols if c not in X.columns]
+            if missing_cols:
+                # Fill missing with explicit defaults
+                for c in missing_cols:
+                    if c in ['HomeTeam', 'AwayTeam', 'League', 'league']: # Known categoricals
+                         X[c] = "Unknown"
+                    else:
+                         X[c] = 0.0
+            
+            # Reindex to exact model columns (Order Matters!)
+            X_pred = X[self.feature_cols].copy()
+            
+            # Final safe fillna
+            X_pred = X_pred.fillna(0)
             
             probs = self.model.predict_proba(X_pred)[0]
             # CatBoost order: A=0, D=1, H=2
