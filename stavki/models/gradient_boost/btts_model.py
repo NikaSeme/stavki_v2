@@ -241,11 +241,11 @@ class BTTSModel(CalibratedModel):
         for idx, row in data.iterrows():
             i = data.index.get_loc(idx)
             from stavki.utils import generate_match_id
-            match_id = row.get("match_id", generate_match_id(
-                row.get("HomeTeam", "home"), 
-                row.get("AwayTeam", "away"), 
-                row.get("Date")
-            ))
+            match_id = str(row.get("event_id", row.get("match_id"))) if pd.notna(row.get("event_id", row.get("match_id"))) and str(row.get("event_id", row.get("match_id"))).strip() != "" else generate_match_id(
+                row.get("HomeTeam", row.get("home_team", "home")), 
+                row.get("AwayTeam", row.get("away_team", "away")), 
+                row.get("Date", row.get("commence_time"))
+            )
             
             predictions.append(Prediction(
                 match_id=match_id,

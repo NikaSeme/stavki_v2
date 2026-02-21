@@ -523,7 +523,6 @@ class DailyPipeline:
         
         def _process_single_match(row):
             """Helper to process a single match in a thread."""
-            idx = row.name
             match_id = row.get("event_id", f"{row.get('home_team', '')}_{row.get('away_team', '')}")
             fixture_id = row.get("fixture_id") or row.get("source_id")
             
@@ -736,6 +735,28 @@ class DailyPipeline:
                 agg_odds["sm_implied_draw"] = agg_odds["imp_draw_norm"]
                 agg_odds["sm_implied_away"] = agg_odds["imp_away_norm"]
                 
+                # --- LEGACY FALLBACK INJECTION ---
+                # Provide expected bookie averages for historical models
+                legacy_bookies = ["B365", "BW", "IW", "LB", "PS", "WH", "SJ", "VC"]
+                for b in legacy_bookies:
+                    agg_odds[f"{b}H"] = agg_odds["AvgH"]
+                    agg_odds[f"{b}D"] = agg_odds["AvgD"]
+                    agg_odds[f"{b}A"] = agg_odds["AvgA"]
+                
+                # BetBrain specialized trackers
+                for pref in ["BbAv", "BbMx"]:
+                    agg_odds[f"{pref}H"] = agg_odds["AvgH"]
+                    agg_odds[f"{pref}D"] = agg_odds["AvgD"]
+                    agg_odds[f"{pref}A"] = agg_odds["AvgA"]
+                    agg_odds[f"{pref}>2.5"] = 1.90
+                    agg_odds[f"{pref}<2.5"] = 1.90
+                    agg_odds[f"{pref}AHH"] = 1.90
+                
+                agg_odds["Bb1X2"] = agg_odds["n_bookmakers"]
+                agg_odds["BbOU"] = agg_odds["n_bookmakers"]
+                agg_odds["BbAH"] = agg_odds["n_bookmakers"]
+                agg_odds["BbAHh"] = 0.0
+
                 # Drop helper column
                 agg_odds = agg_odds.drop(columns=["n_bookmakers"])
                 
@@ -887,6 +908,12 @@ class DailyPipeline:
                             missing_cols[col] = 0.0
                         elif "streak" in col:
                             missing_cols[col] = 0
+                        elif col.endswith("H") and "AvgH" in df.columns and any(b in col for b in ["B365", "BW", "IW", "PS", "WH", "VC", "Max"]):
+                            missing_cols[col] = df["AvgH"]
+                        elif col.endswith("D") and "AvgD" in df.columns and any(b in col for b in ["B365", "BW", "IW", "PS", "WH", "VC", "Max"]):
+                            missing_cols[col] = df["AvgD"]
+                        elif col.endswith("A") and "AvgA" in df.columns and any(b in col for b in ["B365", "BW", "IW", "PS", "WH", "VC", "Max"]):
+                            missing_cols[col] = df["AvgA"]
                         else:
                             missing_cols[col] = 0.0
                 
@@ -1009,22 +1036,24 @@ class DailyPipeline:
                     mid = hashlib.md5(key.encode()).hexdigest()[:12]
                     
                     # Scores
-                    home_score = int(row['FTHG']) if pd.notna(row.get('FTHG')) else None
-                    away_score = int(row['FTAG']) if pd.notna(row.get('FTAG')) else None
+                    val_hg = getattr(row, 'FTHG', None)
+                    val_ag = getattr(row, 'FTAG', None)
+                    home_score = int(val_hg) if pd.notna(val_hg) else None
+                    away_score = int(val_ag) if pd.notna(val_ag) else None
                     
                 else:
                     # Upcoming
-                    commence = row.get('commence_time')
+                    commence = getattr(row, 'commence_time', None)
                     if isinstance(commence, str):
                         commence = datetime.fromisoformat(commence.replace("Z", "+00:00"))
                     
                     # Use existing ID
-                    mid = str(row.get('event_id', row.get('match_id', 'unknown')))
+                    mid = str(getattr(row, 'event_id', getattr(row, 'match_id', 'unknown')))
                     home_score = None
                     away_score = None
                 
                 # League
-                league_str = str(row.get('League', row.get('league', 'unknown'))).lower()
+                league_str = str(getattr(row, 'League', getattr(row, 'league', 'unknown'))).lower()
                 
                 # Robust mapping
                 league_map = {
@@ -1052,23 +1081,24 @@ class DailyPipeline:
                 # Stats (Historical Only)
                 stats = None
                 if is_historical:
-                     # Check if stats columns exist (HS = Home Shots, AS = Away Shots)
-                     if pd.notna(row.get('HS')) and pd.notna(row.get('AS')):
+                     v_hs = getattr(row, 'HS', None)
+                     v_as = getattr(row, 'AS', None)
+                     if pd.notna(v_hs) and pd.notna(v_as):
                          try:
                              stats = MatchStats(
                                  match_id=mid,
-                                 shots_home=int(row['HS']) if pd.notna(row.get('HS')) else None,
-                                 shots_away=int(row['AS']) if pd.notna(row.get('AS')) else None,
-                                 shots_on_target_home=int(row['HST']) if pd.notna(row.get('HST')) else None,
-                                 shots_on_target_away=int(row['AST']) if pd.notna(row.get('AST')) else None,
-                                 corners_home=int(row['HC']) if pd.notna(row.get('HC')) else None,
-                                 corners_away=int(row['AC']) if pd.notna(row.get('AC')) else None,
-                                 fouls_home=int(row['HF']) if pd.notna(row.get('HF')) else None,
-                                 fouls_away=int(row['AF']) if pd.notna(row.get('AF')) else None,
-                                 yellow_cards_home=int(row['HY']) if pd.notna(row.get('HY')) else None,
-                                 yellow_cards_away=int(row['AY']) if pd.notna(row.get('AY')) else None,
-                                 red_cards_home=int(row['HR']) if pd.notna(row.get('HR')) else None,
-                                 red_cards_away=int(row['AR']) if pd.notna(row.get('AR')) else None,
+                                 shots_home=int(v_hs) if pd.notna(v_hs) else None,
+                                 shots_away=int(v_as) if pd.notna(v_as) else None,
+                                 shots_on_target_home=int(getattr(row, 'HST')) if pd.notna(getattr(row, 'HST', None)) else None,
+                                 shots_on_target_away=int(getattr(row, 'AST')) if pd.notna(getattr(row, 'AST', None)) else None,
+                                 corners_home=int(getattr(row, 'HC')) if pd.notna(getattr(row, 'HC', None)) else None,
+                                 corners_away=int(getattr(row, 'AC')) if pd.notna(getattr(row, 'AC', None)) else None,
+                                 fouls_home=int(getattr(row, 'HF')) if pd.notna(getattr(row, 'HF', None)) else None,
+                                 fouls_away=int(getattr(row, 'AF')) if pd.notna(getattr(row, 'AF', None)) else None,
+                                 yellow_cards_home=int(getattr(row, 'HY')) if pd.notna(getattr(row, 'HY', None)) else None,
+                                 yellow_cards_away=int(getattr(row, 'AY')) if pd.notna(getattr(row, 'AY', None)) else None,
+                                 red_cards_home=int(getattr(row, 'HR')) if pd.notna(getattr(row, 'HR', None)) else None,
+                                 red_cards_away=int(getattr(row, 'AR')) if pd.notna(getattr(row, 'AR', None)) else None,
                              )
                          except Exception:
                              pass # Robustness
@@ -1081,7 +1111,7 @@ class DailyPipeline:
                     commence_time=commence,
                     home_score=home_score,
                     away_score=away_score,
-                    enrichment=row.get("_enrichment") if pd.notna(row.get("_enrichment")) else None,
+                    enrichment=getattr(row, "_enrichment", None) if pd.notna(getattr(row, "_enrichment", None)) else None,
                     stats=stats,
                     source="historical" if is_historical else "api"
                 )

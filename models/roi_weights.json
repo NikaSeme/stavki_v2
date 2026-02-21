@@ -1,8 +1,0 @@
-{
-    "MATCH_WINNER": {
-        "DixonColes": 0.0,
-        "CatBoost_1X2": 1.0,
-        "LightGBM_1X2": 0.0,
-        "DeepInteraction": 0.0
-    }
-}

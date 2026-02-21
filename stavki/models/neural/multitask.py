@@ -586,9 +586,13 @@ class MultiTaskModel(BaseModel):
         le_team = self.encoders["team"]
         le_league = self.encoders["league"]
         
-        cat_home = safe_transform(le_team, data["HomeTeam"]).values
-        cat_away = safe_transform(le_team, data["AwayTeam"]).values
-        cat_league = safe_transform(le_league, data["League"]).values
+        home_col = data.get("HomeTeam", data.get("home_team", pd.Series(["unknown"] * len(data)))).fillna("unknown")
+        away_col = data.get("AwayTeam", data.get("away_team", pd.Series(["unknown"] * len(data)))).fillna("unknown")
+        league_col = data.get("League", data.get("league", pd.Series(["unknown"] * len(data)))).fillna("unknown")
+
+        cat_home = safe_transform(le_team, home_col).values
+        cat_away = safe_transform(le_team, away_col).values
+        cat_league = safe_transform(le_league, league_col).values
         
         X_cat = np.stack([cat_home, cat_away, cat_league], axis=1) # [N, 3]
         X_cat_t = torch.LongTensor(X_cat).to(self.device)
@@ -609,13 +613,11 @@ class MultiTaskModel(BaseModel):
             from stavki.utils import generate_match_id
             
             for i, row in enumerate(matches):
-                match_id = row.get("match_id")
-                if not match_id:
-                    match_id = generate_match_id(
-                        row.get("HomeTeam", "home"), 
-                        row.get("AwayTeam", "away"), 
-                        row.get("Date")
-                    )
+                match_id = str(row.get("event_id", row.get("match_id"))) if pd.notna(row.get("event_id", row.get("match_id"))) and str(row.get("event_id", row.get("match_id"))).strip() != "" else generate_match_id(
+                    row.get("HomeTeam", "home"), 
+                    row.get("AwayTeam", "away"), 
+                    row.get("Date")
+                )
                 
                 # 1X2 prediction
                 p1x2 = p1x2_all[i]

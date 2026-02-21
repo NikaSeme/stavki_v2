@@ -356,11 +356,11 @@ class LightGBMModel(CalibratedModel):
         temp_id = data.copy()
         # Use apply for robustness with existing util
         match_ids = temp_id.apply(
-            lambda x: x.get("match_id", generate_match_id(
-                x.get("HomeTeam", "home"), 
-                x.get("AwayTeam", "away"), 
-                x.get("Date")
-            )), 
+            lambda x: str(x.get("event_id", x.get("match_id"))) if pd.notna(x.get("event_id", x.get("match_id"))) and str(x.get("event_id", x.get("match_id"))).strip() != "" else generate_match_id(
+                x.get("HomeTeam", x.get("home_team", "home")), 
+                x.get("AwayTeam", x.get("away_team", "away")), 
+                x.get("Date", x.get("commence_time"))
+            ), 
             axis=1
         ).values
         

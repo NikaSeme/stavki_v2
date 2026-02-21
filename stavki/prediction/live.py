@@ -156,9 +156,13 @@ class LivePredictor:
             # as constructing the list of last 5 points per team via groupby is non-trivial in one line.
             # But we can optimize the iteration:
             
-            subset = df[['HomeTeam', 'AwayTeam', 'form_home_pts', 'form_away_pts']].tail(2000)
+            h_col = "HomeTeam" if "HomeTeam" in df.columns else "home_team"
+            a_col = "AwayTeam" if "AwayTeam" in df.columns else "away_team"
+            
+            subset = df[[h_col, a_col, 'form_home_pts', 'form_away_pts']].tail(2000)
             for row in subset.itertuples(index=False):
-                h, a, hp, ap = row.HomeTeam, row.AwayTeam, row.form_home_pts, row.form_away_pts
+                h, a = getattr(row, h_col, ""), getattr(row, a_col, "")
+                hp, ap = row.form_home_pts, row.form_away_pts
                 if h:
                     if h not in self.team_form: self.team_form[h] = []
                     self.team_form[h].append(hp)

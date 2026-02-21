@@ -270,9 +270,14 @@ class GoalsRegressor(BaseModel):
             raise RuntimeError("Model not fitted")
         
         features = self.metadata.get("features", [])
-        available = [f for f in features if f in data.columns]
         
-        X = data[available].fillna(0).values
+        if features:
+            X_aligned = data.reindex(columns=features, fill_value=0.0)
+            X = X_aligned.fillna(0.0).values
+        else:
+            available = [f for f in features if f in data.columns]
+            X = data[available].fillna(0).values
+
         # Handle case where self.feature_means is None (should be set in fit)
         if self.feature_means is None:
              self.feature_means = np.zeros(X.shape[1])
@@ -317,14 +322,11 @@ class GoalsRegressor(BaseModel):
         for i, row in enumerate(matches):
             lh, la = float(lh_arr[i]), float(la_arr[i])
             
-            match_id = row.get("match_id")
-            if not match_id:
-                # Fallback
-                match_id = generate_match_id(
-                     row.get("HomeTeam", "home"), 
-                     row.get("AwayTeam", "away"), 
-                     row.get("Date")
-                )
+            match_id = str(row.get("event_id", row.get("match_id"))) if pd.notna(row.get("event_id", row.get("match_id"))) and str(row.get("event_id", row.get("match_id"))).strip() != "" else generate_match_id(
+                 row.get("HomeTeam", "home"), 
+                 row.get("AwayTeam", "away"), 
+                 row.get("Date")
+            )
             
             # O/U 2.5
             p_over = float(over_probs[i])

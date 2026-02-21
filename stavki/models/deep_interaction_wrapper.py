@@ -424,15 +424,23 @@ class DeepInteractionWrapper(BaseModel):
         # Normalize after clipping
         probs = probs / probs.sum()
         
-        # 8. Build match ID
-        home_name = row.get('HomeTeam', row.get('home_team', str(home_id)))
-        away_name = row.get('AwayTeam', row.get('away_team', str(away_id)))
-        date = row.get('Date', row.get('date', ''))
+        # 8. Build match ID (safely extract from actual dataframe mappings first)
+        match_id = row.get('event_id', row.get('match_id'))
         
-        try:
-            match_id = generate_match_id(home_name, away_name, date)
-        except Exception:
-            match_id = f"{home_name}_vs_{away_name}_{idx}"
+        if pd.isna(match_id) or not match_id:
+            home_name = row.get('HomeTeam', row.get('home_team', str(home_id)))
+            away_name = row.get('AwayTeam', row.get('away_team', str(away_id)))
+            date = row.get('Date', row.get('date', ''))
+            
+            try:
+                from stavki.utils import generate_match_id
+                date_str = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date).split()[0]
+                match_id = generate_match_id(home_name, away_name, date_str)
+            except Exception:
+                match_id = f"{home_name}_vs_{away_name}_{idx}"
+                
+        # Ensure string type
+        match_id = str(match_id)
         
         # 9. Build Prediction object
         return Prediction(

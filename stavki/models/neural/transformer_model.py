@@ -148,9 +148,9 @@ class TransformerModel(BaseModel):
         pad_vec = np.zeros(n_features, dtype=np.float32)
         
         for idx, row in df.iterrows():
-            date = row["Date"]
-            h_team = row["HomeTeam"]
-            a_team = row["AwayTeam"]
+            date = row.get("Date", row.get("commence_time"))
+            h_team = row.get("HomeTeam", row.get("home_team", "unknown"))
+            a_team = row.get("AwayTeam", row.get("away_team", "unknown"))
             
             # Label
             if row["FTHG"] > row["FTAG"]:
@@ -332,7 +332,7 @@ class TransformerModel(BaseModel):
         data_sorted = data.sort_values("Date").reset_index(drop=True)
         
         for i, row in data_sorted.iterrows():
-            match_id = row.get("match_id", generate_match_id(row.get("HomeTeam"), row.get("AwayTeam"), row.get("Date")))
+            match_id = str(row.get("event_id", row.get("match_id"))) if pd.notna(row.get("event_id", row.get("match_id"))) and str(row.get("event_id", row.get("match_id"))).strip() != "" else generate_match_id(row.get("HomeTeam"), row.get("AwayTeam"), row.get("Date"))
             
             p = probs[i]
             # p is [Home, Draw, Away] because targets were 0=H, 1=D, 2=A

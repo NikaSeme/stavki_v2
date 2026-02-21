@@ -293,7 +293,7 @@ class DixonColesModel(BaseModel):
         from stavki.utils import generate_match_id
         temp_data = data.copy()
         match_ids = temp_data.apply(
-            lambda x: x.get("match_id", generate_match_id(x.get("HomeTeam", ""), x.get("AwayTeam", ""), x.get("Date"))),
+            lambda x: str(x.get("event_id", x.get("match_id"))) if pd.notna(x.get("event_id", x.get("match_id"))) and str(x.get("event_id", x.get("match_id"))).strip() != "" else generate_match_id(x.get("HomeTeam", x.get("home_team", "")), x.get("AwayTeam", x.get("away_team", "")), x.get("Date", "")),
             axis=1
         ).values
         
@@ -545,17 +545,20 @@ class DixonColesModel(BaseModel):
         # Actually series.map(dict) returns NaN for missing.
         # We need to fillna(1.0).
         
-        att_h = data["HomeTeam"].map(self.attack).fillna(1.0).values
-        def_a = data["AwayTeam"].map(self.defense).fillna(1.0).values
+        home_col = data.get("HomeTeam", data.get("home_team"))
+        away_col = data.get("AwayTeam", data.get("away_team"))
         
-        att_a = data["AwayTeam"].map(self.attack).fillna(1.0).values
-        def_h = data["HomeTeam"].map(self.defense).fillna(1.0).values
+        att_h = home_col.map(self.attack).fillna(1.0).values
+        def_a = away_col.map(self.defense).fillna(1.0).values
+        
+        att_a = away_col.map(self.attack).fillna(1.0).values
+        def_h = home_col.map(self.defense).fillna(1.0).values
         
         # League Home Advantage
-        # if League column exists
-        if "League" in data.columns:
+        league_col = data.get("League", data.get("league"))
+        if league_col is not None:
             # Map league to HA, fillna with self.home_advantage
-            ha = data["League"].map(self.league_home_adv).fillna(self.home_advantage).values
+            ha = league_col.map(self.league_home_adv).fillna(self.home_advantage).values
         else:
             ha = np.full(len(data), self.home_advantage)
             

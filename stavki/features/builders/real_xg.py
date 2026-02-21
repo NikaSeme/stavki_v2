@@ -259,10 +259,10 @@ class RealXGBuilder:
             stats = None
             
             # 1. Check if match object already has rich stats (e.g. from live loader)
-            if m.stats and (m.stats.home_xg is not None or m.stats.away_xg is not None):
+            if hasattr(m, "stats") and m.stats and (getattr(m.stats, "xg_home", None) is not None or getattr(m.stats, "xg_away", None) is not None):
                 stats = {
-                    'home_xg': m.stats.home_xg or 0.0,
-                    'away_xg': m.stats.away_xg or 0.0
+                    'home_xg': getattr(m.stats, "xg_home", 0.0),
+                    'away_xg': getattr(m.stats, "xg_away", 0.0)
                 }
             
             # 2. Key lookup in backfilled storage

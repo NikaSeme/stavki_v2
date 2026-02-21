@@ -223,14 +223,18 @@ class EnsemblePredictor(BaseModel):
         # df has aliased columns (PascalCase)
         league_col = "League"
         
-        if league_col in df.columns and "HomeTeam" in df.columns:
+        home_col = "HomeTeam" if "HomeTeam" in df.columns else "home_team"
+        away_col = "AwayTeam" if "AwayTeam" in df.columns else "away_team"
+        date_col = "Date" if "Date" in df.columns else "commence_time"
+        
+        if league_col in df.columns and home_col in df.columns:
             # Try to vectorize ID generation if possible, else use apply
             from stavki.utils import generate_match_id
             
             # Use a temporary dataframe to avoid modifying input
-            temp = df[[league_col, "HomeTeam", "AwayTeam", "Date"]].copy()
+            temp = df[[league_col, home_col, away_col, date_col]].copy()
             temp["mid"] = temp.apply(
-                lambda x: generate_match_id(x.get("HomeTeam", ""), x.get("AwayTeam", ""), x.get("Date")), 
+                lambda x: generate_match_id(str(x.get(home_col, "")), str(x.get(away_col, "")), str(x.get(date_col, ""))), 
                 axis=1
             )
             league_lookup = dict(zip(temp["mid"], temp[league_col]))
@@ -350,7 +354,7 @@ class EnsemblePredictor(BaseModel):
             from stavki.utils import generate_match_id
             match_id = row.get(
                 "match_id",
-                generate_match_id(row.get('HomeTeam', 'home'), row.get('AwayTeam', 'away'), row.get('Date'))
+                generate_match_id(row.get('HomeTeam', row.get('home_team', 'home')), row.get('AwayTeam', row.get('away_team', 'away')), row.get('Date', row.get('commence_time')))
             )
             league = row.get(league_col)
             if match_id and league:
@@ -520,7 +524,7 @@ class EnsemblePredictor(BaseModel):
         data_rows = {}
         for _, row in data.iterrows():
             from stavki.utils import generate_match_id
-            mid = row.get("match_id", generate_match_id(row.get('HomeTeam', ''), row.get('AwayTeam', ''), row.get('Date')))
+            mid = row.get("match_id", generate_match_id(row.get('HomeTeam', row.get('home_team', '')), row.get('AwayTeam', row.get('away_team', '')), row.get('Date', row.get('commence_time'))))
             # Handling generic ID matching if needed, but assuming exact match for speed
             # If standard ID generation is consistent, this works. 
             # If not, we might need a better join strategy.

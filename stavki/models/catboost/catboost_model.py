@@ -405,7 +405,10 @@ class CatBoostModel(CalibratedModel):
         
         predictions = []
         for i, (idx, row) in enumerate(data.iterrows()):
-            match_id = row.get("match_id", f"{row.get('HomeTeam', 'home')}_vs_{row.get('AwayTeam', 'away')}_{idx}")
+            match_id = row.get("event_id", row.get("match_id"))
+            if pd.isna(match_id) or not match_id:
+                 match_id = f"{row.get('HomeTeam', row.get('home_team', 'home'))}_vs_{row.get('AwayTeam', row.get('away_team', 'away'))}_{idx}"
+            match_id = str(match_id)
             
             # Note: CatBoost uses 0=Home, 1=Draw, 2=Away
             prob_dict = {
