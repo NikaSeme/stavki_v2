@@ -307,7 +307,7 @@ class SportMonksClient:
             response = self._request(
                 endpoint,
                 params=params,
-                includes=["participants", "venue", "round", "coaches"]
+                includes=["participants", "venue", "round"]
             )
             
             data_items = response.get("data", [])

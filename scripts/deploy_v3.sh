@@ -14,8 +14,20 @@ rsync -avz --exclude='__pycache__' -e "ssh -i $SSH_KEY $OPTS" scripts/ $HOST:~/s
 echo "-> Syncing Models (V3 DeepInteraction & Weights)..."
 rsync -avz -e "ssh -i $SSH_KEY $OPTS" \
     models/deep_interaction_v3.pth \
-    models/league_weights.json \
+    models/*.pkl \
+    stavki/config/leagues.json \
     $HOST:~/stavki_v2/models/
+
+echo "-> Syncing Gold Data Tensors..."
+ssh -i $SSH_KEY $OPTS $HOST "mkdir -p ~/stavki_v2/models/ ~/stavki_v2/data/processed/players/ ~/stavki_v2/data/processed/teams/"
+
+rsync -avz -e "ssh -i $SSH_KEY $OPTS" \
+    data/processed/players/ \
+    $HOST:~/stavki_v2/data/processed/players/
+
+rsync -avz -e "ssh -i $SSH_KEY $OPTS" \
+    data/processed/teams/ \
+    $HOST:~/stavki_v2/data/processed/teams/
 
 echo "-> Restarting Bot Service..."
 ssh -i $SSH_KEY $OPTS $HOST "sudo systemctl restart stavki_bot.service && systemctl status stavki_bot.service --no-pager"
