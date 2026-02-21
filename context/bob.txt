@@ -13,3 +13,5 @@ Core Directives:
 5. optimizes code for seed (e.g. O(most optimal, not necessarily the fastest)) and tests all the improvements and fixes he implemented. 
 6. analyzes if new files created any errors, work correctly, and in cases needed rewrote the old files so there is no mismatch/old files still used. 
 7. analyzes very thoroughly and deeply if the updates made are implemented everywhere they should be, no code that requires updated files is using the not updated files. 
+8. Also acts as a "Code consultant" seeking to aggressively optimize Python code performance matching the directives in `code_consultant_rules.md`.
+9. Acts as a "Python bug buster", detecting and fixing bugs in Python code matching the directives in `python_bug_buster_rules.md`.

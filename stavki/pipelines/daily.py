@@ -865,6 +865,20 @@ class DailyPipeline:
             "advanced_xg_against_away": "advanced_xg_against_away",
             "advanced_shots_for_home": "HS", # Approximation if HS missing
             "advanced_shots_for_away": "AS",
+            
+            # BOB'S BUG BUSTER: LightGBM Legacy Feature Normalization (Deep Fix)
+            # Live Inference uses object-oriented builders that output dynamic names. 
+            # We MUST map these to the legacy historical columns expected by ML models.
+            "avg_rating_xi_home": "avg_rating_home",
+            "avg_rating_xi_away": "avg_rating_away",
+            "key_player_missing_home": "key_players_home",
+            "key_player_missing_away": "key_players_away",
+            "xi_xg90_home": "synth_xg_home",
+            "xi_xg90_away": "synth_xg_away",
+            # We map actual real xG vectors to the 'synth_xg' columns the model expects
+            "xg_home": "synth_xg_home",
+            "xg_away": "synth_xg_away",
+            "xg_diff": "synth_xg_diff",
         }
         
         # Apply renames for columns that exist
@@ -902,7 +916,45 @@ class DailyPipeline:
                 for col in master_cols:
                     if col not in df.columns:
                         # Smart defaults for features not populated by _build_features
-                        if "rolling" in col or "prob" in col:
+                        # BOB'S BUG BUSTER: Inject accurate Bayesian Priors instead of 0.0 zeroes to prevent model skew
+                        if "synth_xg" in col:
+                            # Map synth_xg legacy to actual xg_home computed by RealXGBuilder
+                            derived_xg_col = col.replace("synth_xg", "xg")
+                            if derived_xg_col in df.columns:
+                                missing_cols[col] = df[derived_xg_col]
+                            else:
+                                missing_cols[col] = 1.25 if "diff" not in col else 0.0
+                        elif "avg_rating" in col:
+                            missing_cols[col] = 6.5
+                        elif "rating_delta" in col:
+                            missing_cols[col] = 0.0
+                        elif "key_players" in col:
+                            missing_cols[col] = 0
+                        elif "xi_experience" in col:
+                            missing_cols[col] = 90.0
+                        elif "ref_goals" in col or "ref_encoded_goals" in col:
+                            missing_cols[col] = 2.7
+                        elif "ref_cards" in col or "ref_encoded_cards" in col:
+                            missing_cols[col] = 3.5
+                        elif "ref_over25" in col:
+                            missing_cols[col] = 0.55
+                        elif "ref_strictness" in col or "ref_experience" in col:
+                            missing_cols[col] = 0.0
+                        elif "formation_score" in col:
+                            missing_cols[col] = 0.5
+                        elif "formation_mismatch" in col or "formation_is_known" in col or "matchup_sample_size" in col:
+                            missing_cols[col] = 0.0
+                        elif "matchup_home_wr" in col:
+                            missing_cols[col] = 0.44
+                        elif "rolling_fouls" in col:
+                            missing_cols[col] = 12.0
+                        elif "rolling_yellows" in col:
+                            missing_cols[col] = 2.0
+                        elif "rolling_corners" in col:
+                            missing_cols[col] = 5.0
+                        elif "rolling_possession" in col:
+                            missing_cols[col] = 50.0
+                        elif "rolling" in col or "prob" in col:
                             missing_cols[col] = 0.5  # Neutral for rolling/probability features
                         elif "ref" in col:
                             missing_cols[col] = 0.0
@@ -1324,8 +1376,8 @@ class DailyPipeline:
         # --- Load Shadow Models (V3 Watcher) ---
         try:
             from stavki.models.v3_transformer_wrapper import V3WatcherWrapper
-            # Look for v3 weights
-            v3_path = models_dir / "v3_transformer.pth"
+            # Initialize V3 Neural Transformer Model
+            v3_path = models_dir / "deep_interaction_v3.pth"
             # Wrapper handles missing file gracefully
             v3_watcher = V3WatcherWrapper(model_path=v3_path)
             ensemble.add_shadow_model(v3_watcher)
