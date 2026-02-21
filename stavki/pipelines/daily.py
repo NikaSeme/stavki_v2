@@ -1458,7 +1458,9 @@ class DailyPipeline:
         # O(N) HashMap caching for prices (avoid O(N*M) nested DataFrame scans)
         prices_map = {str(k): v.to_dict('records') for k, v in best_prices.groupby(best_prices["event_id"].astype(str))}
         
-        for match in matches_df.to_dict('records'):
+        # Generator optimization: Replace memory-heavy .to_dict() with memory-efficient iteration
+        for match_idx in range(len(matches_df)):
+            match = matches_df.iloc[match_idx]
             event_id = str(match.get("event_id"))
             home = match.get("home_team", "Home")
             away = match.get("away_team", "Away")
@@ -1563,6 +1565,16 @@ class DailyPipeline:
                 edge = p_blended - (1.0 / odds)
                 
                 if ev < self.config.min_ev:
+                    continue
+                    
+                # Python Bug Buster / Strategy Fix: Hard cap block
+                # Even for Tier-3 leagues, a 35% edge indicates missing properties, injured squads, or ghost match bugs.
+                # Protect bankroll against logic bugs.
+                if ev > 0.35:
+                    logger.warning(
+                        f"🚨 BLOCKED: Mathematically improbable EV ({ev:.2%}) for {event_id} ({outcome}). "
+                        f"Odds: {odds}, Prob: {p_model:.2%} | Market: {p_market:.2%}. Skipping to preserve bankroll safety."
+                    )
                     continue
                 
                 # Quality checks
