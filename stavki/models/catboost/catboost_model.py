@@ -149,6 +149,7 @@ class CatBoostModel(CalibratedModel):
         self.model: Optional[CatBoostClassifier] = None
         self.calibrators: Dict[int, IsotonicRegression] = {}
         self.feature_importance_: Optional[Dict[str, float]] = None
+        self.feature_means: Optional[pd.Series] = None
     
     def fit(
         self,
@@ -245,10 +246,14 @@ class CatBoostModel(CalibratedModel):
             X_train[cat_col] = X_train[cat_col].fillna("Unknown").astype(str)
             X_eval[cat_col] = X_eval[cat_col].fillna("Unknown").astype(str)
         
+        # Calculate feature means for robust imputation during live inference
+        self.feature_means = train_df[available_numeric].mean()
+
         # Fill numeric NaNs
         for num_col in available_numeric:
-            X_train[num_col] = X_train[num_col].fillna(0)
-            X_eval[num_col] = X_eval[num_col].fillna(0)
+            train_mean = self.feature_means[num_col] if pd.notna(self.feature_means[num_col]) else 0.0
+            X_train[num_col] = X_train[num_col].fillna(train_mean)
+            X_eval[num_col] = X_eval[num_col].fillna(train_mean)
         
         # Cat feature indices
         cat_feature_indices = [all_features.index(c) for c in available_cat if c in all_features]
@@ -368,7 +373,8 @@ class CatBoostModel(CalibratedModel):
                 if f in cat_features:
                     X[f] = "Unknown"
                 else:
-                    X[f] = 0.0
+                    train_mean = self.feature_means[f] if (self.feature_means is not None and f in self.feature_means) else 0.0
+                    X[f] = train_mean
                     
         # Enforce exact column order and selection
         X = X[all_features]
@@ -381,7 +387,8 @@ class CatBoostModel(CalibratedModel):
         # Fill numeric
         for col in X.columns:
             if col not in cat_features:
-                X[col] = X[col].fillna(0)
+                train_mean = self.feature_means[col] if (self.feature_means is not None and col in self.feature_means) else 0.0
+                X[col] = X[col].fillna(train_mean)
         
         # Predict with safety wrapper
         try:
@@ -458,6 +465,7 @@ class CatBoostModel(CalibratedModel):
             "model": self.model,
             "calibrators": self.calibrators,
             "feature_importance": self.feature_importance_,
+            "feature_means": self.feature_means,
         }
     
     def _set_state(self, state: Dict[str, Any]):
@@ -470,3 +478,4 @@ class CatBoostModel(CalibratedModel):
         self.model = state["model"]
         self.calibrators = state["calibrators"]
         self.feature_importance_ = state["feature_importance"]
+        self.feature_means = state.get("feature_means", None)

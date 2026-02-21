@@ -126,6 +126,7 @@ class LightGBMModel(CalibratedModel):
         self.model: Optional[lgb.LGBMClassifier] = None
         self.label_encoder = LabelEncoder()
         self.feature_importance_: Optional[Dict[str, float]] = None
+        self.feature_means: Optional[pd.Series] = None
         
         # Calibrators per class
         self.calibrators: Dict[int, IsotonicRegression] = {}
@@ -190,10 +191,13 @@ class LightGBMModel(CalibratedModel):
         
         logger.info(f"Train: {len(train_df)}, Eval: {len(eval_df)}")
         
+        # Calculate feature means for robust imputation during live inference
+        self.feature_means = train_df[available_features].mean()
+        
         # Prepare data
-        X_train = train_df[available_features].fillna(0)
+        X_train = train_df[available_features].fillna(self.feature_means).fillna(0)
         y_train = train_df["target"]
-        X_eval = eval_df[available_features].fillna(0)
+        X_eval = eval_df[available_features].fillna(self.feature_means).fillna(0)
         y_eval = eval_df["target"]
         
         # Encode labels
@@ -324,9 +328,17 @@ class LightGBMModel(CalibratedModel):
         # Note: LightGBM is robust to missing cols if using Pandas, but here we construct X manually.
         # We must ensure X has exactly 'expected_features' in order.
         
-        # Create X with all expected features, filling missing with 0
-        # This is safer than just selecting what's available
-        X = data.reindex(columns=expected_features, fill_value=0)
+        # Create X with all expected features, filling missing with nominal historical means
+        X = data.reindex(columns=expected_features)
+        
+        if self.feature_means is not None:
+             # Impute missing columns with proper means
+             for col in expected_features:
+                 if pd.isna(X[col]).any() and col in self.feature_means:
+                     X[col] = X[col].fillna(self.feature_means[col])
+                     
+        # Catch any residual NaNs with 0
+        X = X.fillna(0)
         
         # Raw predictions (Vectorized)
         raw_probs = self.model.predict_proba(X)
@@ -434,6 +446,7 @@ class LightGBMModel(CalibratedModel):
             "label_encoder": self.label_encoder,
             "calibrators": self.calibrators,
             "feature_importance": self.feature_importance_,
+            "feature_means": self.feature_means,
         }
     
     def _set_state(self, state: Dict[str, Any]):
@@ -453,3 +466,4 @@ class LightGBMModel(CalibratedModel):
         self.label_encoder = state["label_encoder"]
         self.calibrators = state["calibrators"]
         self.feature_importance_ = state["feature_importance"]
+        self.feature_means = state.get("feature_means", None)

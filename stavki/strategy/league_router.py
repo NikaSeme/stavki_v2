@@ -173,11 +173,12 @@ class LiquidityBlender:
     
     # Default alpha values per tier
     # Default alpha values per tier
-    # BOB'S AGGRESSIVE STRATEGY: PURE AI (Alpha = 1.0)
+    # Reduced from 1.0 (Bob AI-Only) to mathematically sound liquidity distributions
+    # Tier 1 defaults to 0.40 since the Bookmaker market is exceptionally sharp
     DEFAULT_ALPHAS = {
-        "tier1": 1.0,  # 100% model
-        "tier2": 1.0,  # 100% model
-        "tier3": 1.0,  # 100% model
+        "tier1": 0.40,  # 40% model, 60% market (Elite Leagues)
+        "tier2": 0.60,  # 60% model, 40% market (Major Domestic)
+        "tier3": 0.85,  # 85% model, 15% market (Lower Leagues)
     }
     
     def __init__(

@@ -169,8 +169,15 @@ class EVCalculator:
             return None
             
         # Optimization: Flag suspicious high EV bets (Data integrity check)
+        # Block hallucinations completely (EV > 80%)
         is_suspicious = False
-        if ev > 0.50:
+        if ev > 0.80:
+            logger.warning(
+                f"🚨 BLOCKED: Mathematically impossible EV ({ev:.2%}) for {match_id} ({selection}). "
+                f"Odds: {odds}, Prob: {model_prob:.2%} | This usually means missing features or API mapping drops."
+            )
+            return None
+        elif ev > 0.50:
             logger.warning(
                 f"⚠️ Suspicious High EV ({ev:.2%}) for {match_id} ({selection}). "
                 f"Odds: {odds}, Prob: {model_prob:.2%} | Keeping but flagging."
