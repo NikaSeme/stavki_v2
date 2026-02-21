@@ -12,27 +12,27 @@
   "epl": {
     "min_ev": 0.02,
     "weights": {
-      "poisson": 0.4,
-      "lightgbm": 0.45,
-      "catboost": 0.15000000000000002,
+      "poisson": 0.35000000000000003,
+      "lightgbm": 0.65,
+      "catboost": 0.0,
       "neural": 0.0
     }
   },
   "seriea": {
     "min_ev": 0.02,
     "weights": {
-      "poisson": 0.25,
+      "poisson": 0.15000000000000002,
       "lightgbm": 0.15000000000000002,
-      "catboost": 0.5,
+      "catboost": 0.6000000000000001,
       "neural": 0.1
     }
   },
   "laliga": {
     "min_ev": 0.02,
     "weights": {
-      "poisson": 0.30000000000000004,
-      "lightgbm": 0.45,
-      "catboost": 0.25,
+      "poisson": 0.35000000000000003,
+      "lightgbm": 0.55,
+      "catboost": 0.1,
       "neural": 0.0
     }
   },
@@ -40,27 +40,27 @@
     "min_ev": 0.02,
     "weights": {
       "poisson": 0.0,
-      "lightgbm": 0.5,
+      "lightgbm": 0.4,
       "catboost": 0.30000000000000004,
-      "neural": 0.2
+      "neural": 0.30000000000000004
     }
   },
   "ligue1": {
     "min_ev": 0.02,
     "weights": {
       "poisson": 0.1,
-      "lightgbm": 0.6000000000000001,
-      "catboost": 0.0,
+      "lightgbm": 0.35000000000000003,
+      "catboost": 0.25,
       "neural": 0.30000000000000004
     }
   },
   "championship": {
     "min_ev": 0.03,
     "weights": {
-      "poisson": 0.05,
-      "lightgbm": 0.4,
-      "catboost": 0.55,
-      "neural": 0.0
+      "poisson": 0.1,
+      "lightgbm": 0.6000000000000001,
+      "catboost": 0.25,
+      "neural": 0.05
     }
   }
 }
