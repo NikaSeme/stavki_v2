@@ -88,7 +88,9 @@ def main():
 
     for i, bet in enumerate(bets, 1):
         if isinstance(bet, dict):
-            match_name = bet.get("match", bet.get("home", "?") + " vs " + bet.get("away", "?"))
+            home = bet.get("home_team", bet.get("home", "?"))
+            away = bet.get("away_team", bet.get("away", "?"))
+            match_name = f"{home} vs {away}"
             outcome = bet.get("outcome", bet.get("selection", "?"))
             odds = bet.get("odds", 0)
             ev = bet.get("ev", 0)
@@ -97,12 +99,14 @@ def main():
             league = bet.get("league", "?")
             bookmaker = bet.get("bookmaker", "?")
         else:
-            match_name = getattr(bet, 'match', 'Unknown')
+            home = getattr(bet, 'home_team', '?')
+            away = getattr(bet, 'away_team', '?')
+            match_name = f"{home} vs {away}" if home != '?' else getattr(bet, 'match', 'Unknown')
             outcome = getattr(bet, 'selection', getattr(bet, 'outcome', '?'))
             odds = getattr(bet, 'odds', 0)
             ev = getattr(bet, 'ev', 0)
-            model_prob = getattr(bet, 'prob', getattr(bet, 'model_prob', 0))
-            market_prob = getattr(bet, 'implied_prob', 0)
+            model_prob = getattr(bet, 'model_prob', getattr(bet, 'prob', 0))
+            market_prob = getattr(bet, 'implied_prob', getattr(bet, 'market_prob', 0))
             league = getattr(bet, 'league', '?')
             bookmaker = getattr(bet, 'bookmaker', '?')
 
