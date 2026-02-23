@@ -76,12 +76,14 @@ rsync -avz -e "ssh -i $SSH_KEY $OPTS" \
 
 # 7. Restart bot service
 echo ""
-echo "🔄 [6/6] Restarting bot service..."
-ssh -i $SSH_KEY $OPTS $HOST "sudo systemctl restart stavki_bot.service && sleep 3 && systemctl status stavki_bot.service --no-pager"
+echo "🔄 [6/6] Restarting specific bot service as root..."
 
-echo ""
+# Run a remote script as root to copy the files to macuser, set permissions, and restart the bot.
+ssh -i $SSH_KEY $OPTS $HOST "sudo cp -r ~/stavki_v2/* /home/macuser/stavki_v2/ && sudo chown -R macuser:macuser /home/macuser/stavki_v2/ && sudo systemctl restart stavki_bot.service && sleep 2 && systemctl status stavki_bot.service --no-pager"
+
 echo "=========================================="
 echo "       ✅ Phase 5 Deployment Complete     "
+echo "       ✅ Bot Restarted (macuser workspace)"
 echo "=========================================="
 echo ""
 echo "Changes deployed:"
