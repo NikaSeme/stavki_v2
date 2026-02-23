@@ -44,7 +44,8 @@ class PipelineConfig:
         "soccer_spain_la_liga", 
         "soccer_germany_bundesliga", 
         "soccer_italy_serie_a", 
-        "soccer_france_ligue_one"
+        "soccer_france_ligue_one",
+        "soccer_efl_champ",
     ])
     max_matches: int = 50
     scan_window_hours: int = 72  # Lookahead window (3 days)
@@ -355,13 +356,19 @@ class DailyPipeline:
                         matches = sm_collector.fetch_matches(league, max_hours_ahead=self.config.scan_window_hours)
                         logger.info(f"Fetched {len(matches)} fixtures from SportMonks for {league.name} (next {self.config.scan_window_hours}h)")
                     except Exception as e:
-                        logger.error(f"SportMonks fixture fetch failed: {e}")
+                        logger.error(f"SportMonks fixture fetch failed for {league.name}: {e}")
                 
+                # Fallback to OddsAPI for fixtures if SportMonks returned nothing
                 if not matches and oa_collector:
-                    logger.info("Falling back to OddsAPI for fixtures...")
-                    matches = oa_collector.fetch_matches(league, include_odds=True, max_hours_ahead=self.config.scan_window_hours)
+                    logger.info(f"Falling back to OddsAPI for {league.name} fixtures...")
+                    try:
+                        matches = oa_collector.fetch_matches(league, include_odds=True, max_hours_ahead=self.config.scan_window_hours)
+                        logger.info(f"OddsAPI returned {len(matches)} fixtures for {league.name}")
+                    except Exception as e:
+                        logger.error(f"OddsAPI fixture fetch also failed for {league.name}: {e}")
                 
                 if not matches:
+                    logger.info(f"No fixtures found for {league.name} in next {self.config.scan_window_hours}h")
                     continue
 
                 # B. Get Odds (Prefer Betfair -> SportMonks -> OddsAPI)
@@ -377,11 +384,12 @@ class DailyPipeline:
                 if sm_collector and not bf_odds:
                     try:
                         sm_odds = sm_collector.fetch_odds(league, matches)
-                        logger.info(f"Fetched SportMonks odds for {len(sm_odds)} matches")
+                        logger.info(f"Fetched SportMonks odds for {len(sm_odds)}/{len(matches)} {league.name} matches")
                     except Exception as e:
-                        logger.error(f"SportMonks odds fetch failed: {e}")
+                        logger.error(f"SportMonks odds fetch failed for {league.name}: {e}")
 
                 # C. Build Rows
+                matches_with_odds = 0
                 for m in matches:
                     row = {
                         "event_id": m.id,
@@ -400,7 +408,6 @@ class DailyPipeline:
                     if m.id in sm_odds and sm_odds[m.id]:
                         for snap in sm_odds[m.id]:
                             if snap.market == "1x2":
-                                # Only set if not already set (though SM is iterated first here)
                                 if "home_odds" not in row:
                                     row.update({
                                         "home_odds": snap.home_odds,
@@ -426,9 +433,6 @@ class DailyPipeline:
 
                     # 2. Betfair Fallback (for 1X2 only)
                     if m.id in bf_odds and bf_odds[m.id]:
-                        # Prefer Betfair for 1X2 if available? 
-                        # Original logic: bf_odds was checked first.
-                        # Let's override 1X2 if we have Betfair (it's often sharper)
                         best_snap = bf_odds[m.id][0]
                         row.update({
                             "home_odds": best_snap.home_odds,
@@ -439,12 +443,43 @@ class DailyPipeline:
                         })
                         primary_found = True
 
-                    # 3. OddsAPI Fallback
-                    if not primary_found and m.source == "odds_api" and oa_collector:
-                         pass # Logic as before (placeholder)
+                    # 3. OddsAPI fallback for THIS specific match if no odds found
+                    if not primary_found and oa_collector:
+                        try:
+                            sport_key = league_str
+                            oa_resp = oa_collector.client.get_odds(sport_key)
+                            if oa_resp.success and oa_resp.data:
+                                for event in oa_resp.data:
+                                    oa_home = event.get("home_team", "").lower()
+                                    oa_away = event.get("away_team", "").lower()
+                                    m_home = m.home_team.name.lower()
+                                    m_away = m.away_team.name.lower()
+                                    # Fuzzy match by checking if event teams contain match teams
+                                    if (oa_home in m_home or m_home in oa_home) and (oa_away in m_away or m_away in oa_away):
+                                        bookmakers = event.get("bookmakers", [])
+                                        if bookmakers:
+                                            bm = bookmakers[0]  # First bookmaker
+                                            outcomes = {o["name"]: o["price"] for o in bm.get("markets", [{}])[0].get("outcomes", [])}
+                                            if outcomes:
+                                                row.update({
+                                                    "home_odds": outcomes.get(m.home_team.name, outcomes.get("Home", 0)),
+                                                    "draw_odds": outcomes.get("Draw", 0),
+                                                    "away_odds": outcomes.get(m.away_team.name, outcomes.get("Away", 0)),
+                                                    "home_bookmaker": bm.get("title", "OddsAPI"),
+                                                    "away_bookmaker": bm.get("title", "OddsAPI"),
+                                                })
+                                                if row["home_odds"] > 1 and row["away_odds"] > 1:
+                                                    primary_found = True
+                                                    logger.info(f"  OddsAPI fallback provided odds for {m.home_team.name} vs {m.away_team.name}")
+                                        break
+                        except Exception as e:
+                            logger.debug(f"OddsAPI per-match fallback failed: {e}")
 
                     if primary_found:
                         rows.append(row)
+                        matches_with_odds += 1
+                
+                logger.info(f"  {league.name}: {matches_with_odds}/{len(matches)} matches have odds")
             
             if not rows:
                 logger.warning("No matches with odds found across all sources")
@@ -521,58 +556,70 @@ class DailyPipeline:
         
         enrichments = {}
         
-        def _process_single_match(row):
-            """Helper to process a single match in a thread."""
+        # Execute in chunks of 30 to stay well under API size limits (often 50 max)
+        chunk_size = 30
+        
+        # 1. Map rows to Fixture IDs
+        valid_rows = []
+        for row in matches_df.to_dict('records'):
             match_id = row.get("event_id", f"{row.get('home_team', '')}_{row.get('away_team', '')}")
             fixture_id = row.get("fixture_id") or row.get("source_id")
-            
-            if not fixture_id:
-                return None
+            if fixture_id:
+                 try:
+                     f_id_int = int(fixture_id)
+                     valid_rows.append((match_id, f_id_int))
+                 except ValueError:
+                     pass
+        
+        logger.info(f"Enriching {len(valid_rows)} matches via Batched API chunks...")
+        
+        # 2. Process chunks sequentially (1 API call per 30 matches)
+        processed_count = 0
+        for i in range(0, len(valid_rows), chunk_size):
+            chunk = valid_rows[i:i + chunk_size]
+            chunk_fids = [f_id for _, f_id in chunk]
             
             try:
-                enrichment = MatchEnrichment()
+                # One API call fetches everything for these 30 matches
+                multi_data = client.get_multiple_fixtures_full(chunk_fids)
                 
-                # Full Fixture Data (Coaches, Lineups, Positions)
-                try:
-                    # Request directly to bypass parsing omissions
-                    full_res = client._request(
-                        f"fixtures/{fixture_id}", 
-                        includes=["lineups.player", "coaches", "participants"]
-                    )
-                    data = full_res.get("data", {})
+                # Assign back to Enrichments
+                for match_id, f_id in chunk:
+                    match_data = multi_data.get(f_id)
+                    if not match_data:
+                        continue
+                        
+                    enrichment = MatchEnrichment()
                     
-                    if isinstance(data, dict):
-                        # 1. Team map for locations
-                        participants = data.get("participants", [])
-                        home_tid = away_tid = None
-                        for p in participants:
-                            loc = p.get("meta", {}).get("location")
-                            if loc == "home":
-                                home_tid = p.get("id")
-                            elif loc == "away":
-                                away_tid = p.get("id")
-                        
-                        # 2. Coaches
-                        coaches = data.get("coaches", [])
-                        for coach in coaches:
-                            cid = coach.get("coach_id")
-                            if coach.get("team_id") == home_tid:
-                                enrichment.home_coach_id = cid
-                            elif coach.get("team_id") == away_tid:
-                                enrichment.away_coach_id = cid
-                                
-                        # 3. Lineups & Positions
-                        lineups = data.get("lineups", [])
-                        h_players, a_players = [], []
-                        h_pos, a_pos = [], []
-                        
+                    # Participants
+                    participants = match_data.get("participants", [])
+                    home_tid = away_tid = None
+                    for p in participants:
+                        loc = p.get("meta", {}).get("location")
+                        if loc == "home":
+                            home_tid = p.get("id")
+                        elif loc == "away":
+                            away_tid = p.get("id")
+                            
+                    # Coaches
+                    coaches = match_data.get("coaches", [])
+                    for coach in coaches:
+                        cid = coach.get("coach_id")
+                        if coach.get("team_id") == home_tid:
+                            enrichment.home_coach_id = cid
+                        elif coach.get("team_id") == away_tid:
+                            enrichment.away_coach_id = cid
+                            
+                    # Lineups
+                    lineups = match_data.get("lineups", [])
+                    h_players, a_players = [], []
+                    h_pos, a_pos = [], []
+                    if lineups:
                         for p in lineups:
-                            # Only include starting XI (type_id=11)
                             if p.get("type_id") == 11:
                                 pid = p.get("player_id")
-                                pos_id = p.get("player", {}).get("position_id", 0)
-                                if pos_id is None:
-                                    pos_id = 0
+                                pos_id = p.get("player", {}).get("position_id", 0) if isinstance(p.get("player"), dict) else 0
+                                if pos_id is None: pos_id = 0
                                 
                                 if p.get("team_id") == home_tid:
                                     h_players.append(pid)
@@ -581,82 +628,30 @@ class DailyPipeline:
                                     a_players.append(pid)
                                     a_pos.append(pos_id)
                                     
-                        enrichment.home_player_ids = h_players
-                        enrichment.away_player_ids = a_players
-                        enrichment.home_positions = h_pos
-                        enrichment.away_positions = a_pos
-                        
-                except Exception as e:
-                    logger.debug(f"  Full fixture fetch failed for {fixture_id}: {e}")
-
-                # Weather
-                try:
-                    weather = client.get_fixture_weather(int(fixture_id))
-                    if weather:
-                        enrichment.weather = WeatherInfo(
-                            temperature_c=weather.get("temperature"),
-                            wind_speed_ms=weather.get("wind"),
-                            humidity_pct=weather.get("humidity"),
-                            precipitation_mm=weather.get("precipitation"),
-                            description=weather.get("description"),
-                        )
-                except Exception as e:
-                    # Log at debug to avoid spamming console
-                    logger.debug(f"  Weather fetch failed for {fixture_id}: {e}")
+                    enrichment.home_player_ids = h_players
+                    enrichment.away_player_ids = a_players
+                    enrichment.home_positions = h_pos
+                    enrichment.away_positions = a_pos
+                    
+                    # Weather
+                    weather = match_data.get("weather", {})
+                    if weather and isinstance(weather, dict):
+                         enrichment.weather = WeatherInfo(
+                             temperature_c=weather.get("temperature"),
+                             wind_speed_ms=weather.get("wind"),
+                             humidity_pct=weather.get("humidity"),
+                             precipitation_mm=weather.get("precipitation"),
+                             description=weather.get("description"),
+                         )
+                         
+                    # Save
+                    enrichments[match_id] = enrichment
                 
-                # SM Odds (Multi-Market)
-                try:
-                    odds = client.get_fixture_odds(int(fixture_id), market="ALL")
-                    if odds:
-                        for o in odds:
-                            market_type = o.get("market_type", "1x2")
-                            vals = o.get("odds", {})
-                            
-                            if market_type == "1x2":
-                                if vals.get("home") and vals.get("draw") and vals.get("away"):
-                                    enrichment.sm_odds_home = float(vals["home"])
-                                    enrichment.sm_odds_draw = float(vals["draw"])
-                                    enrichment.sm_odds_away = float(vals["away"])
-                            
-                            elif market_type == "corners_1x2":
-                                if vals.get("home") and vals.get("draw") and vals.get("away"):
-                                    enrichment.sm_corners_home = float(vals["home"])
-                                    enrichment.sm_corners_draw = float(vals["draw"])
-                                    enrichment.sm_corners_away = float(vals["away"])
-                                    
-                            elif market_type == "btts":
-                                if vals.get("yes") and vals.get("no"):
-                                    enrichment.sm_btts_yes = float(vals["yes"])
-                                    enrichment.sm_btts_no = float(vals["no"])
-
-                except Exception as e:
-                    logger.debug(f"  SM odds fetch failed for {fixture_id}: {e}")
-                
-                return match_id, enrichment
+                processed_count += len(chunk)
+                logger.info(f"  → Enriched {processed_count}/{len(valid_rows)} matches via chunking...")
                 
             except Exception as e:
-                logger.debug(f"Enrichment failed for match {match_id}: {e}")
-                return None
-
-        # Execute in parallel
-        # 10 workers is usually safe for API calls (mostly I/O)
-        # SportMonks rate limit will be defining factor
-        max_workers = min(10, len(matches_df)) if len(matches_df) > 0 else 1
-        logger.info(f"Enriching {len(matches_df)} matches using {max_workers} threads...")
-        
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(_process_single_match, row) for row in matches_df.to_dict('records')]
-            
-            processed_count = 0
-            for future in as_completed(futures):
-                result = future.result()
-                processed_count += 1
-                if result:
-                    m_id, enrich = result
-                    enrichments[m_id] = enrich
-                
-                if processed_count % 5 == 0:
-                    logger.info(f"  → Enriched {processed_count}/{len(matches_df)} matches...")
+                logger.warning(f"Batch enrichment failed for chunk start {i}: {e}")
         
         # Store enrichments on the DataFrame
         matches_df["_enrichment"] = matches_df.apply(
@@ -735,27 +730,9 @@ class DailyPipeline:
                 agg_odds["sm_implied_draw"] = agg_odds["imp_draw_norm"]
                 agg_odds["sm_implied_away"] = agg_odds["imp_away_norm"]
                 
-                # --- LEGACY FALLBACK INJECTION ---
-                # Provide expected bookie averages for historical models
-                legacy_bookies = ["B365", "BW", "IW", "LB", "PS", "WH", "SJ", "VC"]
-                for b in legacy_bookies:
-                    agg_odds[f"{b}H"] = agg_odds["AvgH"]
-                    agg_odds[f"{b}D"] = agg_odds["AvgD"]
-                    agg_odds[f"{b}A"] = agg_odds["AvgA"]
-                
-                # BetBrain specialized trackers
-                for pref in ["BbAv", "BbMx"]:
-                    agg_odds[f"{pref}H"] = agg_odds["AvgH"]
-                    agg_odds[f"{pref}D"] = agg_odds["AvgD"]
-                    agg_odds[f"{pref}A"] = agg_odds["AvgA"]
-                    agg_odds[f"{pref}>2.5"] = 1.90
-                    agg_odds[f"{pref}<2.5"] = 1.90
-                    agg_odds[f"{pref}AHH"] = 1.90
-                
-                agg_odds["Bb1X2"] = agg_odds["n_bookmakers"]
-                agg_odds["BbOU"] = agg_odds["n_bookmakers"]
-                agg_odds["BbAH"] = agg_odds["n_bookmakers"]
-                agg_odds["BbAHh"] = 0.0
+                # REMOVED: Legacy bookmaker re-injection (B365, BW, IW, etc.) was contradicting
+                # retrain_system.py which explicitly strips these columns during training.
+                # Models trained without these features don't need them at inference time.
 
                 # Drop helper column
                 agg_odds = agg_odds.drop(columns=["n_bookmakers"])
@@ -815,6 +792,14 @@ class DailyPipeline:
                 how="left"
             )
             
+            # --- Automation: Update Redis Memory Cache ---
+            logger.info("Executing Live State Memory Serialization...")
+            try:
+                import os
+                os.system("python3 scripts/cache_live_state.py")
+            except Exception as e:
+                logger.error(f"Failed to refresh Redis cache: {e}")
+
             # --- Validation ---
             # Check for critical features
             critical_cols = ["elo_home", "elo_away", "form_home_pts", "form_away_pts"]
@@ -850,6 +835,14 @@ class DailyPipeline:
         Map FeatureRegistry output names to Training Data (features_full.csv) names.
         This ensures models trained on legacy/different names can still run.
         """
+        # 0. Inject CatBoost categorical features (HomeTeam/AwayTeam)
+        # CatBoost was trained with PascalCase team name columns as categoricals.
+        # The live pipeline uses snake_case. We must bridge this gap.
+        if "HomeTeam" not in df.columns and "home_team" in df.columns:
+            df["HomeTeam"] = df["home_team"]
+        if "AwayTeam" not in df.columns and "away_team" in df.columns:
+            df["AwayTeam"] = df["away_team"]
+        
         # 1. Direct renames
         rename_map = {
             "form_home": "form_home_pts",
@@ -866,19 +859,7 @@ class DailyPipeline:
             "advanced_shots_for_home": "HS", # Approximation if HS missing
             "advanced_shots_for_away": "AS",
             
-            # BOB'S BUG BUSTER: LightGBM Legacy Feature Normalization (Deep Fix)
-            # Live Inference uses object-oriented builders that output dynamic names. 
-            # We MUST map these to the legacy historical columns expected by ML models.
-            "avg_rating_xi_home": "avg_rating_home",
-            "avg_rating_xi_away": "avg_rating_away",
-            "key_player_missing_home": "key_players_home",
-            "key_player_missing_away": "key_players_away",
-            "xi_xg90_home": "synth_xg_home",
-            "xi_xg90_away": "synth_xg_away",
-            # We map actual real xG vectors to the 'synth_xg' columns the model expects
-            "xg_home": "synth_xg_home",
-            "xg_away": "synth_xg_away",
-            "xg_diff": "synth_xg_diff",
+            # Model-ready features generated correctly upstream
         }
         
         # Apply renames for columns that exist
@@ -1048,11 +1029,13 @@ class DailyPipeline:
 
     def _df_to_matches(self, df: pd.DataFrame, is_historical: bool = False) -> List['Match']:
         """Convert DataFrame to List[Match]."""
-        from stavki.data.schemas import Match, Team, League, MatchStats
+        from stavki.data.schemas import Match, Team, League, MatchStats, MatchLineups, TeamLineup, Player, MatchEnrichment, RefereeInfo
         from datetime import datetime
         import hashlib
+        import json
+        from stavki.data.processors.normalize import TeamMapper
         
-        matches = []
+        mapper = TeamMapper.get_instance()
         matches = []
         # Optimization: use itertuples for much faster iteration
         for row in df.itertuples(index=False):
@@ -1061,11 +1044,13 @@ class DailyPipeline:
                 # Helper to check both PascalCase (CSV) and snake_case (Internal)
                 p_home = getattr(row, 'HomeTeam', None)
                 s_home = getattr(row, 'home_team', None)
-                home_name = str(p_home if p_home is not None else s_home)
+                raw_home = str(p_home if p_home is not None else s_home)
+                home_name = mapper.map_name(raw_home) or raw_home
 
                 p_away = getattr(row, 'AwayTeam', None)
                 s_away = getattr(row, 'away_team', None)
-                away_name = str(p_away if p_away is not None else s_away)
+                raw_away = str(p_away if p_away is not None else s_away)
+                away_name = mapper.map_name(raw_away) or raw_away
 
                 home = Team(name=home_name)
                 away = Team(name=away_name)
@@ -1152,9 +1137,50 @@ class DailyPipeline:
                                  red_cards_home=int(getattr(row, 'HR')) if pd.notna(getattr(row, 'HR', None)) else None,
                                  red_cards_away=int(getattr(row, 'AR')) if pd.notna(getattr(row, 'AR', None)) else None,
                              )
+                             
+                             # Extract xG if available directly from CSV
+                             if hasattr(row, 'xg_home') and pd.notna(row.xg_home):
+                                 stats.xg_home = float(row.xg_home)
+                             if hasattr(row, 'xg_away') and pd.notna(row.xg_away):
+                                 stats.xg_away = float(row.xg_away)
                          except Exception:
                              pass # Robustness
+                             
+                # Lineups and Enrichment (Historical Phase 2)
+                lineups = None
+                enrichment = None
+                if is_historical:
+                    # Referee
+                    ref = getattr(row, 'referee', None) or getattr(row, 'Referee', None)
+                    if pd.notna(ref) and ref:
+                        enrichment = MatchEnrichment(match_id=mid, referee=RefereeInfo(name=str(ref)))
+                        
+                    # Lineups
+                    lh, la = getattr(row, 'lineup_home', None), getattr(row, 'lineup_away', None)
+                    if pd.notna(lh) and pd.notna(la) and lh and la:
+                        try:
+                            def parse_team_lineup(team_name, formation, lineup_str):
+                                players = []
+                                if isinstance(lineup_str, str):
+                                    js = json.loads(lineup_str)
+                                    for p in js:
+                                        # Support varied JSON formats (SportMonks vs historical dict)
+                                        pid = str(p.get("player_id", p.get("id", "0")))
+                                        pname = p.get("player_name", p.get("name", "Unknown"))
+                                        prat = float(p.get("rating", 0.0)) if p.get("rating") else None
+                                        ppos = p.get("position", None)
+                                        players.append(Player(id=pid, name=pname, position=ppos, rating=prat))
+                                return TeamLineup(team_name=team_name, formation=str(formation) if pd.notna(formation) else None, starting_xi=players)
+                            
+                            lineups = MatchLineups(
+                                match_id=mid,
+                                home=parse_team_lineup(home_name, getattr(row, 'formation_home', None), lh),
+                                away=parse_team_lineup(away_name, getattr(row, 'formation_away', None), la)
+                            )
+                        except Exception as e:
+                            pass # Skip corrupt JSONs
 
+                                
                 m = Match(
                     id=mid,
                     home_team=home,
@@ -1163,7 +1189,8 @@ class DailyPipeline:
                     commence_time=commence,
                     home_score=home_score,
                     away_score=away_score,
-                    enrichment=getattr(row, "_enrichment", None) if pd.notna(getattr(row, "_enrichment", None)) else None,
+                    enrichment=enrichment,
+                    lineups=lineups,
                     stats=stats,
                     source="historical" if is_historical else "api"
                 )
@@ -1226,17 +1253,16 @@ class DailyPipeline:
                 logger.info(f"  Using ensemble with {len(ensemble.models)} models")
                 
                 # Compatibility: Add legacy column aliases if missing
-                # CRITICAL FIX for High EV: Normalize team names to match training data
-                # Models like DixonColes rely on exact string matches for parameters.
-                # If we pass "Paris Saint-Germain" but trained on "Paris SG", it treats it as a new (average) team.
-                from stavki.utils.team_names import normalize_team_name
+                # CRITICAL FIX for High EV: Normalize team names via TeamMapper
+                from stavki.data.processors.normalize import TeamMapper
+                _mapper = TeamMapper.get_instance()
                 
                 if "home_team" in features_df.columns:
-                    features_df["home_team"] = features_df["home_team"].apply(normalize_team_name)
+                    features_df["home_team"] = features_df["home_team"].apply(lambda n: _mapper.map_name(n) or n)
                     features_df["HomeTeam"] = features_df["home_team"]
                 
                 if "away_team" in features_df.columns:
-                    features_df["away_team"] = features_df["away_team"].apply(normalize_team_name)
+                    features_df["away_team"] = features_df["away_team"].apply(lambda n: _mapper.map_name(n) or n)
                     features_df["AwayTeam"] = features_df["away_team"]
 
                 if "League" not in features_df.columns and "league" in features_df.columns:
@@ -1289,7 +1315,28 @@ class DailyPipeline:
                     if market_key not in predictions[event_id]:
                         predictions[event_id][market_key] = {}
                     
-                    predictions[event_id][market_key].update(pred.probabilities)
+                    # 🛡️ Epistemic Uncertainty Subtraction (Global Telegram Feed)
+                    # Deduct PyTorch MCMC standard deviations directly from output probability cache
+                    metadata = getattr(pred, "metadata", {}) or {}
+                    if metadata and "home_std" in metadata:
+                        std_home = metadata.get("home_std", 0.0)
+                        std_draw = metadata.get("draw_std", 0.0)
+                        std_away = metadata.get("away_std", 0.0)
+                        
+                        probs = pred.probabilities.copy()
+                        if "home" in probs: probs["home"] = max(0.01, probs["home"] - std_home)
+                        if "draw" in probs: probs["draw"] = max(0.01, probs["draw"] - std_draw)
+                        if "away" in probs: probs["away"] = max(0.01, probs["away"] - std_away)
+                        
+                        # Re-normalize
+                        total = sum(probs.values())
+                        if total > 0:
+                            for k in probs:
+                                probs[k] = probs[k] / total
+                                
+                        predictions[event_id][market_key].update(probs)
+                    else:
+                        predictions[event_id][market_key].update(pred.probabilities)
                 
                 if predictions:
                     n_markets = sum(len(mkts) for mkts in predictions.values())
@@ -1593,20 +1640,20 @@ class DailyPipeline:
                             event_markets["result_btts"] = {}
                         event_markets["result_btts"][outcome] = p_model
                 
+                if p_model is None and market_key == "double_chance":
+                    probs_1x2 = event_markets.get("1x2", {})
+                    normalized_outcome = outcome.lower()
+                    if "1x" in normalized_outcome or "home/draw" in normalized_outcome:
+                        p_model = (probs_1x2.get("home", 0) + probs_1x2.get("draw", 0))
+                    elif "x2" in normalized_outcome or "draw/away" in normalized_outcome:
+                        p_model = (probs_1x2.get("away", 0) + probs_1x2.get("draw", 0))
+                    elif "12" in normalized_outcome or "home/away" in normalized_outcome:
+                        p_model = (probs_1x2.get("home", 0) + probs_1x2.get("away", 0))
+
                 if p_model is None:
                     continue
                 
-                # Double Chance derivation (if missing)
-                if p_model is None and market_key == "double_chance":
-                     probs_1x2 = event_markets.get("1x2", {})
-                     normalized_outcome = outcome.lower()
-                     if "1x" in normalized_outcome or "home" in normalized_outcome:
-                         p_model = (probs_1x2.get("home", 0) + probs_1x2.get("draw", 0))
-                     elif "x2" in normalized_outcome or "away" in normalized_outcome:
-                         p_model = (probs_1x2.get("away", 0) + probs_1x2.get("draw", 0))
-                     elif "12" in normalized_outcome:
-                         p_model = (probs_1x2.get("home", 0) + probs_1x2.get("away", 0))
-                
+
                 p_market = event_market_probs.get(outcome, 1.0 / odds)
                 
                 # Blend model and market probabilities
@@ -1665,8 +1712,9 @@ class DailyPipeline:
         filtered = []
         
         for bet in candidates:
-            # Divergence filter
-            if bet.divergence_level == "extreme":
+            # Divergence filter: only block extreme divergence when justified score is low
+            # High-justified contrarian bets may still have genuine edge
+            if bet.divergence_level == "extreme" and bet.justified_score < 50:
                 continue
             
             # Justified score filter
