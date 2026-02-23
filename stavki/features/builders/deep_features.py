@@ -113,11 +113,11 @@ class DeepFeatureBuilder:
 
     def build_context_vector(self, team_id: int, is_home: bool) -> torch.FloatTensor:
         """
-        Build the 13-dim context vector for a team:
-        [7 XI stats] + [5 history stats] + [1 home flag]
+        Build the 17-dim context vector for a team:
+        [11 XI stats] + [5 history stats] + [1 home flag]
         """
-        # XI Stats (7 features)
-        xi = self._team_latest_vectors.get(team_id, np.zeros(7, dtype=np.float32))
+        # XI Stats (11 features)
+        xi = self._team_latest_vectors.get(team_id, np.zeros(11, dtype=np.float32))
 
         # History Stats (5 features: red_cards, injuries, penalties, own_goals, var)
         hist = self._team_latest_context.get(team_id, np.zeros(5, dtype=np.float32))

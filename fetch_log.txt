@@ -1,0 +1,220 @@
+2026-02-23 11:44:42,470 [INFO] manual_scan: 🔍 Starting Manual Pipeline Scan...
+2026-02-23 11:44:45,185 [INFO] stavki.pipelines.daily: ==================================================
+2026-02-23 11:44:45,186 [INFO] stavki.pipelines.daily: Starting Daily Pipeline
+2026-02-23 11:44:45,186 [INFO] stavki.pipelines.daily: ==================================================
+2026-02-23 11:44:45,192 [INFO] stavki.strategy.league_router: Loaded league config from /home/serni13678/stavki_v2/stavki/config/leagues.json
+2026-02-23 11:44:45,216 [INFO] stavki.pipelines.daily: Step 1: Fetching odds data...
+2026-02-23 11:44:45 [INFO] stavki.data.collectors.sportmonks: SportMonks client initialized
+2026-02-23 11:44:45 [INFO] stavki.data.collectors.sportmonks: Got 1 fixtures for 2026-02-23
+2026-02-23 11:44:46 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-24
+2026-02-23 11:44:47 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-25
+2026-02-23 11:44:49 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-26
+2026-02-23 11:44:49 [INFO] stavki.data.processors.normalize: Loaded 181 canonical teams
+2026-02-23 11:44:49 [INFO] stavki.data.processors.normalize: Loaded 61 mappings for legacy_aliases
+2026-02-23 11:44:49 [INFO] stavki.data.processors.normalize: Loaded 40 mappings for sportmonks
+2026-02-23 11:44:49 [INFO] stavki.data.processors.normalize: Loaded 47 mappings for odds_api
+2026-02-23 11:44:49 [INFO] stavki.pipelines.daily: Fetched 1 fixtures from SportMonks for EPL (next 72h)
+2026-02-23 11:44:49 [WARNING] stavki.data.collectors.betfair: Betfair cert/key files not found: client-2048.crt, client-2048.key
+2026-02-23 11:44:49 [WARNING] stavki.data.collectors.betfair: Betfair login failed/not configured. Skipping.
+2026-02-23 11:44:49 [INFO] stavki.pipelines.daily: Fetched Betfair odds for 0/ 1 matches
+2026-02-23 11:44:51 [INFO] stavki.pipelines.daily: Fetched SportMonks odds for 1/1 EPL matches
+2026-02-23 11:44:51 [INFO] stavki.pipelines.daily:   EPL: 1/1 matches have odds
+2026-02-23 11:44:52 [INFO] stavki.data.collectors.sportmonks: Got 1 fixtures for 2026-02-23
+2026-02-23 11:44:53 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-24
+2026-02-23 11:44:54 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-25
+2026-02-23 11:44:55 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-26
+2026-02-23 11:44:55 [INFO] stavki.pipelines.daily: Fetched 1 fixtures from SportMonks for LA_LIGA (next 72h)
+2026-02-23 11:44:55 [WARNING] stavki.data.collectors.betfair: Betfair cert/key files not found: client-2048.crt, client-2048.key
+2026-02-23 11:44:55 [WARNING] stavki.data.collectors.betfair: Betfair login failed/not configured. Skipping.
+2026-02-23 11:44:55 [INFO] stavki.pipelines.daily: Fetched Betfair odds for 0/ 1 matches
+2026-02-23 11:44:57 [INFO] stavki.pipelines.daily: Fetched SportMonks odds for 1/1 LA_LIGA matches
+2026-02-23 11:44:57 [INFO] stavki.pipelines.daily:   LA_LIGA: 1/1 matches have odds
+2026-02-23 11:44:58 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-23
+2026-02-23 11:44:59 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-24
+2026-02-23 11:45:01 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-25
+2026-02-23 11:45:02 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-26
+2026-02-23 11:45:02 [INFO] stavki.pipelines.daily: Fetched 0 fixtures from SportMonks for BUNDESLIGA (next 72h)
+2026-02-23 11:45:02 [INFO] stavki.pipelines.daily: Falling back to OddsAPI for BUNDESLIGA fixtures...
+2026-02-23 11:45:03 [INFO] stavki.data.collectors.odds_api: Fetched 0 matches for Bundesliga
+2026-02-23 11:45:03 [INFO] stavki.pipelines.daily: OddsAPI returned 0 fixtures for BUNDESLIGA
+2026-02-23 11:45:03 [INFO] stavki.pipelines.daily: No fixtures found for BUNDESLIGA in next 72h
+2026-02-23 11:45:04 [INFO] stavki.data.collectors.sportmonks: Got 2 fixtures for 2026-02-23
+2026-02-23 11:45:05 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-24
+2026-02-23 11:45:06 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-25
+2026-02-23 11:45:08 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-26
+2026-02-23 11:45:08 [INFO] stavki.pipelines.daily: Fetched 2 fixtures from SportMonks for SERIE_A (next 72h)
+2026-02-23 11:45:08 [WARNING] stavki.data.collectors.betfair: Betfair cert/key files not found: client-2048.crt, client-2048.key
+2026-02-23 11:45:08 [WARNING] stavki.data.collectors.betfair: Betfair login failed/not configured. Skipping.
+2026-02-23 11:45:08 [INFO] stavki.pipelines.daily: Fetched Betfair odds for 0/ 2 matches
+2026-02-23 11:45:11 [INFO] stavki.pipelines.daily: Fetched SportMonks odds for 2/2 SERIE_A matches
+2026-02-23 11:45:11 [INFO] stavki.pipelines.daily:   SERIE_A: 2/2 matches have odds
+2026-02-23 11:45:12 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-23
+2026-02-23 11:45:14 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-24
+2026-02-23 11:45:15 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-25
+2026-02-23 11:45:16 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-26
+2026-02-23 11:45:16 [INFO] stavki.pipelines.daily: Fetched 0 fixtures from SportMonks for LIGUE_1 (next 72h)
+2026-02-23 11:45:16 [INFO] stavki.pipelines.daily: Falling back to OddsAPI for LIGUE_1 fixtures...
+2026-02-23 11:45:16 [INFO] stavki.data.collectors.odds_api: Fetched 0 matches for Ligue 1
+2026-02-23 11:45:16 [INFO] stavki.pipelines.daily: OddsAPI returned 0 fixtures for LIGUE_1
+2026-02-23 11:45:16 [INFO] stavki.pipelines.daily: No fixtures found for LIGUE_1 in next 72h
+2026-02-23 11:45:17 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-23
+2026-02-23 11:45:19 [INFO] stavki.data.collectors.sportmonks: Got 8 fixtures for 2026-02-24
+2026-02-23 11:45:20 [INFO] stavki.data.collectors.sportmonks: Got 4 fixtures for 2026-02-25
+2026-02-23 11:45:21 [INFO] stavki.data.collectors.sportmonks: Got 0 fixtures for 2026-02-26
+2026-02-23 11:45:21 [INFO] stavki.pipelines.daily: Fetched 12 fixtures from SportMonks for CHAMPIONSHIP (next 72h)
+2026-02-23 11:45:21 [WARNING] stavki.data.collectors.betfair: Betfair cert/key files not found: client-2048.crt, client-2048.key
+2026-02-23 11:45:21 [WARNING] stavki.data.collectors.betfair: Betfair login failed/not configured. Skipping.
+2026-02-23 11:45:21 [INFO] stavki.pipelines.daily: Fetched Betfair odds for 0/ 12 matches
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily: Fetched SportMonks odds for 12/12 CHAMPIONSHIP matches
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily:   CHAMPIONSHIP: 12/12 matches have odds
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily: Saved 16 matches to odds_20260223_114541.csv
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily:   → 16 odds rows loaded
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily: Step 2: 16 unique matches
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily: Step 2.5: Enriching matches with SportMonks data...
+2026-02-23 11:45:41 [INFO] stavki.data.collectors.sportmonks: SportMonks client initialized
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily: Enriching 16 matches via Batched API chunks...
+2026-02-23 11:45:41 [ERROR] stavki.data.collectors.sportmonks: Request failed: 404 Client Error: Not Found for url: https://api.sportmonks.com/v3/football/fixtures/multi/19427149,19439494,19425134,19425132,19432143,19432144,19432147,19432148,19432149,19432150,19432151,19432145,19432152,19432153,19432154,19432146?include=statistics%3Blineups.player%3Bevents%3Breferees.referee%3Bcoaches%3Bparticipants%3Bweather
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily:   → Enriched 16/16 matches via chunking...
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily:   → 0/16 matches successfully enriched
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily: Step 3: Building features...
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily: Loading history from data/training_data.parquet...
+2026-02-23 11:45:41 [WARNING] stavki.pipelines.daily: Failed to load data/training_data.parquet: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+A suitable version of pyarrow or fastparquet is required for parquet support.
+Trying to import the above resulted in these errors:
+ - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+ - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily: Loading history from data/features_full.parquet...
+2026-02-23 11:45:41 [WARNING] stavki.pipelines.daily: Failed to load data/features_full.parquet: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+A suitable version of pyarrow or fastparquet is required for parquet support.
+Trying to import the above resulted in these errors:
+ - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+ - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily: Loading history from data/training_data.csv...
+2026-02-23 11:45:41 [INFO] stavki.pipelines.daily:   -> Loaded 23599 rows from training_data.csv
+2026-02-23 11:45:45 [INFO] stavki.features.builders.real_xg: RealXGBuilder: Loaded 868 historical matches with xG
+2026-02-23 11:45:45 [INFO] stavki.features.builders.form: FormCalculator: pre-indexed 181 teams
+2026-02-23 11:45:45 [INFO] stavki.features.builders.form: FormCalculator: pre-indexed 181 teams
+2026-02-23 11:45:45 [INFO] stavki.features.builders.advanced_stats: AdvancedFeatureBuilder: pre-indexed 181 teams
+2026-02-23 11:45:45 [INFO] stavki.features.builders.corners: CornersFeatureBuilder: 181 teams profiled | global avg corners per side = 5.0
+2026-02-23 11:45:46 [INFO] stavki.features.builders.referee: RefereeFeatureBuilder: 122 referees profiled | global avg: 3.54 cards/g, 22.4 fouls/g, 2.65 goals/g, 50.0% O2.5, 43.8% home win
+2026-02-23 11:45:46 [INFO] stavki.features.builders.referee: RefereeFeatureBuilder: 122 referees profiled | global avg: 3.54 cards/g, 22.4 fouls/g, 2.65 goals/g, 50.0% O2.5, 43.8% home win
+2026-02-23 11:45:46 [INFO] stavki.features.builders.real_xg: RealXGBuilder: Fitted on 23599 matches.
+2026-02-23 11:45:46 [INFO] stavki.features.builders.seasonal: SeasonalFeatureBuilder: ready (no fitting needed)
+2026-02-23 11:45:46 [INFO] stavki.features.builders.player_impact: PlayerImpactFeatureBuilder: 0 players (0 with ratings), 0 teams profiled
+2026-02-23 11:45:46 [INFO] stavki.features.builders.injuries: InjuryFeatureBuilder: 0 teams profiled
+2026-02-23 11:45:46 [INFO] stavki.features.builders.formation: FormationFeatureBuilder: 0 teams profiled, 0 formation matchup pairs tracked
+2026-02-23 11:45:46 [INFO] stavki.features.builders.venue: VenueFeatureBuilder: 0 venues cached
+2026-02-23 11:45:46 [INFO] stavki.features.builders.manager: ManagerFeatureBuilder: 0 teams profiled
+2026-02-23 11:45:46 [INFO] stavki.features.registry: FeatureRegistry (full) fitted on 23599 matches
+2026-02-23 11:45:47 [INFO] stavki.pipelines.daily:   Computed odds aggregates from 16 bookmaker entries → 16 matches
+2026-02-23 11:45:47 [INFO] stavki.pipelines.daily: Executing Live State Memory Serialization...
+Traceback (most recent call last):
+  File "/home/serni13678/stavki_v2/scripts/cache_live_state.py", line 18, in <module>
+    import redis
+ModuleNotFoundError: No module named 'redis'
+2026-02-23 11:45:47 [INFO] stavki.pipelines.daily: Step 4: Running model predictions...
+2026-02-23 11:45:48 [WARNING] stavki.pipelines.daily:   Config not found at models/league_config.json, using defaults.
+2026-02-23 11:45:48 [INFO] stavki.pipelines.daily:   Found 7 model files to load: ['LightGBM_BTTS.pkl', 'catboost.pkl', 'dixon_coles.pkl', 'LightGBM_1X2.pkl', 'goals_regressor.pkl', 'neural_multitask_preproc.joblib', 'neural_multitask_config.json']
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator LabelEncoder from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator IsotonicRegression from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator LabelEncoder from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator IsotonicRegression from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+2026-02-23 11:45:48 [INFO] stavki.models.ensemble.predictor: Added model: LightGBM_BTTS
+2026-02-23 11:45:48 [INFO] stavki.pipelines.daily:   Loaded model: LightGBM_BTTS from LightGBM_BTTS.pkl
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator IsotonicRegression from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator IsotonicRegression from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+2026-02-23 11:45:48 [INFO] stavki.models.ensemble.predictor: Added model: CatBoost_1X2
+2026-02-23 11:45:48 [INFO] stavki.pipelines.daily:   Loaded model: CatBoost_1X2 from catboost.pkl
+2026-02-23 11:45:48 [INFO] stavki.models.ensemble.predictor: Added model: DixonColes
+2026-02-23 11:45:48 [INFO] stavki.pipelines.daily:   Loaded model: DixonColes from dixon_coles.pkl
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator LabelEncoder from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator IsotonicRegression from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator LabelEncoder from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator IsotonicRegression from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+2026-02-23 11:45:48 [INFO] stavki.models.ensemble.predictor: Added model: LightGBM_1X2
+2026-02-23 11:45:48 [INFO] stavki.pipelines.daily:   Loaded model: LightGBM_1X2 from LightGBM_1X2.pkl
+2026-02-23 11:45:48 [INFO] stavki.models.neural.goals_regressor: Using device: cpu
+2026-02-23 11:45:48 [INFO] stavki.models.ensemble.predictor: Added model: GoalsRegressor
+2026-02-23 11:45:48 [INFO] stavki.pipelines.daily:   Loaded model: GoalsRegressor from goals_regressor.pkl
+2026-02-23 11:45:48 [INFO] stavki.models.neural.multitask: Using device: cpu
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator LabelEncoder from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+/home/serni13678/.local/lib/python3.10/site-packages/sklearn/base.py:442: InconsistentVersionWarning: Trying to unpickle estimator StandardScaler from version 1.6.1 when using version 1.7.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+2026-02-23 11:45:48 [INFO] stavki.models.ensemble.predictor: Added model: NeuralMultiTask
+2026-02-23 11:45:48 [INFO] stavki.pipelines.daily:   Loaded model: NeuralMultiTask from neural_multitask_config.json
+2026-02-23 11:45:48 [ERROR] stavki.models.v3_transformer_wrapper: Failed to load V3 model: Weights only load failed. This file can still be loaded, to do so you have two options, [1mdo those steps only if you trust the source of the checkpoint[0m. 
+	(1) In PyTorch 2.6, we changed the default value of the `weights_only` argument in `torch.load` from `False` to `True`. Re-running `torch.load` with `weights_only` set to `False` will likely succeed, but it can result in arbitrary code execution. Do it only if you got the file from a trusted source.
+	(2) Alternatively, to load with `weights_only=True` please check the recommended steps in the following error message.
+	WeightsUnpickler error: Unsupported global: GLOBAL numpy._core.multiarray.scalar was not an allowed global by default. Please use `torch.serialization.add_safe_globals([numpy._core.multiarray.scalar])` or the `torch.serialization.safe_globals([numpy._core.multiarray.scalar])` context manager to allowlist this global if you trust this class/function.
+
+Check the documentation of torch.load to learn more about types accepted by default with weights_only https://pytorch.org/docs/stable/generated/torch.load.html.
+2026-02-23 11:45:48 [INFO] stavki.models.ensemble.predictor: Added shadow model: V3_Watcher
+2026-02-23 11:45:48 [INFO] stavki.pipelines.daily:   Using ensemble with 6 models
+2026-02-23 11:45:48 [INFO] stavki.pipelines.daily:   Built match_id→event_id mapping for 16 matches
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily:   → 16 matches predicted (48 market slots)
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily: Step 5: Selecting best prices...
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily: Step 6: Computing market probabilities...
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily: Step 7: Finding value bets...
+2026-02-23 11:45:49 [WARNING] stavki.pipelines.daily: 🚨 BLOCKED: Mathematically improbable EV (44.64%) for 19432144 (away). Odds: 5.48, Prob: 32.59% | Market: 17.10%. Skipping to preserve bankroll safety.
+2026-02-23 11:45:49 [WARNING] stavki.pipelines.daily: 🚨 BLOCKED: Mathematically improbable EV (38.48%) for 19432153 (away). Odds: 11.74, Prob: 14.32% | Market: 8.00%. Skipping to preserve bankroll safety.
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily:   → 10 value bets found
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily: Step 8: Applying filters...
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily:   → 6 bets passed filters
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily: Step 9: Calculating stakes...
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily: Saved 6 bets to outputs/bets/bets_20260223_114549.json and outputs/bets/bets_20260223_114549.csv
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily: ==================================================
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily: Pipeline complete: 6 actionable bets
+2026-02-23 11:45:49 [INFO] stavki.pipelines.daily: ==================================================
+2026-02-23 11:45:49 [INFO] manual_scan: 
+============================================================
+2026-02-23 11:45:49 [INFO] manual_scan: SCAN COMPLETE: 6 matches scanned, 6 value bets found
+2026-02-23 11:45:49 [INFO] manual_scan: ============================================================
+2026-02-23 11:45:49 [INFO] manual_scan: 
+  #1  Unknown (soccer_efl_champ)
+       Outcome: draw @ 6.55 (Pinnacle)
+       Model: 24.3%  Market: 0.0%  Edge: +33.0%  EV: 33.0%
+2026-02-23 11:45:49 [INFO] manual_scan: 
+  #2  Unknown (soccer_italy_serie_a)
+       Outcome: away @ 5.70 (188Bet)
+       Model: 23.7%  Market: 0.0%  Edge: +19.3%  EV: 19.3%
+2026-02-23 11:45:49 [INFO] manual_scan: 
+  #3  Unknown (soccer_efl_champ)
+       Outcome: away @ 4.60 (Dafabet)
+       Model: 28.8%  Market: 0.0%  Edge: +17.8%  EV: 17.8%
+2026-02-23 11:45:49 [INFO] manual_scan: 
+  #4  Unknown (soccer_efl_champ)
+       Outcome: home @ 3.20 (bet365)
+       Model: 38.3%  Market: 0.0%  Edge: +11.2%  EV: 11.2%
+2026-02-23 11:45:49 [INFO] manual_scan: 
+  #5  Unknown (soccer_italy_serie_a)
+       Outcome: away @ 4.40 (Unibet)
+       Model: 26.9%  Market: 0.0%  Edge: +8.9%  EV: 8.9%
+2026-02-23 11:45:49 [INFO] manual_scan: 
+  #6  Unknown (soccer_efl_champ)
+       Outcome: draw @ 3.75 (bet365)
+       Model: 30.7%  Market: 0.0%  Edge: +6.5%  EV: 6.5%
+2026-02-23 11:45:49 [INFO] manual_scan: 
+📈 EV Summary: min=6.5%, median=17.8%, max=33.0%

@@ -66,13 +66,13 @@ def build_context():
     cols_to_roll = ['red_cards', 'injuries', 'penalties', 'own_goals', 'var']
     
     for col in cols_to_roll:
-        # Sum last 10 matches
-        matches_long[f'{col}_last10'] = matches_long.groupby('team_id')[col].transform(
+        # Sum last 10 matches (represents historical discipline/fragility, NOT current match absences)
+        matches_long[f'{col}_historical_10'] = matches_long.groupby('team_id')[col].transform(
             lambda x: x.rolling(window=10, min_periods=1).sum().shift(1)
         ).fillna(0)
         
     # Select columns
-    final_cols = ['match_id', 'team_id'] + [f'{c}_last10' for c in cols_to_roll]
+    final_cols = ['match_id', 'team_id'] + [f'{c}_historical_10' for c in cols_to_roll]
     out_df = matches_long[final_cols].copy()
     
     # Save

@@ -269,14 +269,14 @@ class StavkiDataset(Dataset):
         a_man = self.match_away_man_lookup.get(mid, 0)
         
         # 2. Team Context (XI Rating + History + Home Flag)
-        # 7 XI features + 5 History features + 1 Home Flag = 13 total
+        # 11 XI features + 5 History features + 1 Home Flag = 17 total
         
         def get_full_context(tid, is_home):
             # XI Stats
             try:
                 xi = self.team_vectors.loc[(mid, tid)].values.astype(np.float32)
             except KeyError:
-                xi = np.zeros(7, dtype=np.float32)
+                xi = np.zeros(11, dtype=np.float32)
                 
             # History Stats
             try:
@@ -296,7 +296,7 @@ class StavkiDataset(Dataset):
         # 3. Momentum
         def get_mom_vec(tid):
             try:
-                if self.momentum.empty: return np.zeros(10, dtype=np.float32)
+                if self.momentum.empty: return np.zeros(13, dtype=np.float32)
                 return self.momentum.loc[(mid, tid)].values.astype(np.float32)
             except KeyError:
                 return np.zeros(self.momentum.shape[1], dtype=np.float32)

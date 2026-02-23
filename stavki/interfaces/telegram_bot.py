@@ -217,11 +217,12 @@ class StavkiBot:
             
             staker = KellyStaker(
                 bankroll=user_settings.bankroll,
-                config={"kelly_fraction": 0.75},
+                config={"kelly_fraction": 0.5},
                 state_file=str(state_dir / f"{chat_id}_kelly_state.json")
             )
             
             final_bets = []
+            zero_stake_reasons = []
             
             for bet in filtered_bets:
                 # Construct EVResult wrapper for KellyStaker
@@ -250,11 +251,18 @@ class StavkiBot:
                         "stake": stake_amt,
                         "prob": prob_to_use
                     })
+                else:
+                    zero_stake_reasons.append(rec_stake.reason or "Unknown risk limit")
 
             if not final_bets:
+                 from collections import Counter
+                 reason_counts = Counter(zero_stake_reasons)
+                 top_reason = reason_counts.most_common(1)[0][0] if reason_counts else "Unknown"
+                 
                  await update.message.reply_text(
-                     f"❌ Found positive EV bets but Kelly Criterion suggests $0.00 stake (too risky or low bankroll).\n"
-                     f"Try increasing bankroll or lowering Min EV."
+                     f"❌ Found {len(filtered_bets)} positive EV bets, but all were rejected by risk limits.\n"
+                     f"💡 Primary reason: *{top_reason}*\n\n"
+                     f"Try increasing your bankroll or waiting for daily/league limits to reset."
                  )
                  return
 

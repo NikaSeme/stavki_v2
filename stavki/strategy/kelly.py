@@ -68,9 +68,9 @@ class KellyStaker:
         "kelly_fraction": 0.75,           # BOB'S AGGRESSIVE: 75% Kelly
         
         # Stake limits
-        "max_stake_pct": 0.05,            # Max single bet: 5%
+        "max_stake_pct": 1.0,             # Max single bet: 100%
         "min_stake_pct": 0.001,           # Min stake: 0.1%
-        "min_stake_amount": 1.0,          # Minimum stake in currency
+        "min_stake_amount": 0.1,          # Minimum stake in currency
         
         # Exposure limits
         "max_daily_exposure_pct": 0.20,   # Max 20% bankroll per day
@@ -275,29 +275,11 @@ class KellyStaker:
             multiplier = 1.0 - penalty_ratio
             stake_pct *= multiplier
         
-        # 4. Daily exposure limit
-        daily_used = self.daily_exposure[today]
-        daily_remaining = self.config["max_daily_exposure_pct"] - daily_used
-        
-        if daily_remaining <= 0:
-            return 0.0, "Daily exposure limit"
-        
-        stake_pct = min(stake_pct, daily_remaining)
-        
-        # 5. League exposure limit
-        league_used = self.league_exposure[league]
-        league_remaining = self.config["max_league_exposure_pct"] - league_used
-        
-        if league_remaining <= 0:
-            return 0.0, f"League exposure limit ({league})"
-        
-        stake_pct = min(stake_pct, league_remaining)
-        
-        # 6. Max concurrent bets
+        # 4. Max concurrent bets
         if len(self.pending_bets) >= self.config["max_concurrent_bets"]:
             return 0.0, "Max concurrent bets"
         
-        # 7. Minimum stake
+        # 5. Minimum stake
         if stake_pct < self.config["min_stake_pct"]:
             return 0.0, "Below minimum stake percentage"
         

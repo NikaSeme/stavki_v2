@@ -79,7 +79,7 @@ class DeepInteractionWrapper(BaseModel):
         self._season_dim = 4
         self._h2h_dim = 8
         self._h2h_input_dim = 4
-        self._context_dim = 13
+        self._context_dim = 17
         self._momentum_dim = 13
         self._manager_dim = 16
         self._hidden_dim = 128
@@ -532,7 +532,7 @@ class DeepInteractionWrapper(BaseModel):
         self._season_dim = state.get("season_dim", 4)
         self._h2h_dim = state.get("h2h_dim", 8)
         self._h2h_input_dim = state.get("h2h_input_dim", 4)
-        self._context_dim = state.get("context_dim", 13)
+        self._context_dim = state.get("context_dim", 17)
         self._momentum_dim = state.get("momentum_dim", 13)
         self._manager_dim = state.get("manager_dim", 16)
         self._hidden_dim = state.get("hidden_dim", 128)

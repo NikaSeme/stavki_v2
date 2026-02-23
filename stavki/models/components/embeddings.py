@@ -18,6 +18,7 @@ class PlayerEncoder(nn.Module):
     def __init__(self, num_players: int, embedding_dim: int = 32, num_heads: int = 4, dropout: float = 0.1):
         super().__init__()
         self.embedding = nn.Embedding(num_players, embedding_dim, padding_idx=0)
+        self.unseen_embedding = nn.Embedding(50, embedding_dim, padding_idx=0)
         self.pos_dim = 4
         self.position_enc = nn.Embedding(50, self.pos_dim, padding_idx=0)
         
@@ -33,6 +34,7 @@ class PlayerEncoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         nn.init.normal_(self.embedding.weight, std=0.01)
+        nn.init.normal_(self.unseen_embedding.weight, std=0.01)
         nn.init.normal_(self.position_enc.weight, std=0.01)
 
     def forward(self, player_indices: torch.LongTensor, position_indices: torch.LongTensor) -> torch.Tensor:
@@ -47,14 +49,19 @@ class PlayerEncoder(nn.Module):
         # (B, 11, D)
         vectors = self.embedding(player_indices)
 
+        # Handle unseen players (player=0 but position!=0) via cold-start embeddings
+        unseen_mask = (player_indices == 0) & (position_indices != 0)
+        if unseen_mask.any():
+            vectors[unseen_mask] = self.unseen_embedding(position_indices[unseen_mask])
+
         # Add positional encoding (pitch position awareness)
         pos_vectors = self.position_enc(position_indices)
         
         # Concat ID vector and Position vector
         vectors = torch.cat([vectors, pos_vectors], dim=-1)
 
-        # Create attention mask for padded players (index 0)
-        key_padding_mask = (player_indices == 0)  # (B, 11) True = ignore
+        # Create attention mask for true padded slots
+        key_padding_mask = (player_indices == 0) & (position_indices == 0)  # (B, 11) True = ignore
 
         # Guard: if ALL players are padding (no lineup data), skip attention
         all_padding = key_padding_mask.all(dim=1)  # (B,)
@@ -189,6 +196,8 @@ class CrossTeamInteraction(nn.Module):
 
     def __init__(self, embed_dim: int = 32, num_heads: int = 4, dropout: float = 0.1):
         super().__init__()
+        self.num_heads = num_heads
+        
         # Home attends to Away (offensive analysis)
         self.cross_attn_h2a = nn.MultiheadAttention(
             embed_dim=embed_dim,
@@ -210,6 +219,10 @@ class CrossTeamInteraction(nn.Module):
             nn.Sigmoid(),
         )
         self.norm = nn.LayerNorm(embed_dim)
+        
+        # Zonal Attention Bias Matrix (50 positions x 50 positions)
+        self.zonal_bias = nn.Embedding(50 * 50, num_heads)
+        nn.init.zeros_(self.zonal_bias.weight)
 
     def _safe_mask(self, mask: torch.BoolTensor) -> torch.BoolTensor:
         """Disable padding mask if ALL positions are padding (prevents NaN)."""
@@ -246,17 +259,38 @@ class CrossTeamInteraction(nn.Module):
         h_vecs = torch.cat([embedding(home_players), position_enc(h_positions)], dim=-1)
         a_vecs = torch.cat([embedding(away_players), position_enc(a_positions)], dim=-1)
 
-        h_mask = (home_players == 0)
-        a_mask = (away_players == 0)
+        h_mask = (home_players == 0) & (h_positions == 0)
+        a_mask = (away_players == 0) & (a_positions == 0)
         safe_a_mask = self._safe_mask(a_mask)
         safe_h_mask = self._safe_mask(h_mask)
+        
+        B = h_vecs.size(0)
+        h_pos_exp = h_positions.unsqueeze(2)  # (B, 11, 1)
+        a_pos_exp = a_positions.unsqueeze(1)  # (B, 1, 11)
 
         # Direction 1: Home→Away ("How do our players match against theirs?")
-        h2a_out, _ = self.cross_attn_h2a(h_vecs, a_vecs, a_vecs, key_padding_mask=safe_a_mask)
+        # Build Zonal Attention Mask
+        h2a_pair_ids = h_pos_exp * 50 + a_pos_exp  # (B, 11, 11)
+        h2a_bias = self.zonal_bias(h2a_pair_ids).permute(0, 3, 1, 2)  # (B, heads, 11, 11)
+        h2a_attn_mask = h2a_bias.reshape(B * self.num_heads, 11, 11)
+        
+        h2a_out, _ = self.cross_attn_h2a(
+            h_vecs, a_vecs, a_vecs, 
+            key_padding_mask=safe_a_mask,
+            attn_mask=h2a_attn_mask
+        )
         h2a_vec = self._aggregate(h2a_out, h_mask)  # (B, D)
 
         # Direction 2: Away→Home ("How do their players threaten ours?")
-        a2h_out, _ = self.cross_attn_a2h(a_vecs, h_vecs, h_vecs, key_padding_mask=safe_h_mask)
+        a2h_pair_ids = a_pos_exp * 50 + h_pos_exp # (B, 11, 11) Query=Away, Key=Home
+        a2h_bias = self.zonal_bias(a2h_pair_ids).permute(0, 3, 1, 2)
+        a2h_attn_mask = a2h_bias.reshape(B * self.num_heads, 11, 11)
+        
+        a2h_out, _ = self.cross_attn_a2h(
+            a_vecs, h_vecs, h_vecs, 
+            key_padding_mask=safe_h_mask,
+            attn_mask=a2h_attn_mask
+        )
         a2h_vec = self._aggregate(a2h_out, a_mask)  # (B, D)
 
         # Gated fusion: learn how much each direction matters

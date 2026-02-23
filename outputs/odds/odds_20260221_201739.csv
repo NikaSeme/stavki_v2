@@ -1,0 +1,10 @@
+event_id,fixture_id,source_id,home_team,away_team,league,commence_time,source,home_odds,draw_odds,away_odds,home_bookmaker,away_bookmaker,btts_yes_odds,btts_no_odds
+19439498,19439498,19439498,Real Sociedad,Real Oviedo,soccer_spain_la_liga,2026-02-21T13:00:00,sportmonks,1.53,3.8,6.5,bet365,bet365,2.07,1.76
+19439497,19439497,19439497,Real Betis,Rayo Vallecano,soccer_spain_la_liga,2026-02-21T15:15:00,sportmonks,1.91,3.3,4.0,WilliamHill,WilliamHill,1.73,2.04
+19439496,19439496,19439496,Osasuna,Real Madrid,soccer_spain_la_liga,2026-02-21T17:30:00,sportmonks,4.8,3.9,1.67,Unibet,Unibet,2.9,1.36
+19439491,19439491,19439491,Atlético Madrid,Espanyol,soccer_spain_la_liga,2026-02-21T20:00:00,sportmonks,1.5,4.0,6.0,888Sport,888Sport,3.6,1.25
+19439495,19439495,19439495,Getafe,Sevilla,soccer_spain_la_liga,2026-02-22T13:00:00,sportmonks,2.4,2.9,3.25,Ladbrokes,Ladbrokes,2.3,1.08
+19439492,19439492,19439492,FC Barcelona,Levante,soccer_spain_la_liga,2026-02-22T15:15:00,sportmonks,1.12,11.0,15.0,Ladbrokes,Ladbrokes,1.93,1.77
+19439493,19439493,19439493,Celta de Vigo,Mallorca,soccer_spain_la_liga,2026-02-22T17:30:00,sportmonks,1.85,3.3,4.33,Ladbrokes,Ladbrokes,3.8,1.23
+19439499,19439499,19439499,Villarreal,Valencia,soccer_spain_la_liga,2026-02-22T20:00:00,sportmonks,1.67,3.6,4.2,Ladbrokes,Ladbrokes,3.2,1.3
+19439494,19439494,19439494,Deportivo Alavés,Girona,soccer_spain_la_liga,2026-02-23T20:00:00,sportmonks,2.3,2.92,3.4,10Bet,10Bet,5.5,1.22

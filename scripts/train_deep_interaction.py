@@ -80,7 +80,7 @@ def train():
         season_dim=4,
         h2h_dim=8,
         h2h_input_dim=4,
-        context_dim=13,
+        context_dim=17,
         momentum_dim=13,
         hidden_dim=128,
         dropout=DROPOUT,

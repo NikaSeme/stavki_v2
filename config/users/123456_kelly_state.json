@@ -1,0 +1,50 @@
+{
+  "bankroll": 1000.0,
+  "peak_bankroll": 1000.0,
+  "initial_bankroll": 1000.0,
+  "config": {
+    "kelly_fraction": 0.75,
+    "max_stake_pct": 0.05,
+    "min_stake_pct": 0.001,
+    "min_stake_amount": 1.0,
+    "max_daily_exposure_pct": 0.2,
+    "max_league_exposure_pct": 0.1,
+    "max_concurrent_bets": 50,
+    "drawdown_reduce_threshold": 0.15,
+    "drawdown_pause_threshold": 0.25,
+    "drawdown_reduction_factor": 0.5
+  },
+  "daily_exposure": {
+    "2026-02-23": 0.09
+  },
+  "league_exposure": {
+    "unknown": 0.0,
+    "soccer_epl": 0.09
+  },
+  "pending_bets": [
+    {
+      "timestamp": "2026-02-23T03:28:40.018917",
+      "match_id": "test_match_1",
+      "market": "1x2",
+      "selection": "home",
+      "stake": 45.0,
+      "odds": 2.0,
+      "ev": 0.06,
+      "league": "soccer_epl",
+      "status": "pending"
+    },
+    {
+      "timestamp": "2026-02-23T03:28:40.021211",
+      "match_id": "test_match_1",
+      "market": "1x2",
+      "selection": "home",
+      "stake": 45.0,
+      "odds": 2.0,
+      "ev": 0.06,
+      "league": "soccer_epl",
+      "status": "pending"
+    }
+  ],
+  "bet_history": [],
+  "last_updated": "2026-02-23T03:28:40.021216"
+}

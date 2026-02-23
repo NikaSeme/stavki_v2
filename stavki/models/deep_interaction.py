@@ -39,7 +39,7 @@ class DeepInteractionNetwork(nn.Module):
         season_dim: int = 4,
         h2h_dim: int = 8,
         h2h_input_dim: int = 4,
-        context_dim: int = 13,
+        context_dim: int = 17,
         momentum_dim: int = 13,
         hidden_dim: int = 128,
         num_heads: int = 4,

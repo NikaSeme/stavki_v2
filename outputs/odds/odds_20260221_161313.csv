@@ -1,0 +1,10 @@
+event_id,fixture_id,source_id,home_team,away_team,league,commence_time,source,home_odds,draw_odds,away_odds,home_bookmaker,away_bookmaker,btts_yes_odds,btts_no_odds
+19427146,19427146,19427146,Brentford,Brighton & Hove Albion,soccer_epl,2026-02-21T15:00:00,sportmonks,2.3,3.4,3.1,bet365,bet365,2.93,1.36
+19427147,19427147,19427147,Chelsea,Burnley,soccer_epl,2026-02-21T15:00:00,sportmonks,1.25,6.5,10.0,Ladbrokes,Ladbrokes,3.4,1.28
+19427716,19427716,19427716,Aston Villa,Leeds United,soccer_epl,2026-02-21T15:00:00,sportmonks,1.67,3.55,4.0,HKJC,HKJC,2.88,1.36
+19427154,19427154,19427154,West Ham United,AFC Bournemouth,soccer_epl,2026-02-21T17:30:00,sportmonks,2.5,3.6,2.6,Ladbrokes,Ladbrokes,1.43,2.7
+19427150,19427150,19427150,Manchester City,Newcastle United,soccer_epl,2026-02-21T20:00:00,sportmonks,1.5,4.75,5.5,bet365,bet365,3.9,1.27
+19427151,19427151,19427151,Nottingham Forest,Liverpool,soccer_epl,2026-02-22T14:00:00,sportmonks,4.08,4.08,1.9,1xbet,1xbet,1.71,2.15
+19427152,19427152,19427152,Sunderland,Fulham,soccer_epl,2026-02-22T14:00:00,sportmonks,2.6,3.25,2.7,Ladbrokes,Ladbrokes,6.15,2.3
+19427153,19427153,19427153,Tottenham Hotspur,Arsenal,soccer_epl,2026-02-22T16:30:00,sportmonks,5.5,4.0,1.57,Ladbrokes,Ladbrokes,7.77,2.69
+19427149,19427149,19427149,Everton,Manchester United,soccer_epl,2026-02-23T20:00:00,sportmonks,3.5,3.7,1.95,Ladbrokes,Ladbrokes,7.72,2.98

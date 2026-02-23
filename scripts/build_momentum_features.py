@@ -46,14 +46,14 @@ def build_momentum():
     # Let's load dates from team_vectors_gold (it has match_id) or just fixture_map?
     # Or simpler: load player_features_gold just to get match_id -> date mapping.
     
-    features_path = PROJECT_ROOT / "data" / "processed" / "players" / "player_features_gold.parquet"
-    if features_path.exists():
-        dates = pd.read_parquet(features_path, columns=['match_id', 'date']).drop_duplicates()
+    matches_path = PROJECT_ROOT / "data" / "processed" / "matches" / "matches_silver.parquet"
+    if matches_path.exists():
+        dates = pd.read_parquet(matches_path, columns=['match_id', 'date'])
+        dates['date'] = pd.to_datetime(dates['date'])
         grouped = grouped.merge(dates, on='match_id', how='left')
     else:
-        logger.warning("No dates found, rolling calc might be wrong order.")
-        # Fallback: assume match_id correlates with time (pseudo-sort)
-        grouped['date'] = pd.to_datetime('2024-01-01') # Dummy
+        logger.error("matches_silver.parquet not found. Cannot determine true match order.")
+        raise FileNotFoundError("matches_silver.parquet is strictly required for accurate momentum calculation without temporal leakage.")
         
     # --- Phase 9: Playstyle Classifiers ---
     player_stats_path = PROJECT_ROOT / "data" / "processed" / "players" / "player_stats_silver.parquet"
@@ -65,10 +65,10 @@ def build_momentum():
             ps_df = ps_df.fillna(0)
             ps_grouped = ps_df.groupby(['match_id', 'team_id']).sum().reset_index()
             
-            # Calculate ratios safely
-            ps_grouped['trend_pass_accuracy'] = np.where(ps_grouped['passes'] > 0, ps_grouped['accurate_passes'] / ps_grouped['passes'], 0.0)
+            # Calculate ratios safely using NaN instead of 0.0 for division by zero
+            ps_grouped['trend_pass_accuracy'] = np.where(ps_grouped['passes'] > 0, ps_grouped['accurate_passes'] / ps_grouped['passes'], np.nan)
             ps_grouped['trend_possession_proxy'] = ps_grouped['passes']
-            ps_grouped['trend_duel_win_rate'] = np.where(ps_grouped['total_duels'] > 0, ps_grouped['duels_won'] / ps_grouped['total_duels'], 0.0)
+            ps_grouped['trend_duel_win_rate'] = np.where(ps_grouped['total_duels'] > 0, ps_grouped['duels_won'] / ps_grouped['total_duels'], np.nan)
             
             ps_cols_to_keep = ['match_id', 'team_id', 'trend_pass_accuracy', 'trend_possession_proxy', 'trend_duel_win_rate']
             ps_grouped = ps_grouped[ps_cols_to_keep]
@@ -76,14 +76,14 @@ def build_momentum():
             grouped = grouped.merge(ps_grouped, on=['match_id', 'team_id'], how='left')
         except Exception as e:
             logger.error(f"Failed to integrate Playstyle Classifiers: {e}")
-            grouped['trend_pass_accuracy'] = 0.0
-            grouped['trend_possession_proxy'] = 0.0
-            grouped['trend_duel_win_rate'] = 0.0
+            grouped['trend_pass_accuracy'] = np.nan
+            grouped['trend_possession_proxy'] = np.nan
+            grouped['trend_duel_win_rate'] = np.nan
     else:
         logger.warning("player_stats_silver.parquet not found. Skipping Playstyle Classifiers.")
-        grouped['trend_pass_accuracy'] = 0.0
-        grouped['trend_possession_proxy'] = 0.0
-        grouped['trend_duel_win_rate'] = 0.0
+        grouped['trend_pass_accuracy'] = np.nan
+        grouped['trend_possession_proxy'] = np.nan
+        grouped['trend_duel_win_rate'] = np.nan
     # -------------------------------------
 
     grouped = grouped.sort_values(['team_id', 'date'])
@@ -94,8 +94,11 @@ def build_momentum():
     logger.info(f"Calculating rolling stats for {len(cols_to_roll)} features...")
     
     for col in cols_to_roll:
-        # Fill NaNs with 0 before rolling? Or keep NaN?
-        grouped[col] = grouped[col].fillna(0)
+        # Fill NaNs with median before rolling to prevent artificial 0.0 outliers
+        median_val = grouped[col].median()
+        if pd.isna(median_val):
+            median_val = 0.0
+        grouped[col] = grouped[col].fillna(median_val)
         
         grouped[f'{col}_last5'] = grouped.groupby('team_id')[col].transform(
             lambda x: x.rolling(window=5, min_periods=1).mean().shift(1)

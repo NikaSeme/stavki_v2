@@ -21,8 +21,9 @@ def build_team_vectors():
     logger.info("Loading Gold Player Features...")
     df = pd.read_parquet(gold_path)
     
-    # Fill NaN ratings with 6.0
-    df['rating_last_5'] = df['rating_last_5'].fillna(6.0)
+    # Calculate positional median to fill missing ratings safely instead of arbitrary 6.0
+    position_medians = df.groupby('position_id')['rating_last_5'].transform('median')
+    df['rating_last_5'] = df['rating_last_5'].fillna(position_medians).fillna(6.0)
     
     # --- Aggregation Logic ---
     
@@ -38,36 +39,47 @@ def build_team_vectors():
     
     # 2. Calculate XI Features
     # Group by match_id, team_id
-    xi_stats = starters.groupby(['match_id', 'team_id']).agg({
-        'rating_last_5': 'mean',
-        'rating_std_10': 'mean', # Consistency of XI
-        'minutes_last_5': lambda x: x.mean() / 90.0, # Fatigue (Normalized to Matches played)
-        'goals_last_10': 'sum',   # Firepower
-        'key_passes_last_10': 'sum', # Creativity
-        'career_rating': 'mean'   # Experience/Class
-    }).rename(columns={
-        'rating_last_5': 'xi_rating',
-        'rating_std_10': 'xi_consistency',
-        'minutes_last_5': 'xi_fatigue',
-        'goals_last_10': 'xi_goals_form',
-        'key_passes_last_10': 'xi_creativity',
-        'career_rating': 'xi_class'
-    })
+    xi_stats = starters.groupby(['match_id', 'team_id']).agg(
+        xi_rating=('rating_last_5', 'mean'),
+        xi_rating_max=('rating_last_5', 'max'),
+        xi_rating_min=('rating_last_5', 'min'),
+        xi_rating_var=('rating_last_5', 'var'),
+        xi_consistency=('rating_std_10', 'mean'),  # Consistency of XI
+        xi_fatigue=('minutes_last_5', lambda x: x.mean() / 90.0), # Fatigue
+        xi_goals_form=('goals_last_10', 'sum'),    # Firepower
+        xi_creativity=('key_passes_last_10', 'sum'), # Creativity
+        xi_class=('career_rating', 'mean')         # Experience/Class
+    )
     
-    # 3. Calculate Bench Impact
-    # Take top 5 bench players by rating (impact subs)
-    bench_sorted = bench.sort_values('rating_last_5', ascending=False)
-    bench_top5 = bench_sorted.groupby(['match_id', 'team_id']).head(5)
+    # Fill variance NaNs with 0 (in case of single player XI records)
+    xi_stats['xi_rating_var'] = xi_stats['xi_rating_var'].fillna(0.0)
     
-    bench_stats = bench_top5.groupby(['match_id', 'team_id']).agg({
-        'rating_last_5': 'mean' 
-    }).rename(columns={'rating_last_5': 'bench_strength'})
+    # 3. Calculate Bench Impact (Split Positional)
+    # Defense/GK positions: 24 (GK), 25 (Def)
+    # Offense/Mid positions: 26 (Mid), 27 (Att)
+    bench['is_defensive'] = bench['position_id'].isin([24, 25])
+    bench['is_offensive'] = bench['position_id'].isin([26, 27])
+    
+    # Top 2 Defensive Bench Players
+    bench_def = bench[bench['is_defensive']].sort_values('rating_last_5', ascending=False)
+    bench_def_top2 = bench_def.groupby(['match_id', 'team_id']).head(2)
+    bench_def_stats = bench_def_top2.groupby(['match_id', 'team_id']).agg(
+        bench_def_strength=('rating_last_5', 'mean')
+    )
+    
+    # Top 2 Offensive Bench Players
+    bench_off = bench[bench['is_offensive']].sort_values('rating_last_5', ascending=False)
+    bench_off_top2 = bench_off.groupby(['match_id', 'team_id']).head(2)
+    bench_off_stats = bench_off_top2.groupby(['match_id', 'team_id']).agg(
+        bench_off_strength=('rating_last_5', 'mean')
+    )
     
     # 4. Merge
-    team_vectors = xi_stats.join(bench_stats, how='left')
+    team_vectors = xi_stats.join(bench_def_stats, how='left').join(bench_off_stats, how='left')
     
-    # Fill missing bench (if no bench data) with average rating 6.0
-    team_vectors['bench_strength'] = team_vectors['bench_strength'].fillna(6.0)
+    # Fill missing bench with average rating 6.0
+    team_vectors['bench_def_strength'] = team_vectors['bench_def_strength'].fillna(6.0)
+    team_vectors['bench_off_strength'] = team_vectors['bench_off_strength'].fillna(6.0)
     
     # Save
     out_path = PROJECT_ROOT / "data" / "processed" / "teams" / "team_vectors_gold.parquet"
