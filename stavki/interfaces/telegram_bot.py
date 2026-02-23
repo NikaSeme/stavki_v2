@@ -328,16 +328,21 @@ class StavkiBot:
             await update.message.reply_text("⚠️ An error occurred while fetching bets. Please try again.")
     
     async def force_scan(self, update, context):
-        """Admin command to force a scan."""
-        # Simple security check (optional, or rely on admin_chat_ids)
-        await update.message.reply_text("🔄 Force starting scan...")
+        """Admin command to force a scan. Also aliased as /scan."""
+        chat_id = update.effective_chat.id
+        logger.info(f"/scan triggered by chat_id={chat_id}")
+        await update.message.reply_text("🔄 Starting scan... this may take 30-60 seconds.")
         
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self.pipeline_manager.run_scan)
-        
-        bets = self.pipeline_manager.get_cached_bets()
-        count = len(bets) if bets else 0
-        await update.message.reply_text(f"✅ Scan complete. Found {count} bets globally.")
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self.pipeline_manager.run_scan)
+            
+            bets = self.pipeline_manager.get_cached_bets()
+            count = len(bets) if bets else 0
+            await update.message.reply_text(f"✅ Scan complete. Found {count} bets globally.\nUse /bets to see your filtered results.")
+        except Exception as e:
+            logger.error(f"Scan failed: {e}", exc_info=True)
+            await update.message.reply_text(f"❌ Scan failed: {str(e)[:200]}")
 
     async def status(self, update, context):
         """Handle /status command."""
@@ -377,11 +382,14 @@ class StavkiBot:
     async def help_command(self, update, context):
         help_text = (
             "🤖 *STAVKI Bot Help*\n\n"
-            "/bets - Show current bets\n"
-            "/status - View config\n"
-            "/ev 0.05 - Set min EV\n"
-            "/bankroll 1000 - Set bankroll\n"
-            "/subscribe - Enable alerts\n"
+            "/bets - Show current value bets\n"
+            "/scan - Force a new pipeline scan\n"
+            "/status - View system status & config\n"
+            "/ev 0.05 - Set min EV threshold\n"
+            "/bankroll 1000 - Set bankroll size\n"
+            "/subscribe - Enable hourly alerts\n"
+            "/unsubscribe - Disable alerts\n"
+            "/help - Show this message\n"
         )
         await update.message.reply_text(help_text, parse_mode="Markdown")
 
