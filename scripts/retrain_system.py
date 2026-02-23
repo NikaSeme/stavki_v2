@@ -10,8 +10,8 @@ import gc
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
+
 import random
-import numpy as np
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -90,25 +90,61 @@ def main():
     df[fcols] = df[fcols].astype(np.float32)
     gc.collect()
     
+    # ---------------------------------------------------------
+    # THE DEEP FIX: Eradicate Historical Bookmaker Odds
+    # ---------------------------------------------------------
+    # Models were memorizing legacy Pinnalce/B365 lines, causing them
+    # to hallucinate 40%+ EVs during live inference when only OddAPI is present.
+    # We force them to learn from true metrics (xG, ELO, Form) by stripping odds.
+    logger.info("Deep Fix: Stripping 80+ Legacy Bookmaker Odds features...")
+    
+    odds_patterns = [
+        r'^B365', r'^Bb', r'^P[A-Z<>]', r'^AH', # Bet365, BetBrain, Pinnacle Opening/Closing AH/Totals, Default Asian Handicap
+        r'^Max', r'^Avg', r'^VC', r'^IW',      # Max/Avg Odds (Open/Close), BetVictor, Interwetten
+        r'^LB', r'^WH', r'^GB', r'^BS',        # Ladbrokes, William Hill, Gamebookers, BetSonic
+        r'^SB', r'^SJ', r'^BW', r'^BetH'       # Sportingbet, Stan James, Betway, Bet-at-home
+    ]
+    
+    # Compile regex to match columns
+    import re
+    drop_pattern = re.compile('|'.join(odds_patterns))
+    odds_cols_to_drop = [col for col in df.columns if drop_pattern.match(col) and col not in ["PSxG"]] # Exclude PSxG (Post-Shot xG)
+    
+    # CRITICAL FIX: Also strip implied probability columns derived from odds
+    # BUT keep imp_home_norm, imp_draw_norm, imp_away_norm, margin — models need these
+    odds_derived = [c for c in df.columns if c.startswith('imp_') or c == 'margin']
+    # Whitelist: keep normalized implied probs and margin used by models
+    keep_derived = {'imp_home_norm', 'imp_draw_norm', 'imp_away_norm', 'margin'}
+    odds_derived = [c for c in odds_derived if c not in keep_derived]
+    odds_cols_to_drop.extend(odds_derived)
+    
+    # Also whitelist AvgH/D/A which models now reference (Phase 4 C1 fix)
+    keep_avg = {'AvgH', 'AvgD', 'AvgA'}
+    odds_cols_to_drop = [c for c in set(odds_cols_to_drop) if c not in keep_avg]
+    
+    if odds_cols_to_drop:
+        logger.info(f"Stripping {len(odds_cols_to_drop)} Odds features from ML Datalake (e.g. {odds_cols_to_drop[:5]})")
+        df = df.drop(columns=[c for c in odds_cols_to_drop if c in df.columns])
+    # ---------------------------------------------------------
+
+    
     # 2. Split Data (Temporal)
-    # 60% Train, 20% Val (Early Stopping), 20% Test (Calibration)
-    train_ratio = 0.60
-    val_ratio = 0.20
-    # test_ratio implicit = 1.0 - 0.8 = 0.20
+    # 80% Train (with internal eval split), 20% Calibration/Test
+    # Previous 60/20/20 wasted recent data: training ended at July 2020.
+    # Now training goes up to ~2023, giving models much more current context.
+    train_ratio = 0.80
     
     train_end = int(len(df) * train_ratio)
-    val_end = int(len(df) * (train_ratio + val_ratio))
     
     # Slice using boundaries for clarity
     train_df = df.iloc[:train_end].copy().reset_index(drop=True)
-    val_df = df.iloc[train_end:val_end].copy().reset_index(drop=True)
-    test_df = df.iloc[val_end:].copy().reset_index(drop=True)
+    val_df = df.iloc[train_end:].copy().reset_index(drop=True)
     
     # OPTIMIZATION: Free original dataframe immediately
     del df
     gc.collect()
     
-    logger.info(f"Split: Train={len(train_df)}, Val={len(val_df)}, Test={len(test_df)}")
+    logger.info(f"Split: Train={len(train_df)}, Val={len(val_df)}")
     
     # 3. Train Models
     models = {}
@@ -154,10 +190,10 @@ def main():
     # Neural MultiTask (Feature Fixed)
     logger.info("\n🧠 Training Neural MultiTask...")
     # OPTIMIZATION: Gradient Accumulation (16 * 4 = 64 Effective Batch)
-    nn = MultiTaskModel(n_epochs=25, batch_size=16) 
-    nn.fit(train_df, eval_ratio=0.2, accumulation_steps=4, num_workers=0, pin_memory=False)
-    nn.save(models_dir / "neural_multitask.pkl")
-    models["neural"] = nn
+    neural_model = MultiTaskModel(n_epochs=25, batch_size=16) 
+    neural_model.fit(train_df, eval_ratio=0.2, accumulation_steps=4, num_workers=0, pin_memory=False)
+    neural_model.save(models_dir / "neural_multitask.pkl")
+    models["neural"] = neural_model
     
     # Goals Regressor (Feature Fixed)
     logger.info("\n⚽ Training Goals Regressor...")
@@ -174,7 +210,7 @@ def main():
     preds_dc = dc.predict(val_df)
     preds_lgb = lgb.predict(val_df)
     preds_cb = cb.predict(val_df)
-    preds_nn = nn.predict(val_df)
+    preds_nn = neural_model.predict(val_df)
     
     optimizer = WeightOptimizer()
     

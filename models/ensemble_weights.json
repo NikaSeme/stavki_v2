@@ -1,0 +1,6 @@
+{
+  "CatBoost": 0.5207,
+  "LightGBM": 0.3491,
+  "Neural": 0.0651,
+  "Poisson": 0.0651
+}

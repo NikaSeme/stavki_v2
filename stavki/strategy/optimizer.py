@@ -335,13 +335,36 @@ class KellyOptimizer:
                 max_drawdown = max(max_drawdown, dd)
             
             roi = (bankroll - self.initial_bankroll) / self.initial_bankroll
-            sharpe = roi / max(max_drawdown, 0.01)  # Simple Sharpe-like
+            
+            # Per-bet returns for proper Sharpe approximation
+            bet_returns = []
+            temp_bank = self.initial_bankroll
+            for bet in historical_bets:
+                prob_b = bet.get("prob") or bet.get("model_prob")
+                odds_b = bet.get("odds")
+                result_b = bet.get("result")
+                if not all([prob_b, odds_b, result_b]):
+                    continue
+                b_b = odds_b - 1
+                if b_b <= 0:
+                    continue
+                q_b = 1 - prob_b
+                kf = max(0, (b_b * prob_b - q_b) / b_b)
+                sp = min(kf * fraction, 0.05)
+                if result_b == "win":
+                    ret = sp * (odds_b - 1)
+                elif result_b == "loss":
+                    ret = -sp
+                else:
+                    ret = 0
+                bet_returns.append(ret)
+            std_returns = np.std(bet_returns) if len(bet_returns) > 1 else 0.01
             
             results[fraction] = {
                 "final_bankroll": bankroll,
                 "roi": roi,
                 "max_drawdown": max_drawdown,
-                "risk_adjusted": sharpe,
+                "risk_adjusted": roi / max(std_returns, 0.01),
             }
         
         # Select best

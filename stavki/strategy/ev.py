@@ -46,7 +46,6 @@ class EVResult:
             "ev": self.ev,
             "edge_pct": self.edge_pct,
             "implied_prob": self.implied_prob,
-            "implied_prob": self.implied_prob,
             "bookmaker": self.bookmaker,
             "is_suspicious": self.is_suspicious,
         }
@@ -255,18 +254,29 @@ class EVCalculator:
         
         return value_bets
     
+    def _build_odds_index(self, odds_data: pd.DataFrame) -> Dict[str, pd.Series]:
+        """Pre-build {match_id: row} dict for O(1) odds lookup."""
+        index = {}
+        for idx, row in odds_data.iterrows():
+            potential_id = row.get("match_id", f"{row.get('HomeTeam', '')}_{row.get('AwayTeam', '')}")
+            index[str(potential_id)] = row
+        return index
+    
     def _find_odds(
         self, 
         odds_data: pd.DataFrame, 
-        match_id: str
+        match_id: str,
+        _cache: Dict[str, pd.Series] = None,
     ) -> Optional[pd.Series]:
-        """Find odds row for a match."""
+        """Find odds row for a match using pre-built index."""
+        if _cache is not None:
+            return _cache.get(match_id)
+        
+        # Fallback: build on-the-fly (slower)
         for idx, row in odds_data.iterrows():
             potential_id = row.get("match_id", f"{row.get('HomeTeam', '')}_{row.get('AwayTeam', '')}")
-            
-            if potential_id == match_id or match_id in str(potential_id):
+            if str(potential_id) == match_id:
                 return row
-        
         return None
     
     def _get_odds_for_selection(
@@ -279,11 +289,11 @@ class EVCalculator:
         # 1X2 market
         if market in ("1x2", "match_winner"):
             if selection == "home":
-                return row.get("B365H") or row.get("PSH") or row.get("Odds_1X2_Home")
+                return row.get("AvgH") or row.get("PSH") or row.get("B365H") or row.get("Odds_1X2_Home")
             elif selection == "draw":
-                return row.get("B365D") or row.get("PSD") or row.get("Odds_1X2_Draw")
+                return row.get("AvgD") or row.get("PSD") or row.get("B365D") or row.get("Odds_1X2_Draw")
             elif selection == "away":
-                return row.get("B365A") or row.get("PSA") or row.get("Odds_1X2_Away")
+                return row.get("AvgA") or row.get("PSA") or row.get("B365A") or row.get("Odds_1X2_Away")
         
         # O/U market
         elif market == "over_under":
@@ -310,9 +320,9 @@ class EVCalculator:
         odds = {}
         
         if market in ("1x2", "match_winner"):
-            h = row.get("B365H") or row.get("PSH")
-            d = row.get("B365D") or row.get("PSD")
-            a = row.get("B365A") or row.get("PSA")
+            h = row.get("AvgH") or row.get("PSH") or row.get("B365H")
+            d = row.get("AvgD") or row.get("PSD") or row.get("B365D")
+            a = row.get("AvgA") or row.get("PSA") or row.get("B365A")
             
             if h: odds["home"] = h
             if d: odds["draw"] = d

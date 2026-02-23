@@ -105,6 +105,11 @@ class KellyStaker:
         if self.state_file and self.state_file.exists():
             self._load_state()
     
+    def reset_daily_limits(self):
+        """Reset daily and league exposure counters. Call at the start of each new day."""
+        self.daily_exposure.clear()
+        self.league_exposure.clear()
+    
     @staticmethod
     def kelly_formula(prob: float, odds: float) -> float:
         """
@@ -259,9 +264,16 @@ class KellyStaker:
         if current_drawdown >= self.config["drawdown_pause_threshold"]:
             return 0.0, f"Drawdown pause ({current_drawdown:.1%})"
         
-        # 3. Apply drawdown reduction
-        if current_drawdown >= self.config["drawdown_reduce_threshold"]:
-            stake_pct *= self.config["drawdown_reduction_factor"]
+        # 3. Apply continuous drawdown reduction
+        if current_drawdown > self.config["drawdown_reduce_threshold"]:
+            # Scale linearly between reduce_threshold (1.0x multiplier) and pause_threshold (0.0x multiplier)
+            range_total = self.config["drawdown_pause_threshold"] - self.config["drawdown_reduce_threshold"]
+            range_current = current_drawdown - self.config["drawdown_reduce_threshold"]
+            penalty_ratio = min(1.0, max(0.0, range_current / range_total))
+            
+            # e.g., if penalty_ratio is 0.5, we keep 0.5 of the stake
+            multiplier = 1.0 - penalty_ratio
+            stake_pct *= multiplier
         
         # 4. Daily exposure limit
         daily_used = self.daily_exposure[today]
@@ -292,11 +304,39 @@ class KellyStaker:
         return stake_pct, None
     
     def _get_current_drawdown(self) -> float:
-        """Calculate current drawdown from peak."""
-        if self.peak_bankroll <= 0:
+        """Calculate current drawdown from peak over the trailing 7 days."""
+        if not self.bet_history:
             return 0.0
+            
+        from datetime import datetime, timedelta
+        cutoff_date = datetime.now() - timedelta(days=7)
         
-        return (self.peak_bankroll - self.bankroll) / self.peak_bankroll
+        peak_in_window = self.bankroll
+        
+        for b in self.bet_history:
+            settled_str = b.get("settled_at")
+            if not settled_str:
+                continue
+                
+            try:
+                # Handle possible 'Z' ending
+                if settled_str.endswith('Z'):
+                    settled_str = settled_str[:-1] + '+00:00'
+                settled_at = datetime.fromisoformat(settled_str)
+                # Strip timezone if necessary for comparison
+                if settled_at.tzinfo is not None:
+                    settled_at = settled_at.replace(tzinfo=None)
+                    
+                if settled_at >= cutoff_date:
+                    peak_in_window = max(peak_in_window, b.get("bankroll_after", self.bankroll))
+            except Exception:
+                continue
+                
+        if peak_in_window <= 0:
+            return 0.0
+            
+        drawdown = (peak_in_window - self.bankroll) / peak_in_window
+        return max(0.0, drawdown)
     
     def place_bet(
         self, 
@@ -521,21 +561,22 @@ class KellyStaker:
             profit = final_bankroll - bankroll_start
             roi = profit / bankroll_start  # Simple ROI relative to starting bankroll
             
-            # 6. Calculate Drawdown vectorized
+            # 6. Calculate risk metrics vectorized
             # Running max bankroll
             running_max = np.maximum.accumulate(trajectory)
-            # Current drawdown at each step
             drawdowns = (running_max - trajectory) / running_max
-            # Handle division by zero if running_max is 0 (bankruptcy)
             drawdowns = np.nan_to_num(drawdowns, 0.0)
-            
             max_drawdown = np.max(drawdowns) if len(drawdowns) > 0 else 0.0
+            
+            # Per-bet returns for proper Sharpe
+            per_bet_returns = stake_pct * match_return
+            std_returns = np.std(per_bet_returns) if len(per_bet_returns) > 1 else 0.01
             
             results_map[fraction] = {
                 "final_bankroll": final_bankroll,
                 "roi": roi,
                 "max_drawdown": max_drawdown,
-                "risk_adjusted": roi / max(max_drawdown, 0.01),
+                "risk_adjusted": roi / max(std_returns, 0.01),  # Proper Sharpe approximation
             }
             
         # Find best fraction

@@ -17,6 +17,7 @@ from typing import Optional, List, Any
 import io
 import pandas as pd
 from dataclasses import dataclass
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -210,17 +211,22 @@ class StavkiBot:
             # 3. Recalculate Stakes (Kelly) & Filter Zero Stakes
             from stavki.strategy import KellyStaker
             from stavki.strategy.ev import EVResult
+            
+            state_dir = Path("config/users")
+            state_dir.mkdir(parents=True, exist_ok=True)
+            
             staker = KellyStaker(
                 bankroll=user_settings.bankroll,
-                config={"kelly_fraction": 0.75}
+                config={"kelly_fraction": 0.75},
+                state_file=str(state_dir / f"{chat_id}_kelly_state.json")
             )
             
             final_bets = []
             
             for bet in filtered_bets:
                 # Construct EVResult wrapper for KellyStaker
-                # Use model_prob for consistent Kelly sizing (reflects model confidence only)
-                prob_to_use = bet.model_prob
+                # The EV is based on blended_prob, mathematically we must scale Kelly to the blended edge
+                prob_to_use = bet.blended_prob
 
                 ev_res = EVResult(
                     match_id=bet.match_id,
@@ -238,6 +244,7 @@ class StavkiBot:
                 stake_amt = rec_stake.stake_amount
                 
                 if stake_amt > 0:
+                    staker.place_bet(rec_stake, league=str(bet.league))
                     final_bets.append({
                         "bet": bet,
                         "stake": stake_amt,
@@ -449,9 +456,14 @@ class StavkiBot:
                 # Use context.bot to send messages
                 try:
                     user_settings = self.settings_manager.get_settings(chat_id)
+                    
+                    state_dir = Path("config/users")
+                    state_dir.mkdir(parents=True, exist_ok=True)
+                    
                     staker = KellyStaker(
                         bankroll=user_settings.bankroll,
-                        config={"kelly_fraction": 0.75}
+                        config={"kelly_fraction": 0.75},
+                        state_file=str(state_dir / f"{chat_id}_kelly_state.json")
                     )
                     
                     user_bets = [b for b in all_bets if b.ev >= user_settings.min_ev]
@@ -462,8 +474,8 @@ class StavkiBot:
                     final_bets = []
                     for bet in user_bets:
                         # Construct EVResult wrapper for KellyStaker
-                        # Use model_prob for consistent Kelly sizing
-                        prob_to_use = bet.model_prob
+                        # The EV is based on blended_prob, mathematically we must scale Kelly to the blended edge
+                        prob_to_use = bet.blended_prob
                         
                         ev_res = EVResult(
                             match_id=bet.match_id,
@@ -480,6 +492,7 @@ class StavkiBot:
                         stake_amt = rec_stake.stake_amount
                         
                         if stake_amt > 0:
+                            staker.place_bet(rec_stake, league=str(bet.league))
                             final_bets.append({
                                 "bet": bet,
                                 "stake": stake_amt
@@ -539,8 +552,9 @@ class StavkiBot:
             ("ev", self.set_ev_command),
             ("set_bankroll", self.set_bankroll_command),
             ("bankroll", self.set_bankroll_command),
-            # NEW admin command
+            # Admin / scan commands
             ("force_scan", self.force_scan),
+            ("scan", self.force_scan),
         ]:
             app.add_handler(CommandHandler(cmd, func))
             

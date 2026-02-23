@@ -27,11 +27,11 @@ logger = logging.getLogger(__name__)
 # Default ensemble weights per market
 DEFAULT_WEIGHTS = {
     Market.MATCH_WINNER.value: {
-        "CatBoost_1X2": 1.00,
-        "DixonColes": 0.00,
-        "LightGBM_1X2": 0.00,
-        "NeuralMultiTask": 0.00,
-        "DeepInteraction": 0.00,
+        "CatBoost_1X2": 0.40,
+        "DixonColes": 0.20,
+        "LightGBM_1X2": 0.20,
+        "NeuralMultiTask": 0.15,
+        "DeepInteraction": 0.05,
     },
     Market.OVER_UNDER.value: {
         "DixonColes": 0.30,
@@ -120,11 +120,34 @@ class EnsemblePredictor(BaseModel):
     
     def get_weights(self, market: Market, league: Optional[str] = None) -> Dict[str, float]:
         """Get weights for a market, using league-specific if available."""
-        if league and league in self.league_weights:
-            league_specific = self.league_weights[league].get(market.value)
-            if league_specific:
-                return league_specific
-        
+        if league:
+            # 1. Exact match (e.g., "epl", "EPL", "soccer_epl" if modern config exists)
+            if league in self.league_weights:
+                league_specific = self.league_weights[league].get(market.value)
+                if league_specific:
+                    return league_specific
+            
+            # 2. Legacy alias fallback mapping
+            alias_map = {
+                "soccer_epl": ["epl", "EPL", "premier league", "premier_league"],
+                "soccer_spain_la_liga": ["laliga", "la_liga", "LA_LIGA", "la liga", "spain_la_liga"],
+                "soccer_germany_bundesliga": ["bundesliga", "BUNDESLIGA", "germany_bundesliga"],
+                "soccer_italy_serie_a": ["seriea", "serie_a", "SERIE_A", "italy_serie_a"],
+                "soccer_france_ligue_one": ["ligue1", "ligue_1", "LIGUE_1", "france_ligue_one"],
+                "soccer_efl_champ": ["championship", "CHAMPIONSHIP", "efl_champ", "efl_championship"]
+            }
+            
+            aliases_to_check = alias_map.get(league, [])
+            for alias in aliases_to_check:
+                if alias in self.league_weights:
+                    league_specific = self.league_weights[alias].get(market.value)
+                    if league_specific:
+                        logger.debug(f"Matched {league} weights via legacy alias: {alias}")
+                        return league_specific
+
+            # 3. Warn about missing league optimization so it's not silent
+            logger.warning(f"No specific weights found for league '{league}'. Falling back to global defaults.")
+            
         return self.weights.get(market.value, {})
     
     def fit(self, data: pd.DataFrame, **kwargs) -> Dict[str, float]:
@@ -279,8 +302,6 @@ class EnsemblePredictor(BaseModel):
                     if w > 0:
                         valid_preds.append(pred)
                         valid_weights.append(w)
-                    # else:
-                        # print(f"DEBUG: Skipping {model_name} due to 0 weight")
                 
                 if not valid_preds:
                     continue
@@ -293,12 +314,20 @@ class EnsemblePredictor(BaseModel):
                 else:
                     norm_weights = [w/total_w for w in valid_weights]
                     
-                    # Weighted Sum
+                    # Weighted Sum and Metadata
                     final_probs = {o: 0.0 for o in outcomes}
+                    aggregated_metadata = {"home_std": 0.0, "draw_std": 0.0, "away_std": 0.0}
+                    
                     for i, p in enumerate(valid_preds):
                         nw = norm_weights[i]
                         for o, prob in p.probabilities.items():
                             final_probs[o] += prob * nw
+                            
+                        # Extract and blend Standard Deviation from Bayesian layers (Epistemic Uncertainty)
+                        if getattr(p, "metadata", None):
+                            aggregated_metadata["home_std"] += p.metadata.get("home_std", 0.0) * nw
+                            aggregated_metadata["draw_std"] += p.metadata.get("draw_std", 0.0) * nw
+                            aggregated_metadata["away_std"] += p.metadata.get("away_std", 0.0) * nw
                     
                     # Confidence
                     sorted_p = sorted(final_probs.values(), reverse=True)
@@ -325,6 +354,7 @@ class EnsemblePredictor(BaseModel):
                         kls = np.sum(p_matrix * np.log((p_matrix + eps) / (m + eps)), axis=1)
                         disagreement = np.mean(kls)
 
+
                     probs = final_probs
                     
                     # Create Prediction
@@ -334,7 +364,8 @@ class EnsemblePredictor(BaseModel):
                         probabilities=probs,
                         confidence=confidence * (1 - disagreement * 0.5),
                         model_name=self.name,
-                        features_used={"disagreement": disagreement, "n_models": len(valid_preds)}
+                        features_used={"disagreement": disagreement, "n_models": len(valid_preds)},
+                        metadata=aggregated_metadata
                     ))
                     
         return all_predictions
@@ -534,39 +565,7 @@ class EnsemblePredictor(BaseModel):
             # Also try flexible matching if exact fails? 
             # For optimization speed, exact match is preferred.
         
-        valid_indices = []
-        
-        for i, mid in enumerate(sorted_ids):
-            # Get Targets
-            # We need to find the data row for this match_id
-            # This is tricky if match_ids are not in data or formats differ.
-            # Assuming match_id is consistent.
-            
-            # Simple linear scan is too slow. Use the dict.
-            row = data_rows.get(mid)
-            if row is None:
-                # Try finding by fuzzy match? 
-                # Skip for now to assume consistency
-                continue
-                
-            actual = self._get_actual_outcome(row, market)
-            if actual is None or actual not in outcome_map:
-                continue
-                
-            target_idx = outcome_map[actual]
-            target_matrix[i, target_idx] = 1.0
-            
-            # Get Predictions
-            for j, name in enumerate(model_names):
-                # Find pred for this mid
-                # Using a dict lookup for predictions of each model would be faster than list scan
-                # But here we have lists.
-                # Let's optimize: pre-convert lists to dicts
-                pass 
-            
-            valid_indices.append(i)
-
-        # Optimization: Pre-map all predictions to dicts
+        # Pre-map all predictions to dicts for O(1) lookup
         pred_lookups = [
             {p.match_id: p for p in model_predictions[name]}
             for name in model_names
@@ -650,27 +649,33 @@ class EnsemblePredictor(BaseModel):
                 config = json.load(f)
             
             # Support both new structure (league -> market -> weights) and legacy
-            # New structure: {"EPL": {"1x2": {"model": 0.5}}}
+            # New structure: {"epl": {"min_ev": 0.02, "weights": {"poisson": 0.3, ...}}}
             # Legacy: {"global": ..., "per_league": ...}
             
             if "global" in config:
                 self.weights = config["global"]
                 self.league_weights = config.get("per_league", {})
-            elif any(k in config for k in ["EPL", "La Liga", "Serie A", "epl", "laliga"]):
+            elif any(k in config for k in ["EPL", "La Liga", "Serie A", "epl", "laliga", "bundesliga", "ligue1", "championship"]):
                 # Assumed to be pure per-league weights file
-                # Check structure
-                first_key = list(config.keys())[0]
-                if "1x2" in config[first_key] or "weights" in config[first_key]:
-                     # It's a league weights file
-                     self.league_weights = config
-                else:
-                    # Might be legacy leagues.json with just integers?
-                    pass
+                parsed_league_weights = {}
+                for league, data in config.items():
+                    if isinstance(data, dict):
+                        # Some versions nest inside "weights" key or by market "1x2"
+                        if "weights" in data:
+                            parsed_league_weights[league] = {"1x2": data["weights"]}
+                        elif "1x2" in data:
+                            parsed_league_weights[league] = data
+                        else:
+                            # Direct weights mapping
+                            parsed_league_weights[league] = {"1x2": data}
+                
+                self.league_weights = parsed_league_weights
             else:
                 self.weights = config
                 self.league_weights = {}
                 
             logger.info(f"Loaded ensemble weights from {path.name}")
+            logger.info(f"Successfully parsed weights for leagues: {list(self.league_weights.keys())}")
             
         except Exception as e:
             logger.error(f"Failed to load weights from {path}: {e}")

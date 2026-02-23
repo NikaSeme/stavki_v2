@@ -13,6 +13,7 @@ The normalizer:
 """
 
 import re
+import difflib
 from typing import Dict, Optional, Tuple
 from functools import lru_cache
 import logging
@@ -125,11 +126,21 @@ class TeamMapper:
         
         return None
 
-# Global Mapper Instance
-mapper = TeamMapper.get_instance()
+# Global Mapper Instance (lazy-loaded)
+_mapper_instance = None
 
-# Legacy aliases removed in favor of CSV mapping
-TEAM_ALIASES: Dict[str, str] = {} 
+def _get_mapper():
+    """Lazy-load TeamMapper to avoid file I/O at import time."""
+    global _mapper_instance
+    if _mapper_instance is None:
+        _mapper_instance = TeamMapper.get_instance()
+    return _mapper_instance
+
+# Negative match cache to avoid repeated expensive fuzzy scans
+_negative_cache: set = set()
+
+# Legacy aliases dict — populated at runtime by add_team_alias()
+TEAM_ALIASES: Dict[str, str] = {}
 
 
 # Suffixes to remove during normalization
@@ -161,6 +172,7 @@ def normalize_team_name(name: str, remove_suffix: bool = False) -> str:
     normalized = _basic_normalize(name)
     
     # Check Mapper
+    mapper = _get_mapper()
     mapped = mapper.map_name(name)
     if mapped:
         return mapped
@@ -181,11 +193,16 @@ def normalize_team_name(name: str, remove_suffix: bool = False) -> str:
         return TEAM_ALIASES[normalized]
     
     # Return as-is if no alias found
-    # Optimization: Try auto-aliasing if we have a high confidence match
+    # Skip fuzzy match if this name already failed before
+    if normalized in _negative_cache:
+        return normalized
+    
     auto_alias = auto_alias_high_confidence(normalized)
     if auto_alias:
         return auto_alias
-        
+    
+    # Remember this name as unfamiliar to avoid future scans
+    _negative_cache.add(normalized)
     return normalized
 
 
@@ -226,10 +243,7 @@ def suggest_match(unknown: str, threshold: float = 0.8) -> Optional[str]:
     Returns:
         Suggested canonical name or None
     """
-    try:
-        from difflib import SequenceMatcher
-    except ImportError:
-        return None
+    SequenceMatcher = difflib.SequenceMatcher
     
     normalized_unknown = _basic_normalize(unknown)
     
@@ -237,7 +251,7 @@ def suggest_match(unknown: str, threshold: float = 0.8) -> Optional[str]:
     best_score = 0
     
     # Get all unique canonical names
-    canonicals = mapper.canonical_teams
+    canonicals = _get_mapper().canonical_teams
 
     
     for canonical in canonicals:
@@ -278,16 +292,12 @@ class SourceNormalizer:
     
     Each data source has its own naming conventions.
     """
-    
-    ODDS_API_OVERRIDES: Dict[str, str] = {}
-    SPORTMONKS_OVERRIDES: Dict[str, str] = {}
 
     
     @classmethod
     def from_odds_api(cls, name: str) -> str:
         """Normalize team name from Odds API."""
-        """Normalize team name from Odds API."""
-        mapped = mapper.map_name(name, source="odds_api")
+        mapped = _get_mapper().map_name(name, source="odds_api")
         if mapped:
              return mapped
         return normalize_team_name(name)
@@ -296,8 +306,7 @@ class SourceNormalizer:
     @classmethod
     def from_sportmonks(cls, name: str) -> str:
         """Normalize team name from SportMonks."""
-        """Normalize team name from SportMonks."""
-        mapped = mapper.map_name(name, source="sportmonks")
+        mapped = _get_mapper().map_name(name, source="sportmonks")
         if mapped:
              return mapped
         return normalize_team_name(name)

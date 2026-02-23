@@ -93,6 +93,7 @@ class BTTSModel(CalibratedModel):
         self.features = features or BTTS_FEATURES
         self.model: Optional[lgb.LGBMClassifier] = None
         self.calibrator: Optional[IsotonicRegression] = None
+        self.feature_means: Optional[pd.Series] = None
     
     def fit(
         self, 
@@ -126,17 +127,24 @@ class BTTSModel(CalibratedModel):
         
         logger.info(f"BTTS model using {len(available)} features")
         
-        # Split
+        # Temporal 3-way split: 60% train, 20% eval (early stopping), 20% calibration
         n = len(df)
-        split_idx = int(n * (1 - eval_ratio))
+        train_end = int(n * 0.60)
+        eval_end = int(n * 0.80)
         
-        train_df = df.iloc[:split_idx]
-        eval_df = df.iloc[split_idx:]
+        train_df = df.iloc[:train_end]
+        eval_df = df.iloc[train_end:eval_end]
+        cal_df = df.iloc[eval_end:]
         
-        X_train = train_df[available].fillna(0)
+        # Save training means for consistent imputation at inference time
+        self.feature_means = train_df[available].mean()
+        
+        X_train = train_df[available].fillna(self.feature_means).fillna(0)
         y_train = train_df["btts"]
-        X_eval = eval_df[available].fillna(0)
+        X_eval = eval_df[available].fillna(self.feature_means).fillna(0)
         y_eval = eval_df["btts"]
+        X_cal = cal_df[available].fillna(self.feature_means).fillna(0)
+        y_cal = cal_df["btts"]
         
         # Class balance
         pos_rate = y_train.mean()
@@ -160,13 +168,14 @@ class BTTSModel(CalibratedModel):
             callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)],
         )
         
-        # Calibrate
-        eval_probs = self.model.predict_proba(X_eval)[:, 1]
+        # Calibrate on HELD-OUT calibration set (not eval set)
+        cal_probs = self.model.predict_proba(X_cal)[:, 1]
         self.calibrator = IsotonicRegression(out_of_bounds="clip")
-        self.calibrator.fit(eval_probs, y_eval)
+        self.calibrator.fit(cal_probs, y_cal)
         
         # Metrics
         train_probs = self.model.predict_proba(X_train)[:, 1]
+        eval_probs = self.model.predict_proba(X_eval)[:, 1]
         train_preds = (train_probs > 0.5).astype(int)
         eval_preds = (eval_probs > 0.5).astype(int)
         
@@ -217,18 +226,21 @@ class BTTSModel(CalibratedModel):
              # Intersect
              final_features = [f for f in model_features if f in df_pred.columns]
              
-             # If missing required features, fill with 0
+             # If missing required features, fill with training means
              missing = set(model_features) - set(final_features)
              if missing:
-                 logger.debug(f"BTTS missing features, filling 0: {missing}")
+                 logger.debug(f"BTTS missing features, filling with means: {missing}")
                  for m in missing:
-                     df_pred[m] = 0.0
+                     mean_val = self.feature_means[m] if (self.feature_means is not None and m in self.feature_means.index) else 0.0
+                     df_pred[m] = mean_val
              
-             X = df_pred[model_features].fillna(0)
+             _fm = self.feature_means if self.feature_means is not None else 0
+             X = df_pred[model_features].fillna(_fm).fillna(0)
         else:
              # Fallback
              available = [f for f in features if f in df_pred.columns]
-             X = df_pred[available].fillna(0)
+             _fm = self.feature_means if self.feature_means is not None else 0
+             X = df_pred[available].fillna(_fm).fillna(0)
         raw_probs = self.model.predict_proba(X)[:, 1]
         
         # Calibrate
@@ -273,6 +285,7 @@ class BTTSModel(CalibratedModel):
             "features": self.features,
             "model": self.model,
             "calibrator": self.calibrator,
+            "feature_means": self.feature_means,
         }
     
     def _set_state(self, state: Dict[str, Any]):
@@ -287,3 +300,4 @@ class BTTSModel(CalibratedModel):
         self.features = state["features"]
         self.model = state["model"]
         self.calibrator = state["calibrator"]
+        self.feature_means = state.get("feature_means", None)

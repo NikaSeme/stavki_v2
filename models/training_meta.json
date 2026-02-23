@@ -1,0 +1,30 @@
+{
+  "trained_at": "2026-02-21T22:32:50.829724",
+  "data_file": "/Users/macuser/Documents/something/stavki_v2/data/features_full.csv",
+  "n_features": 170,
+  "n_train": 16519,
+  "n_val": 2360,
+  "n_test": 4720,
+  "results": {
+    "Poisson": {
+      "accuracy": 0.48771186440677966,
+      "log_loss": 1.0305890943832876
+    },
+    "CatBoost": {
+      "accuracy": 0.523728813559322,
+      "log_loss": 1.00869787767564
+    },
+    "LightGBM": {
+      "accuracy": 0.5220338983050847,
+      "log_loss": 1.0245398294723638
+    },
+    "Neural": {
+      "accuracy": 0.5078389830508474,
+      "log_loss": 1.0160639049403373
+    },
+    "Ensemble": {
+      "accuracy": 0.525,
+      "log_loss": 0.9861225420186629
+    }
+  }
+}

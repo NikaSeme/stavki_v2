@@ -56,12 +56,6 @@ CATBOOST_FEATURES = [
     "AvgH", "AvgD", "AvgA",
     "MaxH", "MaxD", "MaxA",
     
-    # Over/Under aggregate odds (4)
-    "Avg>2.5", "Avg<2.5",
-    "Max>2.5", "Max<2.5",
-    
-    # Asian Handicap aggregates (3)
-    "AHh", "AvgAHH", "AvgAHA",
     
     # Implied probabilities from odds (7)
     "imp_home", "imp_draw", "imp_away",
@@ -228,23 +222,28 @@ class CatBoostModel(CalibratedModel):
         
         logger.info(f"Using {len(available_numeric)} numeric + {len(available_cat)} categorical features")
         
-        # Temporal split
+        # Temporal 3-way split: 60% train, 20% eval (early stopping), 20% calibration
         n = len(df)
-        split_idx = int(n * (1 - eval_ratio))
+        train_end = int(n * 0.60)
+        eval_end = int(n * 0.80)
         
-        train_df = df.iloc[:split_idx]
-        eval_df = df.iloc[split_idx:]
+        train_df = df.iloc[:train_end]
+        eval_df = df.iloc[train_end:eval_end]
+        cal_df = df.iloc[eval_end:]
         
         # Prepare data
         X_train = train_df[all_features].copy()
         y_train = train_df["target"].values.astype(int)
         X_eval = eval_df[all_features].copy()
         y_eval = eval_df["target"].values.astype(int)
+        X_cal = cal_df[all_features].copy()
+        y_cal = cal_df["target"].values.astype(int)
         
         # Handle categoricals
         for cat_col in available_cat:
             X_train[cat_col] = X_train[cat_col].fillna("Unknown").astype(str)
             X_eval[cat_col] = X_eval[cat_col].fillna("Unknown").astype(str)
+            X_cal[cat_col] = X_cal[cat_col].fillna("Unknown").astype(str)
         
         # Calculate feature means for robust imputation during live inference
         self.feature_means = train_df[available_numeric].mean()
@@ -254,6 +253,7 @@ class CatBoostModel(CalibratedModel):
             train_mean = self.feature_means[num_col] if pd.notna(self.feature_means[num_col]) else 0.0
             X_train[num_col] = X_train[num_col].fillna(train_mean)
             X_eval[num_col] = X_eval[num_col].fillna(train_mean)
+            X_cal[num_col] = X_cal[num_col].fillna(train_mean)
         
         # Cat feature indices
         cat_feature_indices = [all_features.index(c) for c in available_cat if c in all_features]
@@ -292,16 +292,18 @@ class CatBoostModel(CalibratedModel):
         importance = self.model.get_feature_importance()
         self.feature_importance_ = dict(zip(all_features, importance))
         
-        # Calibrate
-        eval_probs = self.model.predict_proba(X_eval)
+        # Calibrate on HELD-OUT calibration set (not eval set)
+        cal_pool_idx = [all_features.index(c) for c in available_cat if c in all_features]
+        cal_probs = self.model.predict_proba(X_cal)
         for class_idx in range(3):
-            y_binary = (y_eval == class_idx).astype(int)
+            y_binary = (y_cal == class_idx).astype(int)
             calibrator = IsotonicRegression(out_of_bounds="clip")
-            calibrator.fit(eval_probs[:, class_idx], y_binary)
+            calibrator.fit(cal_probs[:, class_idx], y_binary)
             self.calibrators[class_idx] = calibrator
         
         # Metrics
         train_probs = self.model.predict_proba(X_train)
+        eval_probs = self.model.predict_proba(X_eval)
         train_preds = train_probs.argmax(axis=1)
         eval_preds = eval_probs.argmax(axis=1)
         

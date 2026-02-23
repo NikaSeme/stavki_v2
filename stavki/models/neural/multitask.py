@@ -17,13 +17,8 @@ from datetime import datetime
 import logging
 import pickle
 import base64
-
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime
-import logging
 
 try:
     import torch
@@ -58,8 +53,8 @@ NEURAL_FEATURES = [
     "xg_efficiency_home", "xg_efficiency_away",
     #"xGA_Home_L5", "xGA_Away_L5", # Not in features_full.csv
     
-    # Market (Odds & Imp. Prob)
-    "B365H", "B365D", "B365A",
+    # Market (Odds & Imp. Prob) — B365 removed in Phase 3/4, using Avg
+    "AvgH", "AvgD", "AvgA",
     "imp_home_norm", "imp_draw_norm", "imp_away_norm",
     "margin",
     
@@ -114,9 +109,9 @@ class MultiTaskNetwork(nn.Module):
         input_dim: int,
         cat_dims: List[int],     # [num_teams, num_leagues]
         emb_dims: List[int],     # [team_emb_dim, league_emb_dim]
-        hidden_dim: int = 128,
+        hidden_dim: int = 256,
         n_blocks: int = 3,
-        dropout: float = 0.2,
+        dropout: float = 0.4,
         temperature: float = 1.0,
     ):
         super().__init__()
@@ -147,27 +142,27 @@ class MultiTaskNetwork(nn.Module):
             for _ in range(n_blocks)
         ])
         
-        # Prediction heads
+        # Prediction heads - high dropout to prevent memorizing
         head_dim = 32
         
         self.head_1x2 = nn.Sequential(
             nn.Linear(hidden_dim, head_dim),
             nn.GELU(),
-            nn.Dropout(dropout * 0.5),
+            nn.Dropout(dropout * 1.5), # 0.6 dropout
             nn.Linear(head_dim, 3),
         )
         
         self.head_ou = nn.Sequential(
             nn.Linear(hidden_dim, head_dim),
             nn.GELU(),
-            nn.Dropout(dropout * 0.5),
+            nn.Dropout(dropout * 1.5),
             nn.Linear(head_dim, 2),
         )
         
         self.head_btts = nn.Sequential(
             nn.Linear(hidden_dim, head_dim),
             nn.GELU(),
-            nn.Dropout(dropout * 0.5),
+            nn.Dropout(dropout * 1.5),
             nn.Linear(head_dim, 2),
         )
     
@@ -239,12 +234,12 @@ class MultiTaskModel(BaseModel):
     
     def __init__(
         self,
-        hidden_dim: int = 128,
+        hidden_dim: int = 256,
         n_blocks: int = 3,
-        dropout: float = 0.2,
-        learning_rate: float = 0.001,
-        weight_decay: float = 0.01,
-        n_epochs: int = 50,
+        dropout: float = 0.4,
+        learning_rate: float = 0.0005,
+        weight_decay: float = 0.05,
+        n_epochs: int = 100,
         batch_size: int = 64,
         label_smoothing: float = 0.05,
         use_focal_loss: bool = True,
@@ -471,7 +466,8 @@ class MultiTaskModel(BaseModel):
                 
                 logits = self.network(x_num, x_cat)
                 
-                # Combined loss
+                # Combined loss with task weighting
+                # Restored equality to auxiliary tasks to force the deep network to build shared goal representations
                 l1 = loss_1x2(logits["1x2"], y1)
                 l2 = loss_ou(logits["ou"], y2)
                 l3 = loss_btts(logits["btts"], y3)

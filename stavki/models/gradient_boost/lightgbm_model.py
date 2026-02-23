@@ -43,8 +43,8 @@ DEFAULT_FEATURES = [
     "form_home_gf", "form_away_gf",
     "gf_diff", "ga_diff",
     
-    # Odds features (Bet365 as primary source)
-    "B365H", "B365D", "B365A",
+    # Odds features (aggregate averages — B365 columns removed in Phase 3)
+    "AvgH", "AvgD", "AvgA",
     "imp_home_norm", "imp_draw_norm", "imp_away_norm",
     "margin",
     
@@ -182,14 +182,16 @@ class LightGBMModel(CalibratedModel):
         
         logger.info(f"Using {len(available_features)} features")
         
-        # Temporal split
+        # Temporal 3-way split: 60% train, 20% eval (early stopping), 20% calibration
         n = len(df)
-        split_idx = int(n * (1 - eval_ratio))
+        train_end = int(n * 0.60)
+        eval_end = int(n * 0.80)
         
-        train_df = df.iloc[:split_idx]
-        eval_df = df.iloc[split_idx:]
+        train_df = df.iloc[:train_end]
+        eval_df = df.iloc[train_end:eval_end]
+        cal_df = df.iloc[eval_end:]
         
-        logger.info(f"Train: {len(train_df)}, Eval: {len(eval_df)}")
+        logger.info(f"Train: {len(train_df)}, Eval: {len(eval_df)}, Cal: {len(cal_df)}")
         
         # Calculate feature means for robust imputation during live inference
         self.feature_means = train_df[available_features].mean()
@@ -199,6 +201,8 @@ class LightGBMModel(CalibratedModel):
         y_train = train_df["target"]
         X_eval = eval_df[available_features].fillna(self.feature_means).fillna(0)
         y_eval = eval_df["target"]
+        X_cal = cal_df[available_features].fillna(self.feature_means).fillna(0)
+        y_cal = cal_df["target"]
         
         # Encode labels
         y_train_enc = self.label_encoder.fit_transform(y_train)
@@ -238,8 +242,9 @@ class LightGBMModel(CalibratedModel):
             self.model.feature_importances_
         ))
         
-        # Calibrate on eval set
-        self._fit_calibration(X_eval, y_eval_enc)
+        # Calibrate on HELD-OUT calibration set (not eval set)
+        y_cal_enc = self.label_encoder.transform(y_cal)
+        self._fit_calibration(X_cal, y_cal_enc)
         
         # Compute metrics
         train_probs = self.model.predict_proba(X_train)
