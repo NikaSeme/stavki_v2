@@ -307,7 +307,26 @@ def create_default_scheduler() -> Scheduler:
         minutes=5,
         run_immediately=False,
     )
-    # Job 4: Daily Data Maintenance (Gold Pipeline)
+    
+    # Job 4 (P4): Capture multi-day Line Momentum every 4 hours
+    def capture_momentum_odds():
+        try:
+            from stavki.data.collectors.momentum_odds import MomentumOddsCollector
+            collector = MomentumOddsCollector()
+            captured = collector.capture()
+            if captured:
+                logger.info(f"Captured multi-day Line Momentum for {captured} upcoming matches")
+        except Exception as e:
+            logger.error(f"Line Momentum capture failed: {e}")
+
+    scheduler.add_job(
+        name="momentum_odds",
+        func=capture_momentum_odds,
+        hours=4,
+        run_immediately=False,
+    )
+
+    # Job 5: Daily Data Maintenance (Gold Pipeline)
     def run_daily_gold_pipeline():
         try:
             import subprocess
@@ -325,6 +344,37 @@ def create_default_scheduler() -> Scheduler:
     scheduler.add_job(
         name="daily_gold_pipeline",
         func=run_daily_gold_pipeline,
+        hours=24,
+        run_immediately=False,
+    )
+    
+    # Job 6: Nightly Continual Learning Loop
+    def run_continual_learning():
+        try:
+            import subprocess
+            from stavki.config import PROJECT_ROOT
+            logger.info("Executing Nightly Continual Learning Module...")
+            
+            scripts = [
+                "fetch_daily_results.py",
+                "append_daily_fixtures.py",
+                "online_learning.py"
+            ]
+            
+            for s in scripts:
+                script_path = PROJECT_ROOT / "scripts" / s
+                if script_path.exists():
+                    subprocess.run(["python3", str(script_path)], check=True)
+                else:
+                    logger.warning(f"Continual learning dependency not found: {s}")
+                    
+            logger.info("Daily Models successfully micro-retrained.")
+        except Exception as e:
+            logger.error(f"Nightly Continual Learning failed: {e}")
+            
+    scheduler.add_job(
+        name="nightly_continual_learning",
+        func=run_continual_learning,
         hours=24,
         run_immediately=False,
     )

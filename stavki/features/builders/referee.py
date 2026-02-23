@@ -49,41 +49,12 @@ class RefereeFeatureBuilder:
         all_records = []
         
         for m in sorted(matches, key=lambda x: x.commence_time):
-            ref_name = None
-            if m.enrichment and m.enrichment.referee:
-                ref_name = m.enrichment.referee.name.lower().strip()
+            self.update_match(m)
             
-            if not ref_name:
-                continue
-            
-            home_score = m.home_score or 0
-            away_score = m.away_score or 0
-            total_goals = home_score + away_score
-            
-            record = {
-                "date": m.commence_time,
-                "goals": total_goals,
-                "home_win": 1 if home_score > away_score else 0,
-                "draw": 1 if home_score == away_score else 0,
-                "over25": 1 if total_goals > 2 else 0,
-                "yellow_home": 0,
-                "yellow_away": 0,
-                "red_home": 0,
-                "red_away": 0,
-                "fouls_home": 0,
-                "fouls_away": 0,
-            }
-            
-            if m.stats:
-                record["yellow_home"] = m.stats.yellow_cards_home or 0
-                record["yellow_away"] = m.stats.yellow_cards_away or 0
-                record["red_home"] = m.stats.red_cards_home or 0
-                record["red_away"] = m.stats.red_cards_away or 0
-                record["fouls_home"] = m.stats.fouls_home or 0
-                record["fouls_away"] = m.stats.fouls_away or 0
-            
-            self._referee_history[ref_name].append(record)
-            all_records.append(record)
+        # Collect all records for global average
+        all_records = []
+        for records in self._referee_history.values():
+            all_records.extend(records)
         
         # Compute global averages from ACTUAL fitted data
         if all_records:
@@ -137,15 +108,52 @@ class RefereeFeatureBuilder:
         """Return defaults from computed global averages, not hardcoded values."""
         ga = self._global_avg
         return {
-            "ref_cards_per_game": ga.get("cards_per_game", 0.0),
-            "ref_fouls_per_game": ga.get("fouls_per_game", 0.0),
+            "ref_cards_per_game": ga.get("cards_per_game", 4.0), # Fallback 4.0 cards
+            "ref_fouls_per_game": ga.get("fouls_per_game", 22.0),
             "ref_home_card_ratio": 0.5,   # Balanced is a valid default
             "ref_strictness": 0.0,        # Neutral z-score
-            "ref_goals_per_game": ga.get("goals_per_game", 0.0),
-            "ref_over25_rate": ga.get("over25_rate", 0.0),
-            "ref_home_win_rate": ga.get("home_win_rate", 0.0),
+            "ref_goals_per_game": ga.get("goals_per_game", 2.6),
+            "ref_over25_rate": ga.get("over25_rate", 0.5),
+            "ref_home_win_rate": ga.get("home_win_rate", 0.45),
             "ref_experience": 0.0,
         }
+    
+    def update_match(self, m: Match) -> None:
+        """Progressive state update for a single match (post-match)."""
+        ref_name = None
+        if m.enrichment and m.enrichment.referee:
+            ref_name = m.enrichment.referee.name.lower().strip()
+        
+        if not ref_name:
+            return
+        
+        home_score = m.home_score or 0
+        away_score = m.away_score or 0
+        total_goals = home_score + away_score
+        
+        record = {
+            "date": m.commence_time,
+            "goals": total_goals,
+            "home_win": 1 if home_score > away_score else 0,
+            "draw": 1 if home_score == away_score else 0,
+            "over25": 1 if total_goals > 2 else 0,
+            "yellow_home": 0,
+            "yellow_away": 0,
+            "red_home": 0,
+            "red_away": 0,
+            "fouls_home": 0,
+            "fouls_away": 0,
+        }
+        
+        if m.stats:
+            record["yellow_home"] = m.stats.yellow_cards_home or 0
+            record["yellow_away"] = m.stats.yellow_cards_away or 0
+            record["red_home"] = m.stats.red_cards_home or 0
+            record["red_away"] = m.stats.red_cards_away or 0
+            record["fouls_home"] = m.stats.fouls_home or 0
+            record["fouls_away"] = m.stats.fouls_away or 0
+        
+        self._referee_history[ref_name].append(record)
     
     def get_features(
         self,

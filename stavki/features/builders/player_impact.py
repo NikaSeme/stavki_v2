@@ -55,72 +55,77 @@ class PlayerImpactFeatureBuilder:
         self._team_recent_xi.clear()
         
         for m in sorted(matches, key=lambda x: x.commence_time):
-            if not m.lineups:
-                continue
+            self.update_match(m)
             
-            home_xg = (m.stats.xg_home if m.stats else None) or (m.home_score or 0)
-            away_xg = (m.stats.xg_away if m.stats else None) or (m.away_score or 0)
-            home_goals = m.home_score or 0
-            away_goals = m.away_score or 0
-            
-            for side, xi, team_name, xg, goals in [
-                ("home", m.lineups.home.starting_xi if m.lineups.home else [],
-                 m.home_team.normalized_name, home_xg, home_goals),
-                ("away", m.lineups.away.starting_xi if m.lineups.away else [],
-                 m.away_team.normalized_name, away_xg, away_goals),
-            ]:
-                if not xi:
-                    continue
-                
-                n_players = len(xi)
-                xg_share = xg / max(n_players, 1)
-                goals_share = goals / max(n_players, 1)
-                player_ids = []
-                
-                for p in xi:
-                    ps = self._player_stats[p.id]
-                    ps["team"] = team_name
-                    ps["starts"] += 1
-                    ps["xg_share_total"] += xg_share
-                    ps["goals_share_total"] += goals_share
-                    ps["minutes"] += 90
-                    player_ids.append(p.id)
-                    
-                    # Track actual rating if available
-                    p_dict = p.model_dump() if hasattr(p, 'model_dump') else {}
-                    rating = p_dict.get("rating")
-                    if rating is not None:
-                        try:
-                            ps["ratings"].append(float(rating))
-                            # Keep only last N ratings
-                            if len(ps["ratings"]) > self.rating_window:
-                                ps["ratings"] = ps["ratings"][-self.rating_window:]
-                        except (ValueError, TypeError):
-                            pass
-                
-                # Track recent XIs for key player detection
-                self._team_recent_xi[team_name].append(player_ids)
-                if len(self._team_recent_xi[team_name]) > 5:
-                    self._team_recent_xi[team_name] = \
-                        self._team_recent_xi[team_name][-5:]
-        
-        # Calculate best XI per team
-        team_players: Dict[str, List[Tuple[str, float]]] = defaultdict(list)
-        for pid, stats in self._player_stats.items():
-            if stats["starts"] >= self.min_appearances:
-                xg_per_90 = stats["xg_share_total"] / max(stats["starts"], 1)
-                team_players[stats["team"]].append((pid, xg_per_90))
-        
-        for team, players in team_players.items():
-            players.sort(key=lambda x: x[1], reverse=True)
-            best_11 = players[:11]
-            self._team_best_xi[team] = sum(xg for _, xg in best_11)
-        
         self._is_fitted = True
         rated_players = sum(1 for s in self._player_stats.values() if s["ratings"])
         logger.info(f"PlayerImpactFeatureBuilder: {len(self._player_stats)} players "
                      f"({rated_players} with ratings), "
                      f"{len(self._team_best_xi)} teams profiled")
+
+    def update_match(self, m: Match) -> None:
+        """Progressive state update for a single match (post-match)."""
+        if not m.lineups:
+            return
+        
+        home_xg = (m.stats.xg_home if m.stats else None) or (m.home_score or 0)
+        away_xg = (m.stats.xg_away if m.stats else None) or (m.away_score or 0)
+        home_goals = m.home_score or 0
+        away_goals = m.away_score or 0
+        
+        for side, xi, team_name, xg, goals in [
+            ("home", m.lineups.home.starting_xi if m.lineups.home else [],
+             m.home_team.normalized_name, home_xg, home_goals),
+            ("away", m.lineups.away.starting_xi if m.lineups.away else [],
+             m.away_team.normalized_name, away_xg, away_goals),
+        ]:
+            if not xi:
+                continue
+            
+            n_players = len(xi)
+            xg_share = xg / max(n_players, 1)
+            goals_share = goals / max(n_players, 1)
+            player_ids = []
+            
+            for p in xi:
+                ps = self._player_stats[p.id]
+                ps["team"] = team_name
+                ps["starts"] += 1
+                ps["xg_share_total"] += xg_share
+                ps["goals_share_total"] += goals_share
+                ps["minutes"] += 90
+                player_ids.append(p.id)
+                
+                # Track actual rating if available
+                p_dict = p.model_dump() if hasattr(p, 'model_dump') else {}
+                rating = p_dict.get("rating")
+                if rating is not None:
+                    try:
+                        ps["ratings"].append(float(rating))
+                        # Keep only last N ratings
+                        if len(ps["ratings"]) > self.rating_window:
+                            ps["ratings"] = ps["ratings"][-self.rating_window:]
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Track recent XIs for key player detection
+            self._team_recent_xi[team_name].append(player_ids)
+            if len(self._team_recent_xi[team_name]) > 5:
+                self._team_recent_xi[team_name] = \
+                    self._team_recent_xi[team_name][-5:]
+                    
+        # Calculate best XI per team (efficient progressive update only for teams in match)
+        for team_name in [m.home_team.normalized_name, m.away_team.normalized_name]:
+            players = []
+            for pid, stats in self._player_stats.items():
+                if stats["team"] == team_name and stats["starts"] >= self.min_appearances:
+                    xg_per_90 = stats["xg_share_total"] / max(stats["starts"], 1)
+                    players.append((pid, xg_per_90))
+            
+            if players:
+                players.sort(key=lambda x: x[1], reverse=True)
+                best_11 = players[:11]
+                self._team_best_xi[team_name] = sum(xg for _, xg in best_11)
     
     def _get_xi_strength(self, team_name: str,
                          player_ids: List[str]) -> Tuple[float, float]:
@@ -205,15 +210,15 @@ class PlayerImpactFeatureBuilder:
     ) -> Dict[str, float]:
         """Get player impact features for a match."""
         defaults = {
-            "xi_xg90_home": 0.0,
-            "xi_xg90_away": 0.0,
+            "synth_xg_home": 1.25,
+            "synth_xg_away": 1.15,
             "xi_strength_ratio_home": 1.0,
             "xi_strength_ratio_away": 1.0,
-            "avg_rating_xi_home": 6.5,
-            "avg_rating_xi_away": 6.5,
+            "avg_rating_home": 6.5,
+            "avg_rating_away": 6.5,
             "rating_delta": 0.0,
-            "key_player_missing_home": 0,
-            "key_player_missing_away": 0,
+            "key_players_home": 0,
+            "key_players_away": 0,
             "xi_rating_variance_home": 0.0,
             "xi_rating_variance_away": 0.0,
         }
@@ -232,26 +237,32 @@ class PlayerImpactFeatureBuilder:
             if ids:
                 # xG-based strength (original features)
                 xg_val, ratio = self._get_xi_strength(team_name, ids)
-                features[f"xi_xg90_{side}"] = round(xg_val, 3)
+                features[f"synth_xg_{side}"] = round(xg_val, 3)
                 features[f"xi_strength_ratio_{side}"] = round(ratio, 3)
                 
                 # Rating-based features (new)
                 avg_r, var_r, key_count = self._get_xi_ratings(ids)
-                features[f"avg_rating_xi_{side}"] = round(avg_r, 2)
+                features[f"avg_rating_{side}"] = round(avg_r, 2)
                 features[f"xi_rating_variance_{side}"] = round(var_r, 3)
                 
                 # Key player absence
                 missing = self._detect_key_player_missing(team_name, ids)
-                features[f"key_player_missing_{side}"] = missing
+                features[f"key_players_{side}"] = missing
             else:
-                for k in ["xi_xg90", "xi_strength_ratio", "avg_rating_xi",
-                           "xi_rating_variance", "key_player_missing"]:
+                for k in ["synth_xg", "xi_strength_ratio", "avg_rating",
+                           "xi_rating_variance", "key_players"]:
                     features[f"{k}_{side}"] = defaults[f"{k}_{side}"]
         
         # Rating differential
         features["rating_delta"] = round(
-            features.get("avg_rating_xi_home", 6.5) -
-            features.get("avg_rating_xi_away", 6.5), 2
+            features.get("avg_rating_home", 6.5) -
+            features.get("avg_rating_away", 6.5), 2
+        )
+        
+        # Re-derive synth_xg_diff for ML models
+        features["synth_xg_diff"] = round(
+            features.get("synth_xg_home", 1.25) - 
+            features.get("synth_xg_away", 1.15), 3
         )
         
         return features

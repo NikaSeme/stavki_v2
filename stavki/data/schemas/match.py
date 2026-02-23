@@ -62,12 +62,14 @@ class Team(BaseModel):
     
     def model_post_init(self, __context: Any) -> None:
         if not self.normalized_name:
-            # Use specific normalizer if available
             try:
-                from stavki.utils.team_names import normalize_team_name
-                object.__setattr__(self, 'normalized_name', normalize_team_name(self.name))
+                from stavki.data.processors.normalize import TeamMapper
+                mapper = TeamMapper.get_instance()
+                mapped_name = mapper.map_name(self.name)
+                # If lookup fails, fallback to strict lower case to ensure no Nones.
+                object.__setattr__(self, 'normalized_name', mapped_name if mapped_name else self.name.lower().strip())
             except ImportError:
-                # Fallback
+                # Absolute fallback
                 object.__setattr__(self, 'normalized_name', self.name.lower().strip())
     
     def __hash__(self) -> int:

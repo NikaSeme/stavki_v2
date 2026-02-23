@@ -409,20 +409,31 @@ class DeepInteractionWrapper(BaseModel):
             
         h2h_tensor = torch.tensor([h2h_features], dtype=torch.float32).to(self.device)
         
-        # 6. Forward pass
-        logits, lam_h, lam_a = self.network(
-            h_p, a_p, h_pos, a_pos, h_man_tensor, a_man_tensor,
-            h_c, a_c, h_m, a_m,
-            league_tensor, venue_tensor, referee_tensor, season_tensor, h2h_tensor
-        )
+        # 6. Forward pass (Bayesian Stochastic Sampling)
+        self.network.eval()
+        self.network.enable_mc_dropout() # Activate MC-Dropout
         
-        # 7. Convert logits to probabilities
-        probs = F.softmax(logits, dim=1).squeeze(0).cpu().numpy()
+        N_SAMPLES = 50
+        stochastic_probs = []
         
-        # Clip to prevent extreme values
-        probs = np.clip(probs, 0.02, 0.96)
-        # Normalize after clipping
-        probs = probs / probs.sum()
+        with torch.no_grad():
+            for _ in range(N_SAMPLES):
+                logits, lam_h, lam_a = self.network(
+                    h_p, a_p, h_pos, a_pos, h_man_tensor, a_man_tensor,
+                    h_c, a_c, h_m, a_m,
+                    league_tensor, venue_tensor, referee_tensor, season_tensor, h2h_tensor
+                )
+                
+                # Convert logits to probabilities
+                probs = F.softmax(logits, dim=1).squeeze(0).cpu().numpy()
+                probs = np.clip(probs, 0.02, 0.96)
+                probs = probs / probs.sum()
+                stochastic_probs.append(probs)
+                
+        # 7. Calculate Epistemic Uncertainty (Mean & Std Dev)
+        stochastic_probs = np.array(stochastic_probs)
+        mean_probs = stochastic_probs.mean(axis=0)
+        std_probs = stochastic_probs.std(axis=0)
         
         # 8. Build match ID (safely extract from actual dataframe mappings first)
         match_id = row.get('event_id', row.get('match_id'))
@@ -447,12 +458,18 @@ class DeepInteractionWrapper(BaseModel):
             match_id=match_id,
             market=Market.MATCH_WINNER,
             probabilities={
-                "home": float(probs[0]),
-                "draw": float(probs[1]),
-                "away": float(probs[2]),
+                "home": float(mean_probs[0]),
+                "draw": float(mean_probs[1]),
+                "away": float(mean_probs[2]),
             },
-            confidence=float(probs.max()),
+            confidence=float(mean_probs.max()),
             model_name=self.name,
+            # Pass out the epistemic uncertainty profile
+            metadata={
+                "home_std": float(std_probs[0]),
+                "draw_std": float(std_probs[1]),
+                "away_std": float(std_probs[2]),
+            }
         )
 
     def _resolve_team_id(self, row: pd.Series, is_home: bool) -> Optional[int]:

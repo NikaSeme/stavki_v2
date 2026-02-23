@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import json
 from pathlib import Path
+import threading
 from stavki.config import PROJECT_ROOT
 
 
@@ -174,30 +175,37 @@ class SportMonksClient:
             "Accept": "application/json"
         })
         
+        # Thread safety lock for rate limiting queue
+        self._rate_limit_lock = threading.RLock()
+        
         logger.info("SportMonks client initialized")
 
     
     def _rate_limit_wait(self):
-        """Enforce rate limiting with per-request throttle."""
-        # Minimum delay between requests to prevent burst-triggering
-        now = time.time()
-        elapsed = now - self._last_request_time
-        if elapsed < self._min_request_interval:
-            time.sleep(self._min_request_interval - elapsed)
-        
-        now = time.time()
-        minute_ago = now - 60
-        
-        # Remove old requests
-        self._request_times = [t for t in self._request_times if t > minute_ago]
-        
-        # Wait if at limit
-        if len(self._request_times) >= self.rate_limit:
-            wait_time = self._request_times[0] - minute_ago + 0.1
-            logger.debug(f"Rate limit reached, waiting {wait_time:.1f}s")
-            time.sleep(wait_time)
-        
-        self._request_times.append(now)
+        """Enforce rate limiting with per-request throttle across multiple threads."""
+        with self._rate_limit_lock:
+            # Minimum delay between requests to prevent burst-triggering
+            now = time.time()
+            elapsed = now - self._last_request_time
+            if elapsed < self._min_request_interval:
+                time.sleep(self._min_request_interval - elapsed)
+            
+            now = time.time()
+            minute_ago = now - 60
+            
+            # Remove old requests
+            self._request_times = [t for t in self._request_times if t > minute_ago]
+            
+            # Wait if at limit
+            if len(self._request_times) >= self.rate_limit:
+                wait_time = self._request_times[0] - minute_ago + 0.1
+                logger.debug(f"Rate limit reached, waiting {wait_time:.1f}s")
+                time.sleep(wait_time)
+                # After sleeping, update 'now' to reflect the current time
+                now = time.time()
+            
+            self._request_times.append(now)
+            self._last_request_time = now
     
     def _request(
         self,
@@ -609,6 +617,77 @@ class SportMonksClient:
             "referee": None,
             "events": [],
         }
+        
+    def get_multiple_fixtures_full(self, fixture_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+        """
+        Get all data for multiple fixtures in ONE API call via multi endpoint.
+        
+        Returns:
+            Dict mapping fixture_id -> Dict with keys: stats, lineups, referee, events, weather, participants, coaches
+        """
+        if not fixture_ids:
+            return {}
+            
+        id_str = ",".join(map(str, fixture_ids))
+        response = self._request(
+            f"fixtures/multi/{id_str}",
+            includes=[
+                "statistics",
+                "lineups.player",
+                "events",
+                "referees.referee",
+                "coaches",
+                "participants",
+                "weather"
+            ]
+        )
+        
+        data_list = response.get("data", [])
+        if not isinstance(data_list, list):
+            data_list = []
+            
+        results = {}
+        for data in data_list:
+            fix_id = data.get("id")
+            if not fix_id:
+                continue
+                
+            match_data = {
+                "fixture_id": fix_id,
+                "stats": None,
+                "lineups": [],
+                "referee": None,
+                "events": data.get("events", []),
+                "participants": data.get("participants", []),
+                "coaches": data.get("coaches", []),
+                "weather": data.get("weather", {})
+            }
+            
+            # --- Parse statistics ---
+            stats_data = data.get("statistics", [])
+            if stats_data:
+                match_data["stats"] = self._parse_statistics(fix_id, stats_data)
+            
+            # --- Parse referee ---
+            refs = data.get("referees", [])
+            if refs:
+                main_ref = next((r for r in refs if r.get("type_id") == 6), refs[0])
+                ref_detail = main_ref.get("referee", {})
+                if isinstance(ref_detail, dict):
+                    ref_name = ref_detail.get("common_name") or ref_detail.get("name")
+                else:
+                    ref_name = None
+                if ref_name:
+                    match_data["referee"] = ref_name
+                    if match_data["stats"]:
+                        match_data["stats"].referee_name = ref_name
+            
+            # --- Lineups ---
+            match_data["lineups"] = data.get("lineups", [])
+            
+            results[fix_id] = match_data
+            
+        return results
         
         # --- Parse statistics ---
         stats_data = data.get("statistics", [])

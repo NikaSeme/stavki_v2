@@ -132,6 +132,15 @@ class DeepInteractionNetwork(nn.Module):
             nn.Softplus(),
         )
 
+    def enable_mc_dropout(self):
+        """
+        Force all dropout layers back into train mode for Bayesian Stochastic Sampling
+        during inference (Monte Carlo Dropout).
+        """
+        for m in self.modules():
+            if m.__class__.__name__.startswith('Dropout'):
+                m.train()
+                
     def forward(self, h_players, a_players, h_positions, a_positions, 
                 h_manager, a_manager,
                 h_ctx, a_ctx, h_mom, a_mom,

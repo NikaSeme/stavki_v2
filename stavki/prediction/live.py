@@ -110,204 +110,46 @@ class LivePredictor:
         self._load_team_stats()
     
     def _load_team_stats(self):
-        """Load current ELO and form from historical data."""
+        """Load current ELO, Form, and Match stats via O(1) Redis In-Memory Cache."""
         try:
-            features_path = DATA_DIR / 'features_full.parquet'
-            if features_path.exists():
-                df = pd.read_parquet(features_path)
-            else:
-                df = pd.read_csv(DATA_DIR / 'features_full.csv', low_memory=False)
+            import redis
+            import json
+            r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+            r.ping() # Validate connection
             
-            # Get latest ELO for each team
-            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-            df = df.sort_values('Date')
-            
-            # CRITICAL: Normalize team names to match API/UnifiedLoader
-            from stavki.data.processors.normalize import normalize_team_name
-            if 'HomeTeam' in df.columns:
-                df['HomeTeam'] = df['HomeTeam'].apply(normalize_team_name)
-            if 'AwayTeam' in df.columns:
-                df['AwayTeam'] = df['AwayTeam'].apply(normalize_team_name)
-            
-            # Extract ELO from latest matches
-            # Vectorized ELO loading
-            # Create a long format DataFrame for easier dict conversion
-            # We want the LAST value for each team
-            
-            # Home ELOs
-            h_elo = df[['HomeTeam', 'elo_home']].rename(columns={'HomeTeam': 'Team', 'elo_home': 'Elo'}).dropna()
-            # Away ELOs
-            a_elo = df[['AwayTeam', 'elo_away']].rename(columns={'AwayTeam': 'Team', 'elo_away': 'Elo'}).dropna()
-            
-            # Concatenate and take last (since df is sorted by Date)
-            all_elo = pd.concat([h_elo, a_elo])
-            # drop_duplicates with keep='last' ensures we get the most recent rating
-            all_elo = all_elo.drop_duplicates(subset=['Team'], keep='last')
-            self.elo_ratings = all_elo.set_index('Team')['Elo'].to_dict()
+            logger.info("⚡ Hydrating LivePredictor from Redis Cache...")
 
-            # Vectorized Form Loading (Last 5 pts)
-            # This is trickier to vectorize fully without complex reshaping, sticking to last 5 matches per team
-            # But we can optimize by grouping.
-            # For now, let's keep it simple: iterrows is actually okay for "form" list building 
-            # if we pre-filter to only relevant columns and teams.
-            # Use a slightly optimized loop over tuples
-            
-            # ... actually, let's leave Form as is for now or use a dedicated helper later 
-            # as constructing the list of last 5 points per team via groupby is non-trivial in one line.
-            # But we can optimize the iteration:
-            
-            h_col = "HomeTeam" if "HomeTeam" in df.columns else "home_team"
-            a_col = "AwayTeam" if "AwayTeam" in df.columns else "away_team"
-            
-            subset = df[[h_col, a_col, 'form_home_pts', 'form_away_pts']].tail(2000)
-            for row in subset.itertuples(index=False):
-                h, a = getattr(row, h_col, ""), getattr(row, a_col, "")
-                hp, ap = row.form_home_pts, row.form_away_pts
-                if h:
-                    if h not in self.team_form: self.team_form[h] = []
-                    self.team_form[h].append(hp)
-                if a:
-                    if a not in self.team_form: self.team_form[a] = []
-                    self.team_form[a].append(ap)
-            
-            # Trim all to 5
-            for k in self.team_form:
-                self.team_form[k] = self.team_form[k][-5:]
-                    
-            logger.info(f"Loaded ELO for {len(self.elo_ratings)} teams")
-            
-            # Load Tier 1 features from enriched CSV if available
-            enriched_path = DATA_DIR / 'features_full_enriched.csv'
-            src = enriched_path if enriched_path.exists() else features_path if features_path.exists() else DATA_DIR / 'features_full.csv'
-            if src.suffix == '.csv':
-                edf = pd.read_csv(src, low_memory=False)
-            else:
-                edf = pd.read_parquet(src)
-            edf = edf.sort_values('Date') if 'Date' in edf.columns else edf
-            
-            # Rolling xg and ratings from last 1000 rows
-            # Vectorized Rolling xG and Ratings
-            # Similar strategy: concat home/away, keep last
-            
-            # xG
-            h_xg = edf[['HomeTeam', 'xg_home']].rename(columns={'HomeTeam': 'Team', 'xg_home': 'Val'}).dropna()
-            a_xg = edf[['AwayTeam', 'xg_away']].rename(columns={'AwayTeam': 'Team', 'xg_away': 'Val'}).dropna()
-            all_xg = pd.concat([h_xg, a_xg]).drop_duplicates(subset=['Team'], keep='last')
-            self.team_xg = all_xg.set_index('Team')['Val'].to_dict()
-            
-            # Avg Ratings
-            h_rat = edf[['HomeTeam', 'avg_rating_home']].rename(columns={'HomeTeam': 'Team', 'avg_rating_home': 'Val'}).dropna()
-            a_rat = edf[['AwayTeam', 'avg_rating_away']].rename(columns={'AwayTeam': 'Team', 'avg_rating_away': 'Val'}).dropna()
-            all_rat = pd.concat([h_rat, a_rat]).drop_duplicates(subset=['Team'], keep='last')
-            self.team_avg_rating = all_rat.set_index('Team')['Val'].to_dict()
-            
-            # Vectorized Referee Profiles
-            if 'Referee' in edf.columns:
-                # Filter valid refs
-                valid_refs = edf[edf['Referee'].notna() & (edf['Referee'] != '')].copy()
-                valid_refs['Referee'] = valid_refs['Referee'].astype(str).str.strip().str.lower()
-                
-                # Pre-calculate metrics
-                valid_refs['total_goals'] = valid_refs['FTHG'].fillna(0) + valid_refs['FTAG'].fillna(0)
-                valid_refs['total_cards'] = (valid_refs['HY'].fillna(0) + valid_refs['AY'].fillna(0) + 
-                                           valid_refs['HR'].fillna(0) + valid_refs['AR'].fillna(0))
-                # For strictness: (cards/match - 3.5) / 1.5
-                
-                # GroupBy
-                # calculate is_over25
-                valid_refs['is_over25'] = (valid_refs['total_goals'] > 2.5).astype(int)
+            # 1. Scalar Team Profiles
+            self.elo_ratings = {k: float(v) for k, v in r.hgetall('stavki:elo').items()}
+            self.team_xg = {k: float(v) for k, v in r.hgetall('stavki:xg').items()}
+            self.team_avg_rating = {k: float(v) for k, v in r.hgetall('stavki:avg_rating').items()}
+            self.team_fouls = {k: float(v) for k, v in r.hgetall('stavki:rolling_fouls').items()}
+            self.team_yellows = {k: float(v) for k, v in r.hgetall('stavki:rolling_yellows').items()}
+            self.team_corners = {k: float(v) for k, v in r.hgetall('stavki:rolling_corners').items()}
+            self.team_possession = {k: float(v) for k, v in r.hgetall('stavki:rolling_possession').items()}
 
-                ref_grp = valid_refs.groupby('Referee').agg(
-                    matches=('Date', 'count'),
-                    goals=('total_goals', 'sum'),
-                    cards=('total_cards', 'sum'),
-                    over25=('is_over25', 'sum')
-                )
-                
-                # Filter min matches
-                ref_grp = ref_grp[ref_grp['matches'] >= 5]
-                
-                # Calculate profiles in a loop over the small aggregated result (fast)
-                for ref, row in ref_grp.iterrows():
-                    n = row['matches']
-                    self.referee_profiles[ref] = {
-                        'goals_pg': round(row['goals'] / n, 2),
-                        'cards_pg': round(row['cards'] / n, 2),
-                        'over25_rate': round(row['over25'] / n, 3),
-                        'strictness': round((row['cards']/n - 3.5) / 1.5, 3),
-                    }
+            # 2. JSON Deserialized Profiles
+            self.team_form = {k: json.loads(v) for k, v in r.hgetall('stavki:form').items()}
+            
+            fmts = {k: json.loads(v) for k, v in r.hgetall('stavki:formations').items()}
+            self.formation_builder._team_formations.update(fmts)
+            self.formation_builder._is_fitted = True
+            
+            self.referee_profiles = {k: json.loads(v) for k, v in r.hgetall('stavki:referee_profiles').items()}
 
+            # 3. Neural Target Encodings
+            self.ref_encoded_goals = {k: float(v) for k, v in r.hgetall('stavki:ref_encoded_goals').items()}
+            self.ref_encoded_cards = {k: float(v) for k, v in r.hgetall('stavki:ref_encoded_cards').items()}
             
-            logger.info(f"Loaded xg for {len(self.team_xg)} teams, "
-                        f"ratings for {len(self.team_avg_rating)} teams, "
-                        f"{len(self.referee_profiles)} referee profiles")
-            
-            # Phase 3: Load rolling match stats from enriched data
-            
-            # Phase 3: Load rolling match stats from enriched data
-            # Vectorized loading helper
-            def load_feature(target_dict, col_h, col_a):
-                h = edf[['HomeTeam', col_h]].rename(columns={'HomeTeam': 'Team', col_h: 'Val'}).dropna()
-                a = edf[['AwayTeam', col_a]].rename(columns={'AwayTeam': 'Team', col_a: 'Val'}).dropna()
-                # concat and keep last
-                m = pd.concat([h, a]).drop_duplicates('Team', keep='last')
-                target_dict.update(m.set_index('Team')['Val'].to_dict())
+            logger.info(
+                f"✅ Redis Hydration Complete: {len(self.elo_ratings)} ELOs | "
+                f"{len(self.referee_profiles)} Refs | "
+                f"{len(self.team_corners)} Tactical Histories"
+            )
 
-            load_feature(self.team_fouls, 'rolling_fouls_home', 'rolling_fouls_away')
-            load_feature(self.team_yellows, 'rolling_yellows_home', 'rolling_yellows_away')
-            load_feature(self.team_corners, 'rolling_corners_home', 'rolling_corners_away')
-            load_feature(self.team_possession, 'rolling_possession_home', 'rolling_possession_away')
-
-            
-            # Phase 3: Referee target encoding from enriched data 
-            # Phase 3: Referee target encoding from enriched data 
-            # Vectorized loading
-            if 'ref_encoded_goals' in edf.columns and 'Referee' in edf.columns:
-                # Extract columns of interest
-                cols = ['Referee']
-                if 'ref_encoded_goals' in edf.columns: cols.append('ref_encoded_goals')
-                if 'ref_encoded_cards' in edf.columns: cols.append('ref_encoded_cards')
-                
-                subset = edf[cols].dropna(subset=['Referee']).copy()
-                subset['Referee'] = subset['Referee'].astype(str).str.strip().str.lower()
-                
-                # Keep last value per referee
-                subset = subset.drop_duplicates('Referee', keep='last').set_index('Referee')
-                
-                if 'ref_encoded_goals' in subset:
-                    self.ref_encoded_goals.update(subset['ref_encoded_goals'].dropna().to_dict())
-                if 'ref_encoded_cards' in subset:
-                    self.ref_encoded_cards.update(subset['ref_encoded_cards'].dropna().to_dict())
-            
-
-            # Phase 3: Load historical formations
-            if 'formation_home' in edf.columns and 'formation_away' in edf.columns:
-                 team_fmts = self.formation_builder._team_formations
-                 
-                 # Vectorized formation loading
-                 h_fmt = edf[['HomeTeam', 'formation_home']].rename(columns={'HomeTeam': 'Team', 'formation_home': 'Fmt'}).dropna()
-                 a_fmt = edf[['AwayTeam', 'formation_away']].rename(columns={'AwayTeam': 'Team', 'formation_away': 'Fmt'}).dropna()
-                 all_fmt = pd.concat([h_fmt, a_fmt])
-                 
-                 # Group by team and take last 10
-                 # apply(list) is somewhat slow but much faster than iterrows for string aggregation
-                 # Filter to recent 5000 rows to speed up groupby
-                 all_fmt = all_fmt.tail(5000)
-                 
-                 # Bob's Standard: Fast C-optimized grouping, then list slicing
-                 fmt_series = all_fmt.groupby('Team')['Fmt'].agg(list)
-                 fmt_lists = fmt_series.apply(lambda x: [str(i) for i in x[-10:]]).to_dict()
-                 
-                 team_fmts.update(fmt_lists)
-                 self.formation_builder._is_fitted = True
-
-            logger.info(f"Phase 3: {len(self.team_fouls)} teams with fouls, "
-                        f"{len(self.team_corners)} with corners, "
-                        f"{len(self.ref_encoded_goals)} refs encoded, "
-                        f"{len(self.formation_builder._team_formations)} teams with formations")
-            
-        except Exception as e:
-            logger.warning(f"Could not load team stats: {e}")
+        except (redis.exceptions.ConnectionError, ImportError) as e:
+            logger.error(f"❌ Redis Cache completely failed during Live Inference. Has `brew services start redis` been run? {e}")
+            raise Exception("Live Predictor starved of Baseline Features (Redis down).")
     
     def load_model(self, model_path: str):
         """Load trained CatBoost model."""
@@ -472,14 +314,35 @@ class LivePredictor:
             # Final safe fillna
             X_pred = X_pred.fillna(0)
             
-            probs = self.model.predict_proba(X_pred)[0]
-            # CatBoost order: A=0, D=1, H=2
-            model_probs = np.array([probs[2], probs[1], probs[0]])
+            # Use predict() to get full Prediction object with Epistemic metadata
+            from stavki.models.base import Prediction
+            try:
+                preds = self.model.predict(X_pred)
+                p = preds[0] if preds else None
+                if p:
+                    # Map probabilities if available
+                    model_probs = np.array([
+                        p.probabilities.get("home", 0.33),
+                        p.probabilities.get("draw", 0.33),
+                        p.probabilities.get("away", 0.33)
+                    ])
+                    # Extract standard deviation metadata from MCMC Bayesian PyTorch runs
+                    std_home = p.metadata.get("home_std", 0.0) if hasattr(p, "metadata") and p.metadata else 0.0
+                    std_draw = p.metadata.get("draw_std", 0.0) if hasattr(p, "metadata") and p.metadata else 0.0
+                    std_away = p.metadata.get("away_std", 0.0) if hasattr(p, "metadata") and p.metadata else 0.0
+                else:
+                    model_probs = np.array([0.33, 0.33, 0.33])
+                    std_home, std_draw, std_away = 0.0, 0.0, 0.0
+            except Exception as e:
+                logger.error(f"Prediction object failure: {e}. Falling back.")
+                model_probs = np.array([0.33, 0.33, 0.33])
+                std_home, std_draw, std_away = 0.0, 0.0, 0.0
         else:
             # Use ELO-based probs if no model
             elo_diff = X['elo_diff'].iloc[0]
             exp_home = 1 / (1 + 10**(-elo_diff/400))
             model_probs = np.array([exp_home, 0.27, 1 - exp_home - 0.27])
+            std_home, std_draw, std_away = 0.0, 0.0, 0.0
         
         # Blend with market
         imp_probs = np.array([
@@ -494,6 +357,16 @@ class LivePredictor:
         else:
             blended = self.model_alpha * model_probs + (1 - self.model_alpha) * imp_probs
             
+        blended = blended / blended.sum()
+        
+        # 🛡️ Epistemic Uncertainty Subtraction
+        # Deduct variance locally to create a "Conservative Probability" and crush the EVs on Ghost Teams
+        blended = np.array([
+            max(0.01, blended[0] - std_home),
+            max(0.01, blended[1] - std_draw),
+            max(0.01, blended[2] - std_away)
+        ])
+        # Re-normalize just in case
         blended = blended / blended.sum()
         
         # Expected values

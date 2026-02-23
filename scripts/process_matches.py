@@ -60,9 +60,10 @@ def process_matches():
                     # Look for FT or 2ND_HALF (if finished)
                     if desc == 'FT' or desc == 'CURRENT': # CURRENT usually means FT if state is Finished
                         score_obj = s.get('score', {})
-                        if score_obj.get('participant') == 'home':
+                        p_val = score_obj.get('participant')
+                        if p_val == 'home' or p_val == home_id:
                              home_goals = score_obj.get('goals', 0)
-                        elif score_obj.get('participant') == 'away':
+                        elif p_val == 'away' or p_val == away_id:
                              away_goals = score_obj.get('goals', 0)
                         valid_score = True # Potentially partial, need loop
                     
@@ -78,8 +79,8 @@ def process_matches():
                      for s in ft_scores:
                         p_type = s.get('score', {}).get('participant')
                         g = s.get('score', {}).get('goals', 0)
-                        if p_type == 'home': home_goals = g
-                        if p_type == 'away': away_goals = g
+                        if p_type == 'home' or p_type == home_id: home_goals = g
+                        if p_type == 'away' or p_type == away_id: away_goals = g
                         valid_score = True
             
             # If no scores object, try participants meta (if available/reliable, but earlier check said no score in meta)

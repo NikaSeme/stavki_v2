@@ -255,41 +255,44 @@ class RealXGBuilder:
         sorted_matches = sorted(matches, key=lambda x: x.commence_time)
         
         for m in sorted_matches:
-            # Try to find stats
-            stats = None
+            self.update_match(m)
             
-            # 1. Check if match object already has rich stats (e.g. from live loader)
-            if hasattr(m, "stats") and m.stats and (getattr(m.stats, "xg_home", None) is not None or getattr(m.stats, "xg_away", None) is not None):
-                stats = {
-                    'home_xg': getattr(m.stats, "xg_home", 0.0),
-                    'away_xg': getattr(m.stats, "xg_away", 0.0)
-                }
-            
-            # 2. Key lookup in backfilled storage
-            else:
-                key = f"{m.commence_time.strftime('%Y-%m-%d')}_{m.home_team.normalized_name}_{m.away_team.normalized_name}"
-                stats = self._historical_data.get(key)
-            
-            if stats:
-                # Add to history
-                self._team_xg_history[m.home_team.normalized_name].append({
-                    "xg": stats['home_xg'],
-                    "goals": m.home_score or 0,
-                    "date": m.commence_time
-                })
-                self._team_xg_history[m.away_team.normalized_name].append({
-                    "xg": stats['away_xg'],
-                    "goals": m.away_score or 0,
-                    "date": m.commence_time
-                })
-                
-                # Maintain window
-                for team in [m.home_team.normalized_name, m.away_team.normalized_name]:
-                    if len(self._team_xg_history[team]) > self.rolling_window * 2:
-                        self._team_xg_history[team] = self._team_xg_history[team][-self.rolling_window * 2:]
-        
         self._is_fitted = True
         logger.info(f"RealXGBuilder: Fitted on {len(sorted_matches)} matches.")
+
+    def update_match(self, m: Match) -> None:
+        """Progressive state update for a single match (post-match)."""
+        stats = None
+        
+        # 1. Check if match object already has rich stats (e.g. from live loader)
+        if hasattr(m, "stats") and m.stats and (getattr(m.stats, "xg_home", None) is not None or getattr(m.stats, "xg_away", None) is not None):
+            stats = {
+                'home_xg': getattr(m.stats, "xg_home", 0.0),
+                'away_xg': getattr(m.stats, "xg_away", 0.0)
+            }
+        
+        # 2. Key lookup in backfilled storage
+        else:
+            key = f"{m.commence_time.strftime('%Y-%m-%d')}_{m.home_team.normalized_name}_{m.away_team.normalized_name}"
+            stats = self._historical_data.get(key)
+        
+        if stats:
+            # Add to history
+            self._team_xg_history[m.home_team.normalized_name].append({
+                "xg": stats['home_xg'],
+                "goals": m.home_score or 0,
+                "date": m.commence_time
+            })
+            self._team_xg_history[m.away_team.normalized_name].append({
+                "xg": stats['away_xg'],
+                "goals": m.away_score or 0,
+                "date": m.commence_time
+            })
+            
+            # Maintain window
+            for team in [m.home_team.normalized_name, m.away_team.normalized_name]:
+                if len(self._team_xg_history[team]) > self.rolling_window * 2:
+                    self._team_xg_history[team] = self._team_xg_history[team][-self.rolling_window * 2:]
 
     def get_features(
         self,
@@ -299,9 +302,9 @@ class RealXGBuilder:
         """Compute real xG features."""
         # Defaults
         defaults = {
-            "xg_home": 1.35, # League Avg approx
-            "xg_away": 1.15,
-            "xg_diff": 0.20,
+            "synth_xg_home": 1.35, # League Avg approx
+            "synth_xg_away": 1.15,
+            "synth_xg_diff": 0.20,
             "xg_efficiency_home": 0.0,
             "xg_efficiency_away": 0.0,
         }
@@ -328,11 +331,11 @@ class RealXGBuilder:
                 avg_goals = sum(h["goals"] for h in recent) / len(recent)
                 efficiency = round(avg_goals - avg_xg, 3) # + means scoring more than expected (lucky/skill)
             else:
-                avg_xg = defaults[f"xg_{side}"]
+                avg_xg = defaults[f"synth_xg_{side}"]
                 efficiency = 0.0
                 
-            features[f"xg_{side}"] = round(avg_xg, 3)
+            features[f"synth_xg_{side}"] = round(avg_xg, 3)
             features[f"xg_efficiency_{side}"] = efficiency
 
-        features["xg_diff"] = round(features["xg_home"] - features["xg_away"], 3)
+        features["synth_xg_diff"] = round(features["synth_xg_home"] - features["synth_xg_away"], 3)
         return features

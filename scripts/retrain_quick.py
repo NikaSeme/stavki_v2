@@ -51,7 +51,6 @@ def main():
     from stavki.models.catboost.catboost_model import CatBoostModel
     cb = CatBoostModel()
     metrics = cb.fit(train_df, eval_ratio=0.2)
-    cb.save(models_dir / "CatBoost_1X2.pkl")
     cb.save(models_dir / "catboost.pkl")
     logger.info(f"  CatBoost metrics: {metrics}")
 

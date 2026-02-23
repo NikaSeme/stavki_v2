@@ -54,6 +54,9 @@ class Prediction:
     # For debugging/analysis
     features_used: Optional[Dict[str, float]] = None
     
+    # Bayesian Epistemic Uncertainty & specialized outputs
+    metadata: Optional[Dict[str, Any]] = field(default_factory=dict)
+    
     def get_best_outcome(self) -> Tuple[str, float]:
         """Return highest probability outcome."""
         if not self.probabilities:
@@ -69,6 +72,7 @@ class Prediction:
             "probabilities": self.probabilities,
             "confidence": self.confidence,
             "model_name": self.model_name,
+            "metadata": self.metadata,
         }
 
 

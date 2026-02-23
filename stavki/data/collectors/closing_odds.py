@@ -252,7 +252,8 @@ class ClosingOddsCollector:
 
         return results
 
-    def _parse_event_odds(self, event: dict) -> List[OddsSnapshot]:
+    @staticmethod
+    def _parse_event_odds(event: dict) -> List[OddsSnapshot]:
         """Parse all bookmaker odds from an API event."""
         snapshots = []
 

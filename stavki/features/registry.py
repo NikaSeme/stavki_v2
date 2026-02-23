@@ -281,6 +281,73 @@ class FeatureRegistry:
         
         return features
     
+    def update_match(self, match: Match) -> None:
+        """
+        Progressively update all dynamic builders with a completed match.
+        CRITICAL for chronological backtesting without future data leakage.
+        """
+        if not match.is_completed:
+            return
+            
+        # 1. Elo updates natively via Process Match
+        if hasattr(self.elo, "calculator"):
+            self.elo.calculator.process_match(match)
+            
+        # 2. Update all dynamic builders that support progressive updates
+        for builder in [
+            self.referee, self.player_impact, self.real_xg,
+            self.manager, self.injuries, self.formation
+        ]:
+            if builder and hasattr(builder, "update_match"):
+                builder.update_match(match)
+                
+    def transform_historical(self, matches: List[Match]) -> pd.DataFrame:
+        """
+        Safely compute features for all historical matches sequentially.
+        Prevents data leakage by updating dynamic builders AFTER extracting 
+        features for each match (as_of = commence_time).
+        """
+        sorted_matches = sorted(
+            [m for m in matches if m.is_completed],
+            key=lambda m: m.commence_time
+        )
+        
+        # 1. Pre-fit the static timeline-indexed builders (they natively filter by as_of)
+        self.form.fit(sorted_matches)
+        self.goals.fit(sorted_matches)
+        self.advanced.fit(sorted_matches)
+        self.corners.fit(sorted_matches)
+        self.seasonal.fit(sorted_matches)
+        
+        # Referee needs global averages computed across entire dataset
+        if hasattr(self.referee, "fit"):
+            self.referee.fit(sorted_matches)
+            
+        # Store for h2h
+        self._historical_matches = sorted_matches
+        self._is_fitted = True
+        
+        logger.info(f"FeatureRegistry: Starting progressive chronology for {len(sorted_matches)} matches...")
+        
+        # 2. Iterate progressively for dynamic state builders
+        all_features = []
+        for match in sorted_matches:
+            # Extract features safely
+            feat = self.compute(
+                home_team=match.home_team.normalized_name,
+                away_team=match.away_team.normalized_name,
+                as_of=match.commence_time,
+                match=match
+            )
+            feat["match_id"] = match.id
+            feat["Date"] = match.commence_time
+            all_features.append(feat)
+            
+            # Post-match state update
+            self.update_match(match)
+            
+        return pd.DataFrame(all_features)
+
     def compute_batch(
         self,
         matches: List[Match],
