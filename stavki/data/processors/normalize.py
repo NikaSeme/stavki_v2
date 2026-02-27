@@ -102,6 +102,23 @@ class TeamMapper:
                 self.source_mappings[source_name] = mapping
                 logger.info(f"Loaded {len(mapping)} mappings for {source_name}")
 
+        # 3. Load team_synonyms.json (central alias registry)
+        import json
+        synonyms_path = PROJECT_ROOT / "config" / "team_synonyms.json"
+        if synonyms_path.exists():
+            try:
+                with open(synonyms_path, "r") as f:
+                    synonyms = json.load(f)
+                count = 0
+                for raw_name, canonical in synonyms.items():
+                    if raw_name.startswith("_"):
+                        continue  # skip metadata keys like _comment
+                    self.aliases[_basic_normalize(raw_name)] = canonical
+                    count += 1
+                logger.info(f"Loaded {count} aliases from team_synonyms.json")
+            except Exception as e:
+                logger.warning(f"Failed to load team_synonyms.json: {e}")
+
     def map_name(self, name: str, source: Optional[str] = None) -> Optional[str]:
         """Map a raw name to canonical name."""
         if not name:

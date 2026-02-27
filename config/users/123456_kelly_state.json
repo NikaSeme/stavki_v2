@@ -3,8 +3,8 @@
   "peak_bankroll": 1000.0,
   "initial_bankroll": 1000.0,
   "config": {
-    "kelly_fraction": 0.75,
-    "max_stake_pct": 0.05,
+    "kelly_fraction": 1.0,
+    "max_stake_pct": 0.10,
     "min_stake_pct": 0.001,
     "min_stake_amount": 1.0,
     "max_daily_exposure_pct": 0.2,
