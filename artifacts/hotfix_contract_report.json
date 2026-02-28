@@ -103,22 +103,17 @@
       "test_refs": [
         [
           "tests/test_loader.py",
-          119,
+          141,
           "\"\"\"Callee-level regression tests for _fetch_recent_from_api().\"\"\""
         ],
         [
           "tests/test_loader.py",
-          126,
+          148,
           "result = loader._fetch_recent_from_api("
         ],
         [
           "tests/test_loader.py",
-          138,
-          "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
-        ],
-        [
-          "tests/test_loader.py",
-          151,
+          160,
           "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
         ],
         [
@@ -128,22 +123,27 @@
         ],
         [
           "tests/test_loader.py",
-          194,
+          195,
           "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
         ],
         [
           "tests/test_loader.py",
-          206,
+          216,
           "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
         ],
         [
           "tests/test_loader.py",
           228,
+          "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
+        ],
+        [
+          "tests/test_loader.py",
+          250,
           "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-16\")"
         ],
         [
           "tests/test_loader.py",
-          241,
+          263,
           "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
         ]
       ],

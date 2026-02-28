@@ -107,8 +107,30 @@ class TestUnifiedDataLoader:
         assert loader._get_cached("missing") is None
 
     def test_historical_data_mock(self, loader, temp_dir):
-        """Stub — historical CSV loading requires patching PROJECT_ROOT."""
-        pass
+        """Test that get_historical_data loads CSV files from data/raw and returns DataFrame."""
+        # Create a minimal CSV for the loader to find
+        csv_dir = temp_dir.parent / "data" / "raw" / "epl"
+        csv_dir.mkdir(parents=True, exist_ok=True)
+        csv_path = csv_dir / "epl_2024_25.csv"
+        csv_path.write_text(
+            "Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR,B365H,B365D,B365A\n"
+            "15/01/2025,Arsenal,Chelsea,2,1,H,1.8,3.5,4.2\n"
+        )
+
+        with patch("stavki.data.loader.PROJECT_ROOT", temp_dir.parent):
+            result = loader.get_historical_data(
+                start_date="2025-01-01",
+                end_date="2025-01-31",
+                force_reload=True,
+            )
+
+        assert isinstance(result, pd.DataFrame), (
+            f"Expected pd.DataFrame, got {type(result).__name__}"
+        )
+        assert not result.empty, "DataFrame should not be empty when CSV exists"
+        assert "HomeTeam" in result.columns, "Must contain HomeTeam column"
+        assert "AwayTeam" in result.columns, "Must contain AwayTeam column"
+        assert result.iloc[0]["HomeTeam"] == "Arsenal"
 
 
 # =========================================================================

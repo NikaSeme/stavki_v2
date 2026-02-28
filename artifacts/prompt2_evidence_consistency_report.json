@@ -1,0 +1,38 @@
+{
+  "status": "pass",
+  "strict": true,
+  "repo": "/Users/macuser/Documents/something/stavki_v2",
+  "final_report": "/Users/macuser/Documents/something/stavki_v2/artifacts/prompt2_final_verification.md",
+  "scope_report": "/Users/macuser/Documents/something/stavki_v2/artifacts/prompt2_scope_report.json",
+  "listed_changed_files": [
+    "/Users/macuser/Documents/something/stavki_v2/stavki/pipelines/daily.py",
+    "/Users/macuser/Documents/something/stavki_v2/tests/test_loader.py",
+    "/Users/macuser/Documents/something/stavki_v2/artifacts/hotfix_contract_report.json",
+    "/Users/macuser/Documents/something/stavki_v2/artifacts/critical_path_failfast_report.json",
+    "/Users/macuser/Documents/something/stavki_v2/artifacts/no_placeholder_tests_report.json",
+    "/Users/macuser/Documents/something/stavki_v2/artifacts/prompt2_scope_report.json",
+    "/Users/macuser/Documents/something/stavki_v2/artifacts/prompt2_truth_report.json",
+    "/Users/macuser/Documents/something/stavki_v2/artifacts/prompt2_truth_report.md",
+    "/Users/macuser/Documents/something/stavki_v2/artifacts/prompt2_final_verification.md",
+    "/Users/macuser/Documents/something/stavki_v2/artifacts/prompt2_evidence_consistency_report.json",
+    "/Users/macuser/Documents/something/stavki_v2/artifacts/prompt2_test_rigor_report.json"
+  ],
+  "missing_files_on_disk": [],
+  "repo_internal_not_in_scope_report": [],
+  "external_listed_files": [],
+  "checks": {
+    "out_of_scope_empty_claim_matches_scope_json": {
+      "status": "pass",
+      "detail": "out_of_scope_new_files=[]"
+    },
+    "listed_files_exist": {
+      "status": "pass",
+      "count_missing": 0
+    },
+    "repo_internal_files_tracked_in_scope": {
+      "status": "pass",
+      "count_untracked_in_scope": 0
+    }
+  },
+  "actionable_errors": []
+}

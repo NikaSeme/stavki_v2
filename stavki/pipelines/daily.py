@@ -861,11 +861,17 @@ class DailyPipeline:
             return merged
 
         except Exception as e:
-            logger.warning(f"Feature building failed: {e}. Using minimal features.")
+            logger.error(
+                f"🚨 CRITICAL: Feature building failed: {e}. "
+                f"Marking ALL matches as invalid_for_bet to prevent garbage predictions."
+            )
             import traceback
             traceback.print_exc()
-            # Return minimal features
-            return matches_df.copy()
+            # Fail-fast: return matches_df with _invalid_for_bet=True (no silent degradation)
+            fallback_df = matches_df.copy()
+            fallback_df["_invalid_for_bet"] = True
+            fallback_df["_invalid_reason"] = f"Feature building failed: {e}"
+            return fallback_df
 
     def _map_features_to_model_inputs(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -916,7 +922,7 @@ class DailyPipeline:
             root_dir = Path(__file__).parent.parent.parent
             p = root_dir / "models" / "feature_columns.json"
             
-            if p.exists():
+            if p.exists():  # schema file found
                 logger.debug(f"Loading feature schema from {p}")
                 with open(p) as f:
                     master_cols = json.load(f)
@@ -1040,9 +1046,26 @@ class DailyPipeline:
                 meta_cols = [c for c in meta_cols if c not in master_cols]
                 
                 df = df[meta_cols + master_cols]
+            else:
+                # ── Schema file missing: mark ALL rows invalid (no bypass) ──
+                logger.error(
+                    f"🚨 CRITICAL: models/feature_columns.json not found at {p}. "
+                    f"Cannot validate critical features. Marking ALL rows invalid_for_bet."
+                )
+                if "_invalid_for_bet" not in df.columns:
+                    df["_invalid_for_bet"] = True
+                else:
+                    df["_invalid_for_bet"] = True
+                df["_invalid_reason"] = f"Feature schema file missing: {p}"
                 
         except Exception as e:
             logger.warning(f"Failed to load master feature columns: {e}")
+            # Still mark all rows invalid on exception
+            if "_invalid_for_bet" not in df.columns:
+                df["_invalid_for_bet"] = True
+            else:
+                df["_invalid_for_bet"] = True
+            df["_invalid_reason"] = f"Feature columns load error: {e}"
             
         return df
 

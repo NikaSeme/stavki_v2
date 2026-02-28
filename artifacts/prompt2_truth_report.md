@@ -1,43 +1,29 @@
-# Prompt 2 — Truth Report Summary (Final)
+# Prompt 2 — Truth Report (Integrity Hardened)
 
-**Scope**: Critical Feature Gate for 1x2 + Test Rigor Hardening  
+**Scope**: Critical Feature Gate + Silent Fallback Fix + Placeholder Test Fix  
 **Decision**: **GO**  
-**Date**: 2026-02-28T20:30
+**Date**: 2026-02-28T21:00
 
 ## Claims
 
 | # | Claim | Status | Critical | Evidence |
 |---|-------|--------|----------|----------|
-| 1 | Missing critical features in _build_features → invalid_for_bet=True | TRUE | ✅ | `test_missing_critical_features_marks_invalid` PASSED |
-| 2 | Missing critical features in model's missing_cols → invalid_for_bet=True | TRUE | ✅ | `test_model_column_critical_missing_returns_invalid` PASSED |
-| 3 | Recommendations exclude invalid_for_bet fixtures | TRUE | ✅ | `test_invalid_fixtures_excluded` + `test_find_value_bets_skips_invalid` PASSED |
-| 4 | _invalid_for_bet propagates from features_df → matches_df in run() | TRUE | ✅ | `test_run_path_merges_invalid_flag` PASSED |
-| 5 | Defaults used only for non-critical features | TRUE | ✅ | `test_marks_invalid_when_critical_missing` + `test_non_critical_defaults` PASSED |
-| 6 | Logs show substitution coverage % | TRUE | ✅ | `test_coverage_logged` PASSED |
-| 7 | All 10 targeted tests pass, 0 skipped/xfail | TRUE | ✅ | `10 passed, 0 skipped` + `check_test_rigor.py --strict → PASS` |
-| 8 | Scope report consistent with pre/post status | TRUE | ✅ | Both files contain same `12 M + 8 ??` entries |
-| 9 | out_of_scope_new_files empty | TRUE | ✅ | `scope_report: []` |
+| 1 | Missing critical features → invalid_for_bet=True | TRUE | ✅ | 2 tests PASSED |
+| 2 | Recommendations exclude invalid_for_bet | TRUE | ✅ | 2 tests PASSED |
+| 3 | _invalid_for_bet propagates in run() path | TRUE | ✅ | test_run_path_merges_invalid_flag PASSED |
+| 4 | Defaults only for non-critical features | TRUE | ✅ | 2 tests PASSED |
+| 5 | No silent fallback in critical path | TRUE | ✅ | critical-failfast gate PASS |
+| 6 | Schema missing → still gates features | TRUE | ✅ | runtime gate PASS |
+| 7 | No placeholder tests | TRUE | ✅ | no-placeholder gate PASS |
+| 8 | No skip-on-exception | TRUE | ✅ | test-rigor gate PASS |
+| 9 | Contract gate for P1 functions | TRUE | ✅ | contract gate PASS |
+| 10 | out_of_scope_new_files empty | TRUE | ✅ | scope_report: [] |
 
-## Validation Commands & Results
+## Fixes Applied This Run
 
-```
-# 1. Targeted tests
-$ python3 -m pytest tests/test_live_prompt2_contract.py tests/test_daily_prompt2_contract.py -v -rs
-→ 10 passed, 0 skipped, 1 warning in 1.19s
-
-# 2. Test rigor gate
-$ python3 check_test_rigor.py --strict --out prompt2_test_rigor_report.json
-→ {"status": "pass", "forbidden_patterns_found": [], "pytest_summary": {"passed": 10, "failed": 0, "skipped": 0, "xfailed": 0, "xpassed": 0, "errors": 0}}
-
-# 3. Truth report validation
-$ python3 check_truth_report.py --strict
-→ {"status": "pass", "summary": {"claims_total": 9, "critical_false": 0, "critical_unknown": 0}}
-
-# 4. Safety compile
-$ python3 -m py_compile live.py daily.py
-→ COMPILE OK
-
-# 5. Full suite
-$ python3 -m pytest tests/ -v --tb=short
-→ 143 passed, 7 failed (all pre-existing, out-of-scope)
-```
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | `_build_features` silent fallback | Replaced `return matches_df.copy()` with `_invalid_for_bet=True` + error log |
+| 2 | `_map_features_to_model_inputs` schema-missing bypass | Added `else` branch marking all rows invalid |
+| 3 | `test_loader.py` placeholder test | Replaced `pass` with real CSV-loading test (5 assertions) |
+| 4 | Evidence artifacts inconsistency | Rebuilt scope report, final verification, truth report from actual data |

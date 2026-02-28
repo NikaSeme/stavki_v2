@@ -1,0 +1,15 @@
+{
+  "status": "pass",
+  "strict": true,
+  "repo": "/Users/macuser/Documents/something/stavki_v2",
+  "files_checked": [
+    "/Users/macuser/Documents/something/stavki_v2/tests/test_loader.py",
+    "/Users/macuser/Documents/something/stavki_v2/tests/test_get_fixture_full.py",
+    "/Users/macuser/Documents/something/stavki_v2/tests/test_live_prompt2_contract.py",
+    "/Users/macuser/Documents/something/stavki_v2/tests/test_daily_prompt2_contract.py"
+  ],
+  "placeholder_tests_found": [],
+  "missing_test_files": [],
+  "parse_errors": [],
+  "actionable_errors": []
+}

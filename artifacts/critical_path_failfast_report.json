@@ -1,0 +1,21 @@
+{
+  "status": "pass",
+  "strict": true,
+  "repo": "/Users/macuser/Documents/something/stavki_v2",
+  "daily_file": "/Users/macuser/Documents/something/stavki_v2/stavki/pipelines/daily.py",
+  "checks": {
+    "schema_exists_guard_has_else": {
+      "status": "pass",
+      "detail": "Feature schema guard includes explicit else"
+    },
+    "no_silent_minimal_fallback": {
+      "status": "pass",
+      "detail": "No silent fallback patterns detected"
+    },
+    "schema_missing_runtime_gate": {
+      "status": "pass",
+      "detail": "Schema-missing runtime gate works: rows marked _invalid_for_bet"
+    }
+  },
+  "actionable_errors": []
+}
