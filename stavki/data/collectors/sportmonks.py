@@ -617,6 +617,102 @@ class SportMonksClient:
             "referee": None,
             "events": [],
         }
+
+        # --- Parse statistics ---
+        stats_data = data.get("statistics", [])
+        if stats_data:
+            result["stats"] = self._parse_statistics(fixture_id, stats_data)
+
+        # --- Parse referee (type_id=6 is main referee in v3) ---
+        refs = data.get("referees", [])
+        if refs:
+            main_ref = next((r for r in refs if r.get("type_id") == 6), refs[0])
+            ref_detail = main_ref.get("referee", {})
+            if isinstance(ref_detail, dict):
+                ref_name = ref_detail.get("common_name") or ref_detail.get("name")
+            else:
+                ref_name = None
+            if ref_name:
+                result["referee"] = ref_name
+                if result["stats"]:
+                    result["stats"].referee_name = ref_name
+
+        # --- Parse lineups (v3: flat array of player entries) ---
+        # type_id=11 = starting XI, type_id=12 = substitutes
+        lineups_data = data.get("lineups", [])
+        if lineups_data:
+            from collections import Counter
+            team_ids = sorted(set(l.get("team_id") for l in lineups_data))
+
+            # Determine home/away from participants
+            participants = data.get("participants", [])
+            home_tid = away_tid = None
+            for p in participants:
+                loc = p.get("meta", {}).get("location")
+                if loc == "home":
+                    home_tid = p.get("id")
+                elif loc == "away":
+                    away_tid = p.get("id")
+
+            for team_id in team_ids:
+                team_players = [l for l in lineups_data if l.get("team_id") == team_id]
+
+                has_starters = any(p.get("type_id") == 11 for p in team_players)
+
+                if has_starters:
+                    # Modern format: type_id distinguishes starters vs subs
+                    starting = [p for p in team_players if p.get("type_id") == 11]
+                    subs = [p for p in team_players if p.get("type_id") == 12]
+                else:
+                    # Legacy format: all type_id=12, first 11 are starters
+                    starting = team_players[:11]
+                    subs = team_players[11:]
+
+                # Determine location
+                if team_id == home_tid:
+                    location = "home"
+                elif team_id == away_tid:
+                    location = "away"
+                else:
+                    location = "home" if team_id == team_ids[0] else "away"
+
+                # Derive formation from formation_field values
+                formation = None
+                fields = [p.get("formation_field") for p in starting if p.get("formation_field")]
+                if fields:
+                    rows = Counter(f.split(":")[0] for f in fields if ":" in f)
+                    parts = [str(rows[r]) for r in sorted(rows.keys()) if r != "1"]
+                    if parts:
+                        formation = "-".join(parts)
+
+                team_lineup = TeamLineup(
+                    team_id=team_id,
+                    team_name="Unknown",
+                    formation=formation,
+                    starting_xi=[self._parse_player_entry(p) for p in starting],
+                    substitutes=[self._parse_player_entry(p) for p in subs],
+                    coach=None,
+                )
+                result["lineups"][location] = team_lineup
+
+        # --- Parse events (v3: type_id integers) ---
+        EVENT_TYPE_MAP = {
+            14: "goal", 15: "own-goal", 16: "penalty-goal",
+            17: "penalty-miss", 18: "substitution",
+            19: "yellowcard", 20: "redcard", 21: "yellowredcard",
+        }
+        events_data = data.get("events", [])
+        for event in events_data:
+            parsed = {
+                "type": EVENT_TYPE_MAP.get(event.get("type_id"), str(event.get("type_id", ""))),
+                "minute": event.get("minute"),
+                "player": event.get("player_name"),
+                "team_id": event.get("participant_id"),
+                "result": event.get("result"),
+            }
+            result["events"].append(parsed)
+
+        return result
         
     def get_multiple_fixtures_full(self, fixture_ids: List[int]) -> Dict[int, Dict[str, Any]]:
         """
@@ -688,102 +784,8 @@ class SportMonksClient:
             results[fix_id] = match_data
             
         return results
-        
-        # --- Parse statistics ---
-        stats_data = data.get("statistics", [])
-        if stats_data:
-            result["stats"] = self._parse_statistics(fixture_id, stats_data)
-        
-        # --- Parse referee (type_id=6 is main referee in v3) ---
-        refs = data.get("referees", [])
-        if refs:
-            main_ref = next((r for r in refs if r.get("type_id") == 6), refs[0])
-            ref_detail = main_ref.get("referee", {})
-            if isinstance(ref_detail, dict):
-                ref_name = ref_detail.get("common_name") or ref_detail.get("name")
-            else:
-                ref_name = None
-            if ref_name:
-                result["referee"] = ref_name
-                if result["stats"]:
-                    result["stats"].referee_name = ref_name
-        
-        # --- Parse lineups (v3: flat array of player entries) ---
-        # type_id=11 = starting XI, type_id=12 = substitutes
-        lineups_data = data.get("lineups", [])
-        if lineups_data:
-            from collections import Counter
-            team_ids = sorted(set(l.get("team_id") for l in lineups_data))
-            
-            # Determine home/away from participants
-            participants = data.get("participants", [])
-            home_tid = away_tid = None
-            for p in participants:
-                loc = p.get("meta", {}).get("location")
-                if loc == "home":
-                    home_tid = p.get("id")
-                elif loc == "away":
-                    away_tid = p.get("id")
-            
-            for team_id in team_ids:
-                team_players = [l for l in lineups_data if l.get("team_id") == team_id]
-                
-                has_starters = any(p.get("type_id") == 11 for p in team_players)
-                
-                if has_starters:
-                    # Modern format: type_id distinguishes starters vs subs
-                    starting = [p for p in team_players if p.get("type_id") == 11]
-                    subs = [p for p in team_players if p.get("type_id") == 12]
-                else:
-                    # Legacy format: all type_id=12, first 11 are starters
-                    starting = team_players[:11]
-                    subs = team_players[11:]
-                
-                # Determine location
-                if team_id == home_tid:
-                    location = "home"
-                elif team_id == away_tid:
-                    location = "away"
-                else:
-                    location = "home" if team_id == team_ids[0] else "away"
-                
-                # Derive formation from formation_field values
-                formation = None
-                fields = [p.get("formation_field") for p in starting if p.get("formation_field")]
-                if fields:
-                    rows = Counter(f.split(":")[0] for f in fields if ":" in f)
-                    parts = [str(rows[r]) for r in sorted(rows.keys()) if r != "1"]
-                    if parts:
-                        formation = "-".join(parts)
-                
-                team_lineup = TeamLineup(
-                    team_id=team_id,
-                    team_name="Unknown",
-                    formation=formation,
-                    starting_xi=[self._parse_player_entry(p) for p in starting],
-                    substitutes=[self._parse_player_entry(p) for p in subs],
-                    coach=None,
-                )
-                result["lineups"][location] = team_lineup
-        
-        # --- Parse events (v3: type_id integers) ---
-        EVENT_TYPE_MAP = {
-            14: "goal", 15: "own-goal", 16: "penalty-goal",
-            17: "penalty-miss", 18: "substitution",
-            19: "yellowcard", 20: "redcard", 21: "yellowredcard",
-        }
-        events_data = data.get("events", [])
-        for event in events_data:
-            parsed = {
-                "type": EVENT_TYPE_MAP.get(event.get("type_id"), str(event.get("type_id", ""))),
-                "minute": event.get("minute"),
-                "player": event.get("player_name"),
-                "team_id": event.get("participant_id"),
-                "result": event.get("result"),
-            }
-            result["events"].append(parsed)
-        
-        return result
+
+
     
     def get_team_xg_stats(
         self,

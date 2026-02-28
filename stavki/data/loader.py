@@ -394,16 +394,23 @@ class UnifiedDataLoader:
                     # Try to get full match data (stats + lineups + events + referee)
                     try:
                         full = self.client.get_fixture_full(fix.fixture_id)
-                        stats = full.get("stats")
-                        if stats:
-                            match_data['xG_home'] = stats.home_xg
-                            match_data['xG_away'] = stats.away_xg
-                            match_data['shots_home'] = stats.home_shots
-                            match_data['shots_away'] = stats.away_shots
-                            match_data['possession_home'] = stats.home_possession
-                            match_data['possession_away'] = stats.away_possession
-                        if full.get("referee"):
-                            match_data['referee'] = full["referee"]
+                        if not isinstance(full, dict):
+                            logger.error(
+                                f"get_fixture_full({fix.fixture_id}) returned "
+                                f"{type(full).__name__} instead of dict — "
+                                f"enrichment skipped"
+                            )
+                        else:
+                            stats = full.get("stats")
+                            if stats:
+                                match_data['xG_home'] = stats.home_xg
+                                match_data['xG_away'] = stats.away_xg
+                                match_data['shots_home'] = stats.home_shots
+                                match_data['shots_away'] = stats.away_shots
+                                match_data['possession_home'] = stats.home_possession
+                                match_data['possession_away'] = stats.away_possession
+                            if full.get("referee"):
+                                match_data['referee'] = full["referee"]
                     except Exception as e:
                         logger.warning(f"Failed to get full details for fixture {fix.fixture_id}: {e}")
                     
