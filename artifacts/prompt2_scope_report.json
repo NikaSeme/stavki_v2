@@ -1,0 +1,66 @@
+{
+    "scope": "Prompt 2 — Critical Feature Gate for 1x2 Predictions (Gap Fixes)",
+    "baseline_changed": [
+        "artifacts/post_task_status.txt",
+        "artifacts/pre_task_status.txt",
+        "artifacts/prompt1_final_verification.md",
+        "artifacts/prompt1_scope_report.json",
+        "artifacts/prompt1_truth_report.json",
+        "artifacts/prompt1_truth_report.md",
+        "catboost_info/catboost_training.json",
+        "catboost_info/learn/events.out.tfevents",
+        "catboost_info/test/events.out.tfevents",
+        "catboost_info/time_left.tsv",
+        "stavki/pipelines/daily.py",
+        "stavki/prediction/live.py"
+    ],
+    "baseline_untracked": [
+        "artifacts/prompt2_final_verification.md",
+        "artifacts/prompt2_post_task_status.txt",
+        "artifacts/prompt2_pre_task_status.txt",
+        "artifacts/prompt2_scope_report.json",
+        "artifacts/prompt2_truth_report.json",
+        "artifacts/prompt2_truth_report.md",
+        "tests/test_daily_prompt2_contract.py",
+        "tests/test_live_prompt2_contract.py"
+    ],
+    "final_changed": [
+        "artifacts/post_task_status.txt",
+        "artifacts/pre_task_status.txt",
+        "artifacts/prompt1_final_verification.md",
+        "artifacts/prompt1_scope_report.json",
+        "artifacts/prompt1_truth_report.json",
+        "artifacts/prompt1_truth_report.md",
+        "catboost_info/catboost_training.json",
+        "catboost_info/learn/events.out.tfevents",
+        "catboost_info/test/events.out.tfevents",
+        "catboost_info/time_left.tsv",
+        "stavki/pipelines/daily.py",
+        "stavki/prediction/live.py"
+    ],
+    "final_untracked": [
+        "artifacts/prompt2_final_verification.md",
+        "artifacts/prompt2_post_task_status.txt",
+        "artifacts/prompt2_pre_task_status.txt",
+        "artifacts/prompt2_scope_report.json",
+        "artifacts/prompt2_truth_report.json",
+        "artifacts/prompt2_truth_report.md",
+        "tests/test_daily_prompt2_contract.py",
+        "tests/test_live_prompt2_contract.py"
+    ],
+    "newly_changed_by_this_run": [
+        "stavki/prediction/live.py",
+        "stavki/pipelines/daily.py",
+        "tests/test_live_prompt2_contract.py",
+        "tests/test_daily_prompt2_contract.py",
+        "artifacts/prompt2_pre_task_status.txt",
+        "artifacts/prompt2_post_task_status.txt",
+        "artifacts/prompt2_scope_report.json",
+        "artifacts/prompt2_truth_report.json",
+        "artifacts/prompt2_truth_report.md",
+        "artifacts/prompt2_final_verification.md"
+    ],
+    "out_of_scope_new_files": [],
+    "scope_status": "PASS",
+    "note": "baseline_changed and final_changed are identical because live.py and daily.py were already modified in round 1. All prompt2 artifacts and test files are untracked (new). No files outside allowlist were touched."
+}

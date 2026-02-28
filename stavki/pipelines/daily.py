@@ -34,6 +34,14 @@ from stavki.data.schemas.match import (
 
 logger = logging.getLogger(__name__)
 
+# Prompt 2: Critical features for 1x2 prediction path.
+# If any of these are missing or NaN per row, the match is marked _invalid_for_bet.
+CRITICAL_FEATURES_1X2 = [
+    "elo_home", "elo_away",
+    "form_home_pts", "form_away_pts",
+    "imp_home_norm", "imp_draw_norm", "imp_away_norm",
+]
+
 
 @dataclass
 class PipelineConfig:
@@ -236,6 +244,35 @@ class DailyPipeline:
         # Step 3: Build features (if features module available)
         logger.info("Step 3: Building features...")
         features_df = self._build_features(matches_df, odds_df)
+        
+        # ── Prompt 2 gap fix: Propagate _invalid_for_bet into matches_df ──
+        # features_df (returned by _build_features → _map_features_to_model_inputs)
+        # may contain _invalid_for_bet. Merge it into matches_df so _find_value_bets sees it.
+        if "_invalid_for_bet" in features_df.columns:
+            id_col_m = "event_id" if "event_id" in matches_df.columns else "match_id"
+            id_col_f = "event_id" if "event_id" in features_df.columns else "match_id"
+            
+            if id_col_f in features_df.columns:
+                inv_flags = features_df[[id_col_f, "_invalid_for_bet"]].copy()
+                inv_flags[id_col_f] = inv_flags[id_col_f].astype(str)
+                
+                if "_invalid_for_bet" in matches_df.columns:
+                    matches_df = matches_df.drop(columns=["_invalid_for_bet"])
+                
+                matches_df[id_col_m] = matches_df[id_col_m].astype(str)
+                matches_df = matches_df.merge(
+                    inv_flags.rename(columns={id_col_f: id_col_m}),
+                    on=id_col_m,
+                    how="left",
+                )
+                matches_df["_invalid_for_bet"] = matches_df["_invalid_for_bet"].fillna(False)
+                
+                n_invalid = matches_df["_invalid_for_bet"].sum()
+                if n_invalid > 0:
+                    logger.warning(
+                        f"🚫 Prompt 2: {n_invalid}/{len(matches_df)} matches will be "
+                        f"excluded from value bets (invalid_for_bet)"
+                    )
         
         # Step 4: Get model predictions
         if model_probs is None:
@@ -834,10 +871,11 @@ class DailyPipeline:
         """
         Map FeatureRegistry output names to Training Data (features_full.csv) names.
         This ensures models trained on legacy/different names can still run.
+        
+        Prompt 2: Critical features are never filled with defaults.
+        Non-critical features get smart defaults and substitution coverage is logged.
         """
         # 0. Inject CatBoost categorical features (HomeTeam/AwayTeam)
-        # CatBoost was trained with PascalCase team name columns as categoricals.
-        # The live pipeline uses snake_case. We must bridge this gap.
         if "HomeTeam" not in df.columns and "home_team" in df.columns:
             df["HomeTeam"] = df["home_team"]
         if "AwayTeam" not in df.columns and "away_team" in df.columns:
@@ -853,20 +891,14 @@ class DailyPipeline:
             "goals_conceded_away": "form_away_ga",
             "roster_experience_home": "xi_experience_home",
             "roster_experience_away": "xi_experience_away",
-
-            "advanced_xg_against_home": "advanced_xg_against_home", # Explicit pass-through or rename if needed
+            "advanced_xg_against_home": "advanced_xg_against_home",
             "advanced_xg_against_away": "advanced_xg_against_away",
-            "advanced_shots_for_home": "HS", # Approximation if HS missing
+            "advanced_shots_for_home": "HS",
             "advanced_shots_for_away": "AS",
-            
-            # Model-ready features generated correctly upstream
         }
         
-        # Apply renames for columns that exist
         valid_renames = {k: v for k, v in rename_map.items() if k in df.columns}
         df = df.rename(columns=valid_renames)
-        
-        # Remove duplicates if rename caused collisions (e.g. synth_xg_home existed + was renamed to)
         df = df.loc[:, ~df.columns.duplicated()]
         
         # 2. Derived features
@@ -876,14 +908,11 @@ class DailyPipeline:
         if "form_home_ga" in df.columns and "form_away_ga" in df.columns:
              df["ga_diff"] = df["form_home_ga"] - df["form_away_ga"]
              
-        # 3. Fill specific missing columns expected by models (defaults)
-        # Load the master feature list from JSON if possible, else use hardcoded defaults
-        # Load the master feature list from JSON if possible, else use hardcoded defaults
+        # 3. Fill specific missing columns expected by models
+        # Prompt 2: Split into CRITICAL (no defaults) vs NON-CRITICAL (defaults OK)
         try:
-            # json and Path already imported or available
             import json
             from pathlib import Path
-            # Resolve path relative to this file
             root_dir = Path(__file__).parent.parent.parent
             p = root_dir / "models" / "feature_columns.json"
             
@@ -892,73 +921,122 @@ class DailyPipeline:
                 with open(p) as f:
                     master_cols = json.load(f)
                 
-                # Identify missing columns
-                missing_cols = {}
+                # ── Prompt 2: Separate critical vs non-critical missing ──
+                missing_critical_cols = []
+                missing_noncritical = {}
+                
                 for col in master_cols:
                     if col not in df.columns:
-                        # Smart defaults for features not populated by _build_features
-                        # BOB'S BUG BUSTER: Inject accurate Bayesian Priors instead of 0.0 zeroes to prevent model skew
-                        if "synth_xg" in col:
-                            # Map synth_xg legacy to actual xg_home computed by RealXGBuilder
-                            derived_xg_col = col.replace("synth_xg", "xg")
-                            if derived_xg_col in df.columns:
-                                missing_cols[col] = df[derived_xg_col]
-                            else:
-                                missing_cols[col] = 1.25 if "diff" not in col else 0.0
-                        elif "avg_rating" in col:
-                            missing_cols[col] = 6.5
-                        elif "rating_delta" in col:
-                            missing_cols[col] = 0.0
-                        elif "key_players" in col:
-                            missing_cols[col] = 0
-                        elif "xi_experience" in col:
-                            missing_cols[col] = 90.0
-                        elif "ref_goals" in col or "ref_encoded_goals" in col:
-                            missing_cols[col] = 2.7
-                        elif "ref_cards" in col or "ref_encoded_cards" in col:
-                            missing_cols[col] = 3.5
-                        elif "ref_over25" in col:
-                            missing_cols[col] = 0.55
-                        elif "ref_strictness" in col or "ref_experience" in col:
-                            missing_cols[col] = 0.0
-                        elif "formation_score" in col:
-                            missing_cols[col] = 0.5
-                        elif "formation_mismatch" in col or "formation_is_known" in col or "matchup_sample_size" in col:
-                            missing_cols[col] = 0.0
-                        elif "matchup_home_wr" in col:
-                            missing_cols[col] = 0.44
-                        elif "rolling_fouls" in col:
-                            missing_cols[col] = 12.0
-                        elif "rolling_yellows" in col:
-                            missing_cols[col] = 2.0
-                        elif "rolling_corners" in col:
-                            missing_cols[col] = 5.0
-                        elif "rolling_possession" in col:
-                            missing_cols[col] = 50.0
-                        elif "rolling" in col or "prob" in col:
-                            missing_cols[col] = 0.5  # Neutral for rolling/probability features
-                        elif "ref" in col:
-                            missing_cols[col] = 0.0
-                        elif "streak" in col:
-                            missing_cols[col] = 0
-                        elif col.endswith("H") and "AvgH" in df.columns and any(b in col for b in ["B365", "BW", "IW", "PS", "WH", "VC", "Max"]):
-                            missing_cols[col] = df["AvgH"]
-                        elif col.endswith("D") and "AvgD" in df.columns and any(b in col for b in ["B365", "BW", "IW", "PS", "WH", "VC", "Max"]):
-                            missing_cols[col] = df["AvgD"]
-                        elif col.endswith("A") and "AvgA" in df.columns and any(b in col for b in ["B365", "BW", "IW", "PS", "WH", "VC", "Max"]):
-                            missing_cols[col] = df["AvgA"]
+                        if col in CRITICAL_FEATURES_1X2:
+                            # CRITICAL: do NOT fill with default — mark rows invalid
+                            missing_critical_cols.append(col)
                         else:
-                            missing_cols[col] = 0.0
+                            # NON-CRITICAL: apply smart defaults
+                            if "synth_xg" in col:
+                                derived_xg_col = col.replace("synth_xg", "xg")
+                                if derived_xg_col in df.columns:
+                                    missing_noncritical[col] = df[derived_xg_col]
+                                else:
+                                    missing_noncritical[col] = 1.25 if "diff" not in col else 0.0
+                            elif "avg_rating" in col:
+                                missing_noncritical[col] = 6.5
+                            elif "rating_delta" in col:
+                                missing_noncritical[col] = 0.0
+                            elif "key_players" in col:
+                                missing_noncritical[col] = 0
+                            elif "xi_experience" in col:
+                                missing_noncritical[col] = 90.0
+                            elif "ref_goals" in col or "ref_encoded_goals" in col:
+                                missing_noncritical[col] = 2.7
+                            elif "ref_cards" in col or "ref_encoded_cards" in col:
+                                missing_noncritical[col] = 3.5
+                            elif "ref_over25" in col:
+                                missing_noncritical[col] = 0.55
+                            elif "ref_strictness" in col or "ref_experience" in col:
+                                missing_noncritical[col] = 0.0
+                            elif "formation_score" in col:
+                                missing_noncritical[col] = 0.5
+                            elif "formation_mismatch" in col or "formation_is_known" in col or "matchup_sample_size" in col:
+                                missing_noncritical[col] = 0.0
+                            elif "matchup_home_wr" in col:
+                                missing_noncritical[col] = 0.44
+                            elif "rolling_fouls" in col:
+                                missing_noncritical[col] = 12.0
+                            elif "rolling_yellows" in col:
+                                missing_noncritical[col] = 2.0
+                            elif "rolling_corners" in col:
+                                missing_noncritical[col] = 5.0
+                            elif "rolling_possession" in col:
+                                missing_noncritical[col] = 50.0
+                            elif "rolling" in col or "prob" in col:
+                                missing_noncritical[col] = 0.5
+                            elif "ref" in col:
+                                missing_noncritical[col] = 0.0
+                            elif "streak" in col:
+                                missing_noncritical[col] = 0
+                            elif col.endswith("H") and "AvgH" in df.columns and any(b in col for b in ["B365", "BW", "IW", "PS", "WH", "VC", "Max"]):
+                                missing_noncritical[col] = df["AvgH"]
+                            elif col.endswith("D") and "AvgD" in df.columns and any(b in col for b in ["B365", "BW", "IW", "PS", "WH", "VC", "Max"]):
+                                missing_noncritical[col] = df["AvgD"]
+                            elif col.endswith("A") and "AvgA" in df.columns and any(b in col for b in ["B365", "BW", "IW", "PS", "WH", "VC", "Max"]):
+                                missing_noncritical[col] = df["AvgA"]
+                            else:
+                                missing_noncritical[col] = 0.0
                 
-                # Add all missing columns at once to avoid fragmentation
-                if missing_cols:
-                    new_cols_df = pd.DataFrame(missing_cols, index=df.index)
+                # ── Apply non-critical defaults ──
+                if missing_noncritical:
+                    new_cols_df = pd.DataFrame(missing_noncritical, index=df.index)
                     df = pd.concat([df, new_cols_df], axis=1)
                 
+                # ── Handle missing critical columns: add as NaN ──
+                for col in missing_critical_cols:
+                    df[col] = np.nan
+                
+                # ── Mark _invalid_for_bet per row ──
+                # A row is invalid if ANY critical feature is missing (column absent or NaN)
+                if "_invalid_for_bet" not in df.columns:
+                    df["_invalid_for_bet"] = False
+                
+                for col in CRITICAL_FEATURES_1X2:
+                    if col in df.columns:
+                        df.loc[df[col].isna(), "_invalid_for_bet"] = True
+                    else:
+                        # Column completely missing → all rows invalid
+                        df["_invalid_for_bet"] = True
+                
+                # ── Capture missing_critical_features reason per row ──
+                def _missing_reason(row):
+                    missing = []
+                    for col in CRITICAL_FEATURES_1X2:
+                        if col not in df.columns or pd.isna(row.get(col)):
+                            missing.append(col)
+                    return ", ".join(missing) if missing else ""
+                
+                df["_missing_critical_reason"] = df.apply(_missing_reason, axis=1)
+                
+                # ── Log substitution coverage ──
+                n_noncritical_substituted = len(missing_noncritical)
+                n_total_noncritical = len([c for c in master_cols if c not in CRITICAL_FEATURES_1X2])
+                coverage_pct = round(
+                    n_noncritical_substituted / n_total_noncritical * 100, 1
+                ) if n_total_noncritical > 0 else 0.0
+                
+                top_substituted = list(missing_noncritical.keys())[:5]
+                logger.info(
+                    f"📊 Non-critical substitution coverage: "
+                    f"{n_noncritical_substituted}/{n_total_noncritical} cols = {coverage_pct}%. "
+                    f"Top substituted: {top_substituted}"
+                )
+                
+                n_invalid = df["_invalid_for_bet"].sum()
+                if n_invalid > 0:
+                    logger.warning(
+                        f"🚫 {n_invalid}/{len(df)} matches marked invalid_for_bet "
+                        f"(missing critical: {missing_critical_cols})"
+                    )
+                
                 # Reorder to match master exactly (crucial for LightGBM)
-                # Keep match_id/event_id for merging
                 meta_cols = [c for c in df.columns if c not in master_cols]
-                # Avoid duplicates in meta_cols if they are in master_cols (shouldn't happen but safe)
                 meta_cols = [c for c in meta_cols if c not in master_cols]
                 
                 df = df[meta_cols + master_cols]
@@ -1567,6 +1645,12 @@ class DailyPipeline:
             
             if event_id not in model_probs:
                 continue
+            
+            # ── Prompt 2: Skip matches marked invalid_for_bet ──
+            if "_invalid_for_bet" in matches_df.columns:
+                invalid_val = match.get("_invalid_for_bet", False)
+                if invalid_val is True or invalid_val == 1:
+                    continue
             
             event_markets = model_probs[event_id]  # {market: {outcome: prob}}
             event_market_probs = market_probs.get(event_id, {})

@@ -1,0 +1,20 @@
+ M artifacts/post_task_status.txt
+ M artifacts/pre_task_status.txt
+ M artifacts/prompt1_final_verification.md
+ M artifacts/prompt1_scope_report.json
+ M artifacts/prompt1_truth_report.json
+ M artifacts/prompt1_truth_report.md
+ M catboost_info/catboost_training.json
+ M catboost_info/learn/events.out.tfevents
+ M catboost_info/test/events.out.tfevents
+ M catboost_info/time_left.tsv
+ M stavki/pipelines/daily.py
+ M stavki/prediction/live.py
+?? artifacts/prompt2_final_verification.md
+?? artifacts/prompt2_post_task_status.txt
+?? artifacts/prompt2_pre_task_status.txt
+?? artifacts/prompt2_scope_report.json
+?? artifacts/prompt2_truth_report.json
+?? artifacts/prompt2_truth_report.md
+?? tests/test_daily_prompt2_contract.py
+?? tests/test_live_prompt2_contract.py

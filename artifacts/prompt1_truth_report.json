@@ -9,11 +9,11 @@
             "evidence": [
                 {
                     "type": "test",
-                    "ref": "tests/test_get_fixture_full.py::TestGetFixtureFullRegression::test_returns_dict_not_none"
+                    "ref": "tests/test_get_fixture_full.py::TestGetFixtureFullRegression::test_returns_dict_not_none => PASSED"
                 },
                 {
                     "type": "command",
-                    "ref": "python3 -m pytest tests/test_get_fixture_full.py -v => 9 passed"
+                    "ref": "python3 -m pytest .../tests/test_get_fixture_full.py .../tests/test_loader.py -q => 22 passed in 0.57s"
                 }
             ],
             "owner": "data-team",
@@ -21,13 +21,13 @@
             "next_check": "N/A"
         },
         {
-            "claim": "get_fixture_full has callee-level regression test coverage",
+            "claim": "get_fixture_full has callee-level regression test coverage (>=1 test ref)",
             "status": "TRUE",
             "critical": true,
             "evidence": [
                 {
                     "type": "test",
-                    "ref": "tests/test_get_fixture_full.py — 9 tests covering return type, keys, stats, referee, events, lineups, empty response, 403 fallback"
+                    "ref": "tests/test_get_fixture_full.py — 9 test methods covering return type, keys, stats, referee, events, lineups, empty response, 403 fallback"
                 },
                 {
                     "type": "command",
@@ -39,17 +39,17 @@
             "next_check": "N/A"
         },
         {
-            "claim": "get_fixture_full has caller-path coverage",
+            "claim": "get_fixture_full has caller-path coverage (>=1 caller ref)",
             "status": "TRUE",
             "critical": true,
             "evidence": [
                 {
                     "type": "command",
-                    "ref": "hotfix_contract_check.py --strict => get_fixture_full: caller_ref_count=2 (scripts/backfill_sportmonks.py)"
+                    "ref": "hotfix_contract_check.py --strict => get_fixture_full: caller_ref_count=2 (scripts/backfill_sportmonks.py:508, :542)"
                 },
                 {
                     "type": "test",
-                    "ref": "tests/test_loader.py::TestFetchRecentFromApi::test_get_fixture_full_non_dict_guard — caller path guard test"
+                    "ref": "tests/test_loader.py::TestFetchRecentFromApi::test_get_fixture_full_non_dict_guard — verifies _fetch_recent_from_api handles non-dict return from get_fixture_full"
                 }
             ],
             "owner": "data-team",
@@ -57,13 +57,13 @@
             "next_check": "N/A"
         },
         {
-            "claim": "_fetch_recent_from_api has callee-level regression test coverage",
+            "claim": "_fetch_recent_from_api has callee-level regression test coverage (>=1 test ref)",
             "status": "TRUE",
             "critical": true,
             "evidence": [
                 {
                     "type": "test",
-                    "ref": "tests/test_loader.py::TestFetchRecentFromApi — 8 callee tests (returns_dataframe, no_client, cached, basic_fetch, non_dict_guard, api_exception, multi_day, odds_exception)"
+                    "ref": "tests/test_loader.py::TestFetchRecentFromApi — 8 callee tests (returns_dataframe_always, returns_empty_df_when_no_client, returns_cached_data_if_available, basic_fixture_fetch, get_fixture_full_non_dict_guard, api_exception_does_not_crash, multi_day_range, odds_exception_graceful)"
                 },
                 {
                     "type": "command",
@@ -81,16 +81,17 @@
             "evidence": [
                 {
                     "type": "test",
-                    "ref": "tests/test_loader.py::TestCallerPathFetchRecentFromApi::test_get_historical_data_calls_fetch_recent"
+                    "ref": "tests/test_loader.py::TestCallerPathFetchRecentFromApi::test_get_historical_data_calls_fetch_recent => PASSED"
                 },
                 {
                     "type": "test",
-                    "ref": "tests/test_loader.py::TestCallerPathFetchRecentFromApi::test_get_historical_data_no_api_when_flag_false"
+                    "ref": "tests/test_loader.py::TestCallerPathFetchRecentFromApi::test_get_historical_data_no_api_when_flag_false => PASSED"
                 }
             ],
             "owner": "data-team",
             "minimal_fix": "N/A",
-            "next_check": "N/A"
+            "next_check": "N/A",
+            "notes": "Contract gate warning: '_fetch_recent_from_api: no caller refs found outside callee files'. This is a known gate limitation — the only caller (get_historical_data) is in the same callee file (loader.py). The caller-path tests above provide the coverage the gate cannot detect via static scan."
         },
         {
             "claim": "Contract gate passes in strict mode",
@@ -99,7 +100,7 @@
             "evidence": [
                 {
                     "type": "command",
-                    "ref": "hotfix_contract_check.py --strict => status: pass"
+                    "ref": "hotfix_contract_check.py --strict => {\"status\": \"pass\"}"
                 },
                 {
                     "type": "artifact",
@@ -108,7 +109,8 @@
             ],
             "owner": "data-team",
             "minimal_fix": "N/A",
-            "next_check": "N/A"
+            "next_check": "N/A",
+            "notes": "Gate emits warning: '_fetch_recent_from_api: no caller refs found outside callee files'. This is a warning (not an error) because the gate only scans for callers outside callee files. The single caller is get_historical_data inside loader.py (a callee file). This is a known limitation of the static scan, not a coverage gap — see claim #5 for caller-path test evidence."
         },
         {
             "claim": "Full test suite has no new failures beyond 7 known pre-existing",
@@ -117,11 +119,11 @@
             "evidence": [
                 {
                     "type": "command",
-                    "ref": "python3 -m pytest tests/ -v --tb=short => 133 passed, 7 failed"
+                    "ref": "python3 -m pytest .../tests/ -q --tb=no => 7 failed, 133 passed in 18.08s"
                 },
                 {
                     "type": "artifact",
-                    "ref": "7 failures match known pre-existing list exactly: test_basic_normalization, test_known_aliases, test_unicode_handling, test_fit_and_compute, test_unified_loader, test_live_predictions, test_backtesting_with_api_data"
+                    "ref": "7 failures exactly match known pre-existing list: test_basic_normalization, test_known_aliases, test_unicode_handling, test_fit_and_compute, test_unified_loader, test_live_predictions, test_backtesting_with_api_data"
                 }
             ],
             "owner": "data-team",
@@ -129,7 +131,7 @@
             "next_check": "N/A"
         },
         {
-            "claim": "No out-of-scope files modified",
+            "claim": "No out-of-scope files modified by this run",
             "status": "TRUE",
             "critical": false,
             "evidence": [

@@ -2,20 +2,28 @@
 
 **Scope**: Hotfix verification for `get_fixture_full` + `_fetch_recent_from_api`  
 **Decision**: **GO**  
-**Date**: 2026-02-28T18:06
+**Date**: 2026-02-28T18:32
 
 ## Claims
 
 | # | Claim | Status | Critical | Evidence |
 |---|-------|--------|----------|----------|
-| 1 | `get_fixture_full` returns dict, never None | TRUE | ✅ | 9 callee tests pass |
+| 1 | `get_fixture_full` returns dict, never None | TRUE | ✅ | 9 callee tests pass, 22/22 focused tests pass |
 | 2 | `get_fixture_full` callee test coverage | TRUE | ✅ | 12 test refs (contract gate) |
-| 3 | `get_fixture_full` caller-path coverage | TRUE | ✅ | 2 caller refs + guard test |
-| 4 | `_fetch_recent_from_api` callee test coverage | TRUE | ✅ | 9 test refs (was 0) |
+| 3 | `get_fixture_full` caller-path coverage | TRUE | ✅ | 2 caller refs + non-dict guard test |
+| 4 | `_fetch_recent_from_api` callee test coverage | TRUE | ✅ | 9 test refs (contract gate), was 0 before fix |
 | 5 | `_fetch_recent_from_api` caller-path test | TRUE | ✅ | 2 caller-path tests pass |
-| 6 | Contract gate `--strict` passes | TRUE | ✅ | `status: pass` |
-| 7 | No new test failures | TRUE | ✅ | 133 pass, 7 known pre-existing |
-| 8 | No out-of-scope files modified | TRUE | — | scope report clean |
+| 6 | Contract gate `--strict` passes | TRUE | ✅ | `"status": "pass"` |
+| 7 | No new test failures | TRUE | ✅ | 133 pass, 7 fail (all match known pre-existing list) |
+| 8 | No out-of-scope files modified | TRUE | — | scope report: `out_of_scope_new_files: []` |
+
+## Contract Gate Warning (Transparent)
+
+> **Warning**: `_fetch_recent_from_api: no caller refs found outside callee files`
+
+This is a **known limitation of the static scan**, not a coverage gap. The only caller (`get_historical_data`) is inside `loader.py`, which is listed as a callee file. The gate's static scanner cannot detect intra-file callers. This is compensated by explicit caller-path tests:
+- `test_get_historical_data_calls_fetch_recent` — verifies the call happens
+- `test_get_historical_data_no_api_when_flag_false` — verifies it doesn't happen when disabled
 
 ## Gate Validation
 
@@ -26,12 +34,14 @@ check_truth_report.py --strict => PASS
   critical_unknown: 0
 ```
 
-## Pre-Existing Failures (NOT Prompt 1 scope)
+## Pre-Existing Failures (7, outside Prompt 1 scope)
 
-1. `test_basic_normalization` — normalization table incomplete
-2. `test_known_aliases` — same
-3. `test_unicode_handling` — same
-4. `test_fit_and_compute` — feature registry issue
-5. `test_unified_loader` — stale keyword `start=` vs `start_date=`
-6. `test_live_predictions` — Redis not running locally
-7. `test_backtesting_with_api_data` — same stale keyword
+| Test | Root Cause |
+|------|-----------|
+| `TestTeamNormalization::test_basic_normalization` | Normalization table incomplete |
+| `TestTeamNormalization::test_known_aliases` | Same |
+| `TestTeamNormalization::test_unicode_handling` | Same |
+| `TestFeatureRegistry::test_fit_and_compute` | Feature registry issue |
+| `test_unified_loader` | Stale keyword `start=` vs `start_date=` |
+| `test_live_predictions` | Redis not running locally |
+| `test_backtesting_with_api_data` | Same stale keyword |

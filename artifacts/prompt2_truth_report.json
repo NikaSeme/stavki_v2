@@ -1,0 +1,141 @@
+{
+    "scope": "Prompt 2 — Critical Feature Gate for 1x2 Predictions (Gap Fixes)",
+    "go_no_go": "GO",
+    "claims": [
+        {
+            "claim": "Missing critical features in _build_features → invalid_for_bet=True, not recommended",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "test",
+                    "ref": "tests/test_live_prompt2_contract.py::TestCriticalFeatureGate::test_missing_critical_features_marks_invalid → PASSED"
+                },
+                {
+                    "type": "code",
+                    "ref": "live.py:344-365 — if missing_critical: return LivePrediction(invalid_for_bet=True)"
+                }
+            ]
+        },
+        {
+            "claim": "Missing critical features in model's feature_cols (missing_cols branch) → invalid_for_bet=True",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "test",
+                    "ref": "tests/test_live_prompt2_contract.py::TestModelColumnCriticalGate::test_model_column_critical_missing_returns_invalid → PASSED"
+                },
+                {
+                    "type": "code",
+                    "ref": "live.py:392-422 — critical_missing_model gate returns invalid LivePrediction"
+                }
+            ]
+        },
+        {
+            "claim": "Recommendation output excludes invalid_for_bet rows/fixtures",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "test",
+                    "ref": "tests/test_live_prompt2_contract.py::TestRecommendationsExcludeInvalid::test_invalid_fixtures_excluded_from_recommendations → PASSED"
+                },
+                {
+                    "type": "test",
+                    "ref": "tests/test_daily_prompt2_contract.py::TestRecommendationExcludesInvalid::test_find_value_bets_skips_invalid_rows → PASSED"
+                }
+            ]
+        },
+        {
+            "claim": "_invalid_for_bet from features_df propagates to matches_df in run() path",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "test",
+                    "ref": "tests/test_daily_prompt2_contract.py::TestRunPathPropagatesInvalidFlag::test_run_path_merges_invalid_flag → PASSED"
+                },
+                {
+                    "type": "code",
+                    "ref": "daily.py:248-277 — run() merges _invalid_for_bet from features_df into matches_df before _find_value_bets"
+                }
+            ]
+        },
+        {
+            "claim": "Defaults used only for non-critical features",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "test",
+                    "ref": "tests/test_live_prompt2_contract.py::TestNonCriticalDefaults::test_non_critical_defaults_allowed_coverage_logged → PASSED"
+                },
+                {
+                    "type": "test",
+                    "ref": "tests/test_daily_prompt2_contract.py::TestMapFeaturesInvalidGate::test_marks_invalid_when_critical_missing → PASSED"
+                }
+            ]
+        },
+        {
+            "claim": "Logs show non-critical substitution coverage percentage",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "test",
+                    "ref": "tests/test_live_prompt2_contract.py::TestNonCriticalDefaults::test_non_critical_defaults_allowed_coverage_logged (checks substitution_coverage_pct set)"
+                },
+                {
+                    "type": "test",
+                    "ref": "tests/test_daily_prompt2_contract.py::TestSubstitutionCoverageLogged::test_coverage_logged (checks log contains 'substitution coverage')"
+                }
+            ]
+        },
+        {
+            "claim": "All prompt2 targeted tests pass",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "command",
+                    "ref": "python3 -m pytest tests/test_live_prompt2_contract.py tests/test_daily_prompt2_contract.py -v → 10 passed, 0 failed, 1 warning in 1.25s"
+                },
+                {
+                    "type": "command",
+                    "ref": "python3 -m py_compile stavki/prediction/live.py stavki/pipelines/daily.py → COMPILE OK"
+                }
+            ]
+        },
+        {
+            "claim": "Scope report is internally consistent with pre/post status files",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "command",
+                    "ref": "cat prompt2_pre_task_status.txt — 12 M + 8 ?? entries"
+                },
+                {
+                    "type": "command",
+                    "ref": "cat prompt2_post_task_status.txt — 12 M + 8 ?? entries (same set)"
+                }
+            ]
+        },
+        {
+            "claim": "out_of_scope_new_files is empty",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "artifact",
+                    "ref": "artifacts/prompt2_scope_report.json: out_of_scope_new_files = []"
+                },
+                {
+                    "type": "command",
+                    "ref": "git status --porcelain diff: no new files outside allowlist"
+                }
+            ]
+        }
+    ]
+}

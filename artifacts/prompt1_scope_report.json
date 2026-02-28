@@ -1,21 +1,21 @@
 {
-  "timestamp": "2026-02-28T18:04:00+01:00",
+  "timestamp": "2026-02-28T18:31:00+01:00",
   "baseline_changed": [
+    "artifacts/pre_task_status.txt",
     "catboost_info/catboost_training.json",
     "catboost_info/learn/events.out.tfevents",
     "catboost_info/test/events.out.tfevents",
     "catboost_info/time_left.tsv"
   ],
   "final_changed": [
+    "artifacts/post_task_status.txt",
+    "artifacts/pre_task_status.txt",
     "catboost_info/catboost_training.json",
     "catboost_info/learn/events.out.tfevents",
     "catboost_info/test/events.out.tfevents",
-    "catboost_info/time_left.tsv",
-    "artifacts/pre_task_status.txt",
-    "artifacts/post_task_status.txt"
+    "catboost_info/time_left.tsv"
   ],
   "newly_changed_by_this_run": [
-    "artifacts/pre_task_status.txt",
     "artifacts/post_task_status.txt",
     "artifacts/hotfix_contract_report.json",
     "artifacts/prompt1_scope_report.json",
@@ -24,16 +24,25 @@
     "artifacts/prompt1_final_verification.md"
   ],
   "out_of_scope_new_files": [],
-  "allowed_prefixes": ["artifacts/"],
   "allowed_files": [
+    "artifacts/pre_task_status.txt",
+    "artifacts/post_task_status.txt",
+    "artifacts/prompt1_scope_report.json",
     "artifacts/hotfix_contract_report.json",
-    "artifacts/prompt1_final_verification.md",
     "artifacts/prompt1_truth_report.json",
     "artifacts/prompt1_truth_report.md",
-    "artifacts/prompt1_scope_report.json",
-    "artifacts/pre_task_status.txt",
-    "artifacts/post_task_status.txt"
+    "artifacts/prompt1_final_verification.md"
   ],
   "scope_status": "PASS",
-  "notes": "All newly created files are under artifacts/ which is in the allowlist. catboost_info files were already dirty at baseline and are NOT newly changed by this run."
+  "notes": {
+    "baseline_source": "git -C ... status --porcelain > artifacts/pre_task_status.txt",
+    "final_source": "git -C ... status --porcelain — step 5 initially ran before artifact files were written (empty output); content was then corrected from a separate git status --porcelain run after all 7 artifact files were created",
+    "baseline_pre_existing": [
+      "catboost_info/catboost_training.json",
+      "catboost_info/learn/events.out.tfevents",
+      "catboost_info/test/events.out.tfevents",
+      "catboost_info/time_left.tsv"
+    ],
+    "catboost_info_note": "These 4 files were dirty at baseline (pre-existing CatBoost training logs), NOT modified by this run."
+  }
 }

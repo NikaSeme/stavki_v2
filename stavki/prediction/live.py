@@ -21,6 +21,14 @@ from stavki.features.builders.formation import FormationFeatureBuilder
 
 logger = logging.getLogger(__name__)
 
+# Prompt 2: Critical features that MUST have real data for 1x2 predictions.
+# If any of these are missing or NaN, the fixture is marked invalid_for_bet.
+CRITICAL_FEATURES_1X2 = [
+    "elo_home", "elo_away",
+    "form_home_pts", "form_away_pts",
+    "imp_home_norm", "imp_draw_norm", "imp_away_norm",
+]
+
 
 @dataclass
 class LivePrediction:
@@ -49,6 +57,12 @@ class LivePrediction:
     best_ev: Optional[float] = None
     recommended: bool = False
     stake_pct: Optional[float] = None
+
+    # Prompt 2: Contract fields for critical-feature gate
+    invalid_for_bet: bool = False
+    invalid_reason: Optional[str] = None
+    missing_critical_features: Optional[List[str]] = None
+    substitution_coverage_pct: Optional[float] = None
 
 
 class LivePredictor:
@@ -168,32 +182,63 @@ class LivePredictor:
             
         logger.info(f"Loaded model with {len(self.feature_cols)} features")
     
-    def _build_features(self, fixture: MatchFixture, odds: Dict) -> pd.DataFrame:
-        """Build feature vector for a fixture."""
+    def _build_features(self, fixture: MatchFixture, odds: Dict):
+        """
+        Build feature vector for a fixture.
+        
+        Returns:
+            tuple: (pd.DataFrame, list[str]) — features DataFrame and list of
+                   critical feature names that are missing real data.
+        """
         home = fixture.home_team
         away = fixture.away_team
         
-        # ELO features
+        # Track which critical features are missing real data
+        _missing_critical = []
+        
+        # ELO features — critical
+        _has_elo_home = home in self.elo_ratings
+        _has_elo_away = away in self.elo_ratings
         elo_home = self.elo_ratings.get(home, 1500)
         elo_away = self.elo_ratings.get(away, 1500)
         elo_diff = elo_home - elo_away
+        if not _has_elo_home:
+            _missing_critical.append('elo_home')
+        if not _has_elo_away:
+            _missing_critical.append('elo_away')
         
-        # Form features
+        # Form features — critical
+        _has_form_home = home in self.team_form
+        _has_form_away = away in self.team_form
         form_home = self.team_form.get(home, [7.5])
         form_away = self.team_form.get(away, [7.5])
         form_home_pts = np.mean(form_home) if form_home else 7.5
         form_away_pts = np.mean(form_away) if form_away else 7.5
         form_diff = form_home_pts - form_away_pts
+        if not _has_form_home:
+            _missing_critical.append('form_home_pts')
+        if not _has_form_away:
+            _missing_critical.append('form_away_pts')
         
-        # Odds features
-        odds_h = odds.get('home', 2.5)
-        odds_d = odds.get('draw', 3.3)
-        odds_a = odds.get('away', 2.8)
+        # Odds features — critical (imp_*_norm derived from odds)
+        odds_h = odds.get('home')
+        odds_d = odds.get('draw')
+        odds_a = odds.get('away')
         
-        margin = 1/odds_h + 1/odds_d + 1/odds_a
-        imp_home = (1/odds_h) / margin
-        imp_draw = (1/odds_d) / margin
-        imp_away = (1/odds_a) / margin
+        if odds_h and odds_d and odds_a:
+            margin = 1/odds_h + 1/odds_d + 1/odds_a
+            imp_home = (1/odds_h) / margin
+            imp_draw = (1/odds_d) / margin
+            imp_away = (1/odds_a) / margin
+        else:
+            imp_home = np.nan
+            imp_draw = np.nan
+            imp_away = np.nan
+            _missing_critical.extend(['imp_home_norm', 'imp_draw_norm', 'imp_away_norm'])
+            # Use fallback odds for bookmaker columns only
+            odds_h = odds_h or 2.5
+            odds_d = odds_d or 3.3
+            odds_a = odds_a or 2.8
         
         # Tier 1: Real xG
         xg_home = self.team_xg.get(home, 1.35)
@@ -204,7 +249,6 @@ class LivePredictor:
         avg_rating_away = self.team_avg_rating.get(away, 6.5)
         
         # Tier 1: Referee features
-        # Try to get referee from fixture data (if available from API)
         ref_name = getattr(fixture, 'referee', None)
         if ref_name:
             ref_name = str(ref_name).strip().lower()
@@ -243,12 +287,11 @@ class LivePredictor:
         # Phase 3: Formation features
         from stavki.data.schemas import Match, Team, League
         
-        # Construct minimal Match object for the builder
         match_obj = Match(
             id=str(fixture.fixture_id),
             home_team=Team(name=home),
             away_team=Team(name=away),
-            league=League.EPL, # Dummy valid league, builder doesn't use it
+            league=League.EPL,
             commence_time=fixture.kickoff,
             source="live_predictor"
         )
@@ -256,7 +299,7 @@ class LivePredictor:
         fmt_features = self.formation_builder.get_features(match_obj)
         features.update(fmt_features)
         
-        # Phase 3: Rolling match stats & Ref encodings
+        # Phase 3: Rolling match stats & Ref encodings (non-critical)
         features.update({
             'rolling_fouls_home': self.team_fouls.get(home, 12.0),
             'rolling_fouls_away': self.team_fouls.get(away, 12.0),
@@ -270,7 +313,10 @@ class LivePredictor:
             'ref_encoded_cards': self.ref_encoded_cards.get(ref_name, 3.9) if ref_name else 3.9,
         })
         
-        return pd.DataFrame([features])
+        # De-duplicate missing critical list
+        _missing_critical = list(dict.fromkeys(_missing_critical))
+        
+        return pd.DataFrame([features]), _missing_critical
     
     def predict_fixture(
         self,
@@ -292,18 +338,93 @@ class LivePredictor:
             else:
                 odds = {}  # No odds available
         
-        # Build features
-        X = self._build_features(fixture, odds)
+        # Build features (returns DataFrame + missing critical list)
+        X, missing_critical = self._build_features(fixture, odds)
+        
+        # ── Prompt 2: Critical-feature gate ──────────────────────────
+        if missing_critical:
+            reason = f"Missing critical features: {', '.join(missing_critical)}"
+            logger.warning(
+                f"🚫 INVALID_FOR_BET: {fixture.home_team} vs {fixture.away_team} — {reason}"
+            )
+            return LivePrediction(
+                fixture_id=fixture.fixture_id,
+                home_team=fixture.home_team,
+                away_team=fixture.away_team,
+                league=self.LEAGUE_MAP.get(fixture.league_id, 'unknown'),
+                kickoff=fixture.kickoff,
+                prob_home=0.33, prob_draw=0.34, prob_away=0.33,
+                recommended=False,
+                best_bet=None,
+                best_ev=None,
+                stake_pct=None,
+                invalid_for_bet=True,
+                invalid_reason=reason,
+                missing_critical_features=missing_critical,
+                substitution_coverage_pct=None,
+            )
+        
+        # ── Non-critical substitution coverage ──────────────────────
+        non_critical_sub_count = 0
+        non_critical_total = 0
+        if self.model is not None and self.feature_cols:
+            for c in self.feature_cols:
+                if c in CRITICAL_FEATURES_1X2:
+                    continue  # already validated above
+                non_critical_total += 1
+                if c not in X.columns:
+                    non_critical_sub_count += 1
+            sub_coverage = (
+                round(non_critical_sub_count / non_critical_total * 100, 1)
+                if non_critical_total > 0 else 0.0
+            )
+            logger.info(
+                f"📊 Non-critical substitution coverage for "
+                f"{fixture.home_team} vs {fixture.away_team}: "
+                f"{non_critical_sub_count}/{non_critical_total} cols = {sub_coverage}%"
+            )
+        else:
+            sub_coverage = 0.0
         
         # Predict
-        # Predict
         if self.model is not None:
-            # Ensure all model features exist
+            # Ensure all model features exist — split critical vs non-critical
             missing_cols = [c for c in self.feature_cols if c not in X.columns]
-            if missing_cols:
-                # Fill missing with explicit defaults
-                for c in missing_cols:
-                    if c in ['HomeTeam', 'AwayTeam', 'League', 'league']: # Known categoricals
+            
+            # ── Prompt 2 gap fix: gate on critical model columns ──
+            critical_missing_model = [c for c in missing_cols if c in CRITICAL_FEATURES_1X2]
+            noncritical_missing_model = [c for c in missing_cols if c not in CRITICAL_FEATURES_1X2]
+            
+            if critical_missing_model:
+                reason = (
+                    f"Model requires critical features not in feature vector: "
+                    f"{', '.join(critical_missing_model)}"
+                )
+                logger.warning(
+                    f"🚫 INVALID_FOR_BET (model-column gate): "
+                    f"{fixture.home_team} vs {fixture.away_team} — {reason}"
+                )
+                return LivePrediction(
+                    fixture_id=fixture.fixture_id,
+                    home_team=fixture.home_team,
+                    away_team=fixture.away_team,
+                    league=self.LEAGUE_MAP.get(fixture.league_id, 'unknown'),
+                    kickoff=fixture.kickoff,
+                    prob_home=0.33, prob_draw=0.34, prob_away=0.33,
+                    recommended=False,
+                    best_bet=None,
+                    best_ev=None,
+                    stake_pct=None,
+                    invalid_for_bet=True,
+                    invalid_reason=reason,
+                    missing_critical_features=critical_missing_model,
+                    substitution_coverage_pct=None,
+                )
+            
+            # Defaults only for NON-critical missing columns
+            if noncritical_missing_model:
+                for c in noncritical_missing_model:
+                    if c in ['HomeTeam', 'AwayTeam', 'League', 'league']:
                          X[c] = "Unknown"
                     else:
                          X[c] = 0.0
@@ -311,8 +432,10 @@ class LivePredictor:
             # Reindex to exact model columns (Order Matters!)
             X_pred = X[self.feature_cols].copy()
             
-            # Final safe fillna
-            X_pred = X_pred.fillna(0)
+            # Final safe fillna — only non-critical columns
+            for c in X_pred.columns:
+                if c not in CRITICAL_FEATURES_1X2:
+                    X_pred[c] = X_pred[c].fillna(0)
             
             # Use predict() to get full Prediction object with Epistemic metadata
             from stavki.models.base import Prediction
@@ -320,13 +443,11 @@ class LivePredictor:
                 preds = self.model.predict(X_pred)
                 p = preds[0] if preds else None
                 if p:
-                    # Map probabilities if available
                     model_probs = np.array([
                         p.probabilities.get("home", 0.33),
                         p.probabilities.get("draw", 0.33),
                         p.probabilities.get("away", 0.33)
                     ])
-                    # Extract standard deviation metadata from MCMC Bayesian PyTorch runs
                     std_home = p.metadata.get("home_std", 0.0) if hasattr(p, "metadata") and p.metadata else 0.0
                     std_draw = p.metadata.get("draw_std", 0.0) if hasattr(p, "metadata") and p.metadata else 0.0
                     std_away = p.metadata.get("away_std", 0.0) if hasattr(p, "metadata") and p.metadata else 0.0
@@ -360,17 +481,14 @@ class LivePredictor:
         blended = blended / blended.sum()
         
         # 🛡️ Epistemic Uncertainty Subtraction
-        # Deduct variance locally to create a "Conservative Probability" and crush the EVs on Ghost Teams
         blended = np.array([
             max(0.01, blended[0] - std_home),
             max(0.01, blended[1] - std_draw),
             max(0.01, blended[2] - std_away)
         ])
-        # Re-normalize just in case
         blended = blended / blended.sum()
         
         # Expected values
-        # Careful: odds might be missing
         odds_h = odds.get('home')
         odds_d = odds.get('draw')
         odds_a = odds.get('away')
@@ -379,12 +497,10 @@ class LivePredictor:
             odds_arr = np.array([odds_h, odds_d, odds_a])
             evs = blended * odds_arr - 1
             
-            # Find best bet
             best_idx = np.argmax(evs)
             best_ev = evs[best_idx]
             edge = blended[best_idx] - imp_probs[best_idx]
             
-            # Recommended?
             recommended = best_ev >= self.min_ev and edge >= self.min_edge
             best_bet_label = ['Home', 'Draw', 'Away'][best_idx]
         else:
@@ -397,7 +513,6 @@ class LivePredictor:
         # Kelly stake
         stake_pct = None
         if recommended and best_ev is not None:
-            # Kelly: f* = (p*b - 1) / (b - 1), where p=prob, b=odds
             p = blended[best_idx]
             b = odds_arr[best_idx]
             if b > 1:
@@ -422,7 +537,10 @@ class LivePredictor:
             best_bet=best_bet_label,
             best_ev=best_ev,
             recommended=recommended,
-            stake_pct=stake_pct
+            stake_pct=stake_pct,
+            invalid_for_bet=False,
+            missing_critical_features=[],
+            substitution_coverage_pct=sub_coverage,
         )
     
     def predict_upcoming(
@@ -465,9 +583,15 @@ class LivePredictor:
         days: int = 7,
         max_bets: int = 10
     ) -> List[LivePrediction]:
-        """Get top betting recommendations."""
+        """Get top betting recommendations.
+        
+        Prompt 2: Unconditionally excludes invalid_for_bet fixtures.
+        """
         all_preds = self.predict_upcoming(days=days)
-        recommended = [p for p in all_preds if p.recommended]
+        recommended = [
+            p for p in all_preds
+            if p.recommended and not p.invalid_for_bet
+        ]
         return recommended[:max_bets]
     
     def format_predictions(self, predictions: List[LivePrediction]) -> str:

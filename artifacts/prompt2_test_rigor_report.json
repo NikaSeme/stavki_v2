@@ -1,0 +1,17 @@
+{
+  "status": "pass",
+  "files_checked": [
+    "/Users/macuser/Documents/something/stavki_v2/tests/test_live_prompt2_contract.py",
+    "/Users/macuser/Documents/something/stavki_v2/tests/test_daily_prompt2_contract.py"
+  ],
+  "forbidden_patterns_found": [],
+  "pytest_summary": {
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "xfailed": 0,
+    "xpassed": 0,
+    "errors": 0
+  },
+  "actionable_errors": []
+}
