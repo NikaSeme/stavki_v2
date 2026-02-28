@@ -1,0 +1,158 @@
+{
+  "status": "pass",
+  "strict": true,
+  "repo": "/Users/macuser/Documents/something/stavki_v2",
+  "functions": [
+    "get_fixture_full",
+    "_fetch_recent_from_api"
+  ],
+  "checks": {
+    "get_fixture_full": {
+      "callee_definitions": [
+        [
+          "stavki/data/collectors/sportmonks.py",
+          573,
+          "def get_fixture_full(self, fixture_id: int) -> Dict[str, Any]:"
+        ]
+      ],
+      "test_refs": [
+        [
+          "tests/test_get_fixture_full.py",
+          2,
+          "Regression test for get_fixture_full()."
+        ],
+        [
+          "tests/test_get_fixture_full.py",
+          4,
+          "Verifies that get_fixture_full() returns a dict with the required keys"
+        ],
+        [
+          "tests/test_get_fixture_full.py",
+          86,
+          "result = client.get_fixture_full(12345)"
+        ],
+        [
+          "tests/test_get_fixture_full.py",
+          89,
+          "\"get_fixture_full() returned None — parsing code is still orphaned\""
+        ],
+        [
+          "tests/test_get_fixture_full.py",
+          98,
+          "result = client.get_fixture_full(12345)"
+        ],
+        [
+          "tests/test_get_fixture_full.py",
+          108,
+          "result = client.get_fixture_full(12345)"
+        ],
+        [
+          "tests/test_get_fixture_full.py",
+          115,
+          "result = client.get_fixture_full(12345)"
+        ],
+        [
+          "tests/test_get_fixture_full.py",
+          126,
+          "result = client.get_fixture_full(12345)"
+        ],
+        [
+          "tests/test_get_fixture_full.py",
+          133,
+          "result = client.get_fixture_full(12345)"
+        ],
+        [
+          "tests/test_get_fixture_full.py",
+          144,
+          "result = client.get_fixture_full(12345)"
+        ],
+        [
+          "tests/test_get_fixture_full.py",
+          155,
+          "result = client.get_fixture_full(99999)"
+        ],
+        [
+          "tests/test_get_fixture_full.py",
+          175,
+          "result = client.get_fixture_full(12345)"
+        ]
+      ],
+      "caller_refs": [
+        [
+          "scripts/backfill_sportmonks.py",
+          508,
+          "Uses ONE API call per fixture via get_fixture_full()."
+        ],
+        [
+          "scripts/backfill_sportmonks.py",
+          542,
+          "full = client.get_fixture_full(fid)"
+        ]
+      ],
+      "test_ref_count": 12,
+      "caller_ref_count": 2
+    },
+    "_fetch_recent_from_api": {
+      "callee_definitions": [
+        [
+          "stavki/data/loader.py",
+          343,
+          "def _fetch_recent_from_api("
+        ]
+      ],
+      "test_refs": [
+        [
+          "tests/test_loader.py",
+          119,
+          "\"\"\"Callee-level regression tests for _fetch_recent_from_api().\"\"\""
+        ],
+        [
+          "tests/test_loader.py",
+          126,
+          "result = loader._fetch_recent_from_api("
+        ],
+        [
+          "tests/test_loader.py",
+          138,
+          "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
+        ],
+        [
+          "tests/test_loader.py",
+          151,
+          "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
+        ],
+        [
+          "tests/test_loader.py",
+          173,
+          "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
+        ],
+        [
+          "tests/test_loader.py",
+          194,
+          "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
+        ],
+        [
+          "tests/test_loader.py",
+          206,
+          "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
+        ],
+        [
+          "tests/test_loader.py",
+          228,
+          "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-16\")"
+        ],
+        [
+          "tests/test_loader.py",
+          241,
+          "result = loader._fetch_recent_from_api(\"2025-01-15\", \"2025-01-15\")"
+        ]
+      ],
+      "caller_refs": [],
+      "test_ref_count": 9,
+      "caller_ref_count": 0
+    }
+  },
+  "warnings": [
+    "_fetch_recent_from_api: no caller refs found outside callee files"
+  ]
+}
