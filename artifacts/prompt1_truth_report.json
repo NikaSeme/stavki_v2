@@ -1,0 +1,146 @@
+{
+    "scope": "Prompt 1 hotfix verification",
+    "go_no_go": "GO",
+    "claims": [
+        {
+            "claim": "get_fixture_full returns dict with required keys, never None",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "test",
+                    "ref": "tests/test_get_fixture_full.py::TestGetFixtureFullRegression::test_returns_dict_not_none"
+                },
+                {
+                    "type": "command",
+                    "ref": "python3 -m pytest tests/test_get_fixture_full.py -v => 9 passed"
+                }
+            ],
+            "owner": "data-team",
+            "minimal_fix": "N/A — already fixed",
+            "next_check": "N/A"
+        },
+        {
+            "claim": "get_fixture_full has callee-level regression test coverage",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "test",
+                    "ref": "tests/test_get_fixture_full.py — 9 tests covering return type, keys, stats, referee, events, lineups, empty response, 403 fallback"
+                },
+                {
+                    "type": "command",
+                    "ref": "hotfix_contract_check.py --strict => get_fixture_full: test_ref_count=12"
+                }
+            ],
+            "owner": "data-team",
+            "minimal_fix": "N/A",
+            "next_check": "N/A"
+        },
+        {
+            "claim": "get_fixture_full has caller-path coverage",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "command",
+                    "ref": "hotfix_contract_check.py --strict => get_fixture_full: caller_ref_count=2 (scripts/backfill_sportmonks.py)"
+                },
+                {
+                    "type": "test",
+                    "ref": "tests/test_loader.py::TestFetchRecentFromApi::test_get_fixture_full_non_dict_guard — caller path guard test"
+                }
+            ],
+            "owner": "data-team",
+            "minimal_fix": "N/A",
+            "next_check": "N/A"
+        },
+        {
+            "claim": "_fetch_recent_from_api has callee-level regression test coverage",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "test",
+                    "ref": "tests/test_loader.py::TestFetchRecentFromApi — 8 callee tests (returns_dataframe, no_client, cached, basic_fetch, non_dict_guard, api_exception, multi_day, odds_exception)"
+                },
+                {
+                    "type": "command",
+                    "ref": "hotfix_contract_check.py --strict => _fetch_recent_from_api: test_ref_count=9"
+                }
+            ],
+            "owner": "data-team",
+            "minimal_fix": "N/A",
+            "next_check": "N/A"
+        },
+        {
+            "claim": "_fetch_recent_from_api has caller-path test coverage",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "test",
+                    "ref": "tests/test_loader.py::TestCallerPathFetchRecentFromApi::test_get_historical_data_calls_fetch_recent"
+                },
+                {
+                    "type": "test",
+                    "ref": "tests/test_loader.py::TestCallerPathFetchRecentFromApi::test_get_historical_data_no_api_when_flag_false"
+                }
+            ],
+            "owner": "data-team",
+            "minimal_fix": "N/A",
+            "next_check": "N/A"
+        },
+        {
+            "claim": "Contract gate passes in strict mode",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "command",
+                    "ref": "hotfix_contract_check.py --strict => status: pass"
+                },
+                {
+                    "type": "artifact",
+                    "ref": "artifacts/hotfix_contract_report.json"
+                }
+            ],
+            "owner": "data-team",
+            "minimal_fix": "N/A",
+            "next_check": "N/A"
+        },
+        {
+            "claim": "Full test suite has no new failures beyond 7 known pre-existing",
+            "status": "TRUE",
+            "critical": true,
+            "evidence": [
+                {
+                    "type": "command",
+                    "ref": "python3 -m pytest tests/ -v --tb=short => 133 passed, 7 failed"
+                },
+                {
+                    "type": "artifact",
+                    "ref": "7 failures match known pre-existing list exactly: test_basic_normalization, test_known_aliases, test_unicode_handling, test_fit_and_compute, test_unified_loader, test_live_predictions, test_backtesting_with_api_data"
+                }
+            ],
+            "owner": "data-team",
+            "minimal_fix": "N/A",
+            "next_check": "N/A"
+        },
+        {
+            "claim": "No out-of-scope files modified",
+            "status": "TRUE",
+            "critical": false,
+            "evidence": [
+                {
+                    "type": "artifact",
+                    "ref": "artifacts/prompt1_scope_report.json => out_of_scope_new_files: []"
+                }
+            ],
+            "owner": "data-team",
+            "minimal_fix": "N/A",
+            "next_check": "N/A"
+        }
+    ]
+}

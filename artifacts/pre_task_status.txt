@@ -1,0 +1,5 @@
+ M catboost_info/catboost_training.json
+ M catboost_info/learn/events.out.tfevents
+ M catboost_info/test/events.out.tfevents
+ M catboost_info/time_left.tsv
+?? artifacts/pre_task_status.txt
